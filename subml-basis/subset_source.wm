@@ -16,8 +16,8 @@ from "./subset_string.wm" import * as SubsetString;
 
 type Source = Empty | Byte<Char> | Branch<Int32.Int, Source, Source>;
 let length = match {
-  Empty => { (0: Int32.Int) },
-  Byte(c) => { (1: Int32.Int) },
+  Empty => { 0 },
+  Byte(c) => { 1 },
   Branch(size, left, right) => { size }
 };
 let join = (left, right) => { Branch(length(left) + length(right), left, right) };
@@ -37,11 +37,11 @@ let fromBytes = (bytes) => { SubsetResult.map(SubsetBytes.validate(bytes), build
 let fromNative = (value) => { SubsetResult.map(SubsetString.fromNative(value), build) };
 
 let at = (tree, index: Int32.Int) => {
-  if (if (index >= (0: Int32.Int)) { index < length(tree) } else { false }) {
+  if (if (index >= 0) { index < length(tree) } else { false }) {
     let rec go = match {
       (Empty, Var(offset)) => { SubsetResult.Err(SubsetBytes.OutOfBounds) },
       (Byte(c), Var(offset)) => {
-        if (if (offset <= (0: Int32.Int)) { offset >= (0: Int32.Int) } else { false }) { SubsetResult.Ok(c) } else { SubsetResult.Err(SubsetBytes.InvalidIndex) }
+        if (if (offset <= 0) { offset >= 0 } else { false }) { SubsetResult.Ok(c) } else { SubsetResult.Err(SubsetBytes.InvalidIndex) }
       },
       (Branch(size, left, right), Var(offset)) => {
         if (offset < length(left)) { go(left, offset) } else { go(right, offset - length(left)) }
@@ -52,12 +52,12 @@ let at = (tree, index: Int32.Int) => {
 };
 
 let boundary = (tree, index) => {
-  if (if (index >= (0: Int32.Int)) { index <= length(tree) } else { false }) {
+  if (if (index >= 0) { index <= length(tree) } else { false }) {
     if (index >= length(tree)) { true } else { SubsetResult.isOk(at(tree, index)) }
   } else { false }
 };
 let slice = (tree, start, count) => {
-  if (if (if (count >= (0: Int32.Int)) { boundary(tree, start) } else { false }) { count <= length(tree) - start } else { false }) {
+  if (if (if (count >= 0) { boundary(tree, start) } else { false }) { count <= length(tree) - start } else { false }) {
     let finish = start + count;
     let rec collect = (node, base, acc) => {
       if (if (base >= finish) { true } else { base + length(node) <= start }) { acc } else {
@@ -70,6 +70,6 @@ let slice = (tree, start, count) => {
         }
       }
     };
-    SubsetResult.Ok(collect(tree, (0: Int32.Int), []))
+    SubsetResult.Ok(collect(tree, 0, []))
   } else { SubsetResult.Err(SubsetBytes.InvalidIndex) }
 };

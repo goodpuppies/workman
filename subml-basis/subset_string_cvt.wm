@@ -16,7 +16,7 @@ from "./subset_text.wm" import * as SubsetText;
 
 let repeat = (piece, count: Int32.Int) => {
   let rec go = (left, acc) => {
-    if (left <= (0: Int32.Int)) { SubsetString.concat(acc) } else { go(left - (1: Int32.Int), [piece, ..acc]) }
+    if (left <= 0) { SubsetString.concat(acc) } else { go(left - 1, [piece, ..acc]) }
   };
   go(count, [])
 };

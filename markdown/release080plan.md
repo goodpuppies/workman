@@ -98,6 +98,8 @@ remain the named forms. No new keywords.
 - WM → SML: a bare WM integer literal in a `Real64` context (`let x: Real64 = 1;`) must become
   an SML real constant. Decide whether the reader needs the inferred type or rejects this form.
 - Extend the overloading rules in `docs/spec.md` §5 and §9 with the operator table of step 4.
+  SubsetML has only `int` and `real` until step 6, and its rules already match the table for
+  them (`%` arrives as `Int.rem`), so the spec's table grows with the step 6 types.
 
 ## 6. SubsetML scope expansions
 

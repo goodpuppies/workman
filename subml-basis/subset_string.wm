@@ -26,11 +26,11 @@ let fromNative = (value) => {
     ([code, ..rest], Var(offset), Var(bytes)) => {
       match(SubsetChar.fromCode(code)) {
         SubsetResult.Err(error) => { SubsetResult.Err(NonByte(offset)) },
-        SubsetResult.Ok(c) => { go(rest, offset + (1: Int32.Int), [c, ..bytes]) }
+        SubsetResult.Ok(c) => { go(rest, offset + 1, [c, ..bytes]) }
       }
     }
   };
-  go(SubsetTextHost.codes(value), (0: Int32.Int), [])
+  go(SubsetTextHost.codes(value), 0, [])
 };
 
 let compare = (left, right) => {
@@ -83,11 +83,11 @@ let toNative = (bytes) => {
     ([c, ..rest], Var(offset), Var(codes)) => {
       match(SubsetChar.toCode(c)) {
         SubsetResult.Err(error) => { SubsetResult.Err(NonByte(offset)) },
-        SubsetResult.Ok(code) => { go(rest, offset + (1: Int32.Int), [code, ..codes]) }
+        SubsetResult.Ok(code) => { go(rest, offset + 1, [code, ..codes]) }
       }
     }
   };
-  go(bytes, (0: Int32.Int), [])
+  go(bytes, 0, [])
 };
 
 // Checked byte-string helpers share the extraction/reconstruction boundaries.

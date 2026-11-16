@@ -19,10 +19,10 @@ from "./subset_list.wm" import * as SubsetList;
 /* An exit code. Abstract in the SML Basis, but exit codes are worth being able to use: a status
    from system keeps its code when passed to exit, and a program can choose its own. */
 type Status = | Status<Int32.Int>;
-let success = Status((0: Int32.Int));
-let failure = Status((1: Int32.Int));
+let success = Status(0);
+let failure = Status(1);
 let isSuccess = match {
-  Status(code) => { code == (0: Int32.Int) }
+  Status(code) => { code == 0 }
 };
 
 let arguments = () => {

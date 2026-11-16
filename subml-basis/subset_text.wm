@@ -108,9 +108,7 @@ let trim = (value, predicate) => {
    UTF-16 unit determines cross-plane order; scalar order resolves equal leads. */
 let compare = (left, right) => {
   let firstUnit = (scalar: Int32.Int) => {
-    if (scalar < (65536: Int32.Int)) { scalar } else {
-      (55296: Int32.Int) + Int32.div(scalar - (65536: Int32.Int), (1024: Int32.Int))
-    }
+    if (scalar < 65536) { scalar } else { 55296 + Int32.div(scalar - 65536, 1024) }
   };
   let rec order = match {
     ([], []) => { SubsetOrder.Equal },

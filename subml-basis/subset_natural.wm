@@ -22,7 +22,7 @@ let split = (value: Int32.Int, base: Int32.Int) => { (Int32.div(value, base), In
 
 let divide = (value, base) => {
   if (SubsetBool.not(isValid(value))) { SubsetResult.Err(InvalidNatural) } else {
-    if (if (SubsetBool.not(isValid(base))) { true } else { base <= (0: Int32.Int) }) { SubsetResult.Err(InvalidDivisor) } else { SubsetResult.Ok(split(value, base)) }
+    if (if (SubsetBool.not(isValid(base))) { true } else { base <= 0 }) { SubsetResult.Err(InvalidDivisor) } else { SubsetResult.Ok(split(value, base)) }
   }
 };
 
@@ -30,15 +30,13 @@ let toString = (value) => {
   let rec digit = (index, entries) => {
     match(entries) {
       [] => { "" },
-      [first, ..rest] => {
-        if (index <= (0: Int32.Int)) { first } else { digit(index - (1: Int32.Int), rest) }
-      }
+      [first, ..rest] => { if (index <= 0) { first } else { digit(index - 1, rest) } }
     }
   };
   let rec go = (remaining, acc) => {
-    let (whole, residue) = split(remaining, (10: Int32.Int));
+    let (whole, residue) = split(remaining, 10);
     let text = digit(residue, ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]);
-    if (whole <= (0: Int32.Int)) { SubsetString.concat([text, ..acc]) } else { go(whole, [text, ..acc]) }
+    if (whole <= 0) { SubsetString.concat([text, ..acc]) } else { go(whole, [text, ..acc]) }
   };
   if (isValid(value)) { SubsetResult.Ok(go(value, [])) } else { SubsetResult.Err(InvalidNatural) }
 };

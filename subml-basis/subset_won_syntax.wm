@@ -63,29 +63,23 @@ let hex = (c) => {
   let rec go = (xs, n) => {
     match(xs) {
       [] => { None },
-      [x, ..rest] => {
-        if (c == x) { Some(n) } else { go(rest, n + (1: Int32.Int)) }
-      }
+      [x, ..rest] => { if (c == x) { Some(n) } else { go(rest, n + 1) } }
     }
   };
-  go(hexDigits, (0: Int32.Int))
+  go(hexDigits, 0)
 };
 
 let hexPair = (a, b) => {
   match(hex(a), hex(b)) {
-    (Some(hi), Some(lo)) => {
-      SubsetResult.toOption(SubsetChar.fromCode(hi * (16: Int32.Int) + lo))
-    },
+    (Some(hi), Some(lo)) => { SubsetResult.toOption(SubsetChar.fromCode(hi * 16 + lo)) },
     _ => { None }
   }
 };
 
 let hexByte = (c) => {
-  let code = SubsetResult.getOr(SubsetChar.toCode(c), (0: Int32.Int));
-  let rec split = (n, hi) => {
-    if (n < (16: Int32.Int)) { (hi, n) } else { split(n - (16: Int32.Int), hi + (1: Int32.Int)) }
-  };
-  let (hi, lo) = split(code, (0: Int32.Int));
+  let code = SubsetResult.getOr(SubsetChar.toCode(c), 0);
+  let rec split = (n, hi) => { if (n < 16) { (hi, n) } else { split(n - 16, hi + 1) } };
+  let (hi, lo) = split(code, 0);
   native([
     SubsetResult.getOr(SubsetList.at(hexDigits, hi), '0'),
     SubsetResult.getOr(SubsetList.at(hexDigits, lo), '0')

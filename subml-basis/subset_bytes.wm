@@ -27,11 +27,11 @@ let validate = (bytes) => {
     ([c, ..rest], Var(index)) => {
       match(SubsetChar.toCode(c)) {
         SubsetResult.Err(error) => { SubsetResult.Err(NonByte(index)) },
-        SubsetResult.Ok(code) => { go(rest, index + (1: Int32.Int)) }
+        SubsetResult.Ok(code) => { go(rest, index + 1) }
       }
     }
   };
-  go(bytes, (0: Int32.Int))
+  go(bytes, 0)
 };
 
 // Validate complete operands, then compare unsigned byte codes lexicographically.
@@ -43,11 +43,11 @@ let compareWith = (left, right, nonByte) => {
       ([c, ..rest], Var(offset), Var(acc)) => {
         match(SubsetChar.toCode(c)) {
           SubsetResult.Err(error) => { SubsetResult.Err(nonByte(offset)) },
-          SubsetResult.Ok(code) => { go(rest, offset + (1: Int32.Int), [code, ..acc]) }
+          SubsetResult.Ok(code) => { go(rest, offset + 1, [code, ..acc]) }
         }
       }
     };
-    go(bytes, (0: Int32.Int), [])
+    go(bytes, 0, [])
   };
   let rec order = match {
     ([], []) => { SubsetOrder.Equal },
@@ -65,9 +65,7 @@ let compareWith = (left, right, nonByte) => {
 
 let compare = (left, right) => { compareWith(left, right, (offset) => { NonByte(offset) }) };
 
-let length = (bytes) => {
-  SubsetList.foldLeft(bytes, (0: Int32.Int), (c, n) => { n + (1: Int32.Int) })
-};
+let length = (bytes) => { SubsetList.foldLeft(bytes, 0, (c, n) => { n + 1 }) };
 let trim = (bytes, predicate) => {
   SubsetList.reverse(SubsetList.dropWhile(SubsetList.reverse(SubsetList.dropWhile(bytes, predicate)), predicate))
 };
@@ -104,7 +102,7 @@ let isSubstring = (bytes, needle) => {
 };
 
 let reader = (bytes) => {
-  SubsetResult.map(validate(bytes), (valid) => { Reader(valid, (0: Int32.Int)) })
+  SubsetResult.map(validate(bytes), (valid) => { Reader(valid, 0) })
 };
 let position = match {
   Reader(bytes, offset) => { offset }
@@ -115,20 +113,20 @@ let peek = match {
 };
 let next = match {
   Reader([], offset) => { None },
-  Reader([c, ..rest], offset) => { Some(c, Reader(rest, offset + (1: Int32.Int))) }
+  Reader([c, ..rest], offset) => { Some(c, Reader(rest, offset + 1)) }
 };
 
 /* Bounds derived from the actual list avoid narrowing counts to scalar-code ranges.
    Integer indices must lie within the actual byte sequence. */
 let splitAt = (bytes, index: Int32.Int) => {
-  if (if (index >= (0: Int32.Int)) { index <= length(bytes) } else { false }) {
+  if (if (index >= 0) { index <= length(bytes) } else { false }) {
     let rec go = (rest, remaining, acc) => {
-      if (remaining <= (0: Int32.Int)) {
-        if (remaining >= (0: Int32.Int)) { SubsetResult.Ok(SubsetList.reverse(acc), rest) } else { SubsetResult.Err(InvalidIndex) }
+      if (remaining <= 0) {
+        if (remaining >= 0) { SubsetResult.Ok(SubsetList.reverse(acc), rest) } else { SubsetResult.Err(InvalidIndex) }
       } else {
         match(rest) {
           [] => { SubsetResult.Err(OutOfBounds) },
-          [c, ..tail] => { go(tail, remaining - (1: Int32.Int), [c, ..acc]) }
+          [c, ..tail] => { go(tail, remaining - 1, [c, ..acc]) }
         }
       }
     };

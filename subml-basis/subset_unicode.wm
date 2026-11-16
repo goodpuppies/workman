@@ -31,18 +31,16 @@ type Error = | Error<Reason, Int32.Int>;
 let split = (value: Int32.Int, base: Int32.Int) => { (Int32.div(value, base), Int32.mod(value, base)) };
 
 let isScalar = (value: Int32.Int) => {
-  if (if (if (value >= (0: Int32.Int)) { value <= (1114111: Int32.Int) } else { false }) {
-    SubsetBool.not(if (value >= (55296: Int32.Int)) { value <= (57343: Int32.Int) } else { false })
+  if (if (if (value >= 0) { value <= 1114111 } else { false }) {
+    SubsetBool.not(if (value >= 55296) { value <= 57343 } else { false })
   } else { false }) {
-    let (whole, residue) = split(value, (1: Int32.Int));
-    residue <= (0: Int32.Int)
+    let (whole, residue) = split(value, 1);
+    residue <= 0
   } else { false }
 };
 
 let scalarError = (value) => {
-  if (if (value >= (55296: Int32.Int)) { value <= (57343: Int32.Int) } else { false }) { Surrogate } else {
-    if (value > (1114111: Int32.Int)) { OutOfRange } else { InvalidScalar }
-  }
+  if (if (value >= 55296) { value <= 57343 } else { false }) { Surrogate } else { if (value > 1114111) { OutOfRange } else { InvalidScalar } }
 };
 
 let encodeCodes = (codes, index) => {

@@ -278,7 +278,7 @@ let spellings = [
 
 let escapeByte = (c) => {
   match(SubsetList.find(spellings, (byte, spelling) => { byte == c })) {
-    None => { SubsetResult.Err(NonByte((0: Int32.Int))) },
+    None => { SubsetResult.Err(NonByte(0)) },
     Some(entry) => {
       let (byte, spelling) = entry;
       SubsetResult.Ok(spelling)
@@ -294,11 +294,11 @@ let escapeBytes = (bytes) => {
     ([c, ..rest], Var(offset), Var(parts)) => {
       match(escapeByte(c)) {
         SubsetResult.Err(error) => { SubsetResult.Err(NonByte(offset)) },
-        SubsetResult.Ok(spelling) => { go(rest, offset + (1: Int32.Int), [spelling, ..parts]) }
+        SubsetResult.Ok(spelling) => { go(rest, offset + 1, [spelling, ..parts]) }
       }
     }
   };
-  go(bytes, (0: Int32.Int), [])
+  go(bytes, 0, [])
 };
 
 let escapeString = (value) => {

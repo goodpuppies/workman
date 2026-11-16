@@ -18,10 +18,10 @@ type Error = InvalidInteger | Overflow | StringError<SubsetString.Error>;
 
 // Accumulate negatively so the minimum integer never needs to be negated.
 let digits = (bytes, negative) => {
-  let last = if (negative) { (8: Int32.Int) } else { (7: Int32.Int) };
+  let last = if (negative) { 8 } else { 7 };
   let finish = (rest, acc, seen) => {
     if (seen) {
-      SubsetResult.Ok(if (negative) { acc } else { (0: Int32.Int) - acc }, rest)
+      SubsetResult.Ok(if (negative) { acc } else { 0 - acc }, rest)
     } else { SubsetResult.Err(InvalidInteger) }
   };
   let rec go = (rest, acc: Int32.Int, seen) => {
@@ -32,17 +32,15 @@ let digits = (bytes, negative) => {
           match(SubsetChar.toCode(c)) {
             SubsetResult.Err(error) => { SubsetResult.Err(InvalidInteger) },
             SubsetResult.Ok(code) => {
-              let digit = code - (48: Int32.Int);
-              if (if (acc < (-214748364: Int32.Int)) { true } else {
-                if (acc == (-214748364: Int32.Int)) { digit > last } else { false }
-              }) { SubsetResult.Err(Overflow) } else { go(tail, acc * (10: Int32.Int) - digit, true) }
+              let digit = code - 48;
+              if (if (acc < -214748364) { true } else { if (acc == -214748364) { digit > last } else { false } }) { SubsetResult.Err(Overflow) } else { go(tail, acc * 10 - digit, true) }
             }
           }
         } else { finish(rest, acc, seen) }
       }
     }
   };
-  go(bytes, (0: Int32.Int), false)
+  go(bytes, 0, false)
 };
 
 let signed = (bytes) => {

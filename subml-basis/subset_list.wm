@@ -95,9 +95,7 @@ let rec all = (xs, predicate) => {
   }
 };
 
-let length = (xs) => {
-  foldLeft(xs, (0: Int32.Int), (x, count) => { count + (1: Int32.Int) })
-};
+let length = (xs) => { foldLeft(xs, 0, (x, count) => { count + 1 }) };
 let rec dropWhile = (xs, predicate) => {
   match(xs) {
     [] => { [] },
@@ -106,21 +104,21 @@ let rec dropWhile = (xs, predicate) => {
 };
 
 // Signed integer counts are valid exactly when nonnegative.
-let validCount = (count: Int32.Int) => { count >= (0: Int32.Int) };
+let validCount = (count: Int32.Int) => { count >= 0 };
 
 let repeat = (value, count) => {
   let rec build = (remaining, acc) => {
-    if (remaining <= (0: Int32.Int)) { acc } else { build(remaining - (1: Int32.Int), [value, ..acc]) }
+    if (remaining <= 0) { acc } else { build(remaining - 1, [value, ..acc]) }
   };
   if (validCount(count)) { SubsetResult.Ok(build(count, [])) } else { SubsetResult.Err(InvalidCount) }
 };
 
 let splitAt = (xs, index) => {
   let rec go = (rest, remaining, acc) => {
-    if (remaining <= (0: Int32.Int)) { SubsetResult.Ok(reverse(acc), rest) } else {
+    if (remaining <= 0) { SubsetResult.Ok(reverse(acc), rest) } else {
       match(rest) {
         [] => { SubsetResult.Err(OutOfBounds) },
-        [x, ..tail] => { go(tail, remaining - (1: Int32.Int), [x, ..acc]) }
+        [x, ..tail] => { go(tail, remaining - 1, [x, ..acc]) }
       }
     }
   };
@@ -145,9 +143,9 @@ let drop = (xs, count) => {
 };
 let tabulate = (count, f) => {
   let rec go = (index, acc) => {
-    if (index >= count) { SubsetResult.Ok(reverse(acc)) } else { go(index + (1: Int32.Int), [f(index), ..acc]) }
+    if (index >= count) { SubsetResult.Ok(reverse(acc)) } else { go(index + 1, [f(index), ..acc]) }
   };
-  if (validCount(count)) { go((0: Int32.Int), []) } else { SubsetResult.Err(InvalidCount) }
+  if (validCount(count)) { go(0, []) } else { SubsetResult.Err(InvalidCount) }
 };
 
 let head = match {
