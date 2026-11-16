@@ -24,6 +24,7 @@ import {
   constrainAt,
   type EvidenceOrigin,
   fnSource,
+  sourceAtPath,
   sourceForExpr,
   sourceForTypedExpr,
   tupleSource,
@@ -110,8 +111,12 @@ export function inferApplication(invocation: InvocationPlan, context: InferConte
       const actual = isJsImportCallee(calleeExpr, context)
         ? jsImportActualArg(expectedArgs[index]!, argumentType, typeEnv)
         : argumentType;
-      const parameterSource = sourceForTypedExpr(calleeExpr, callee, provenance).fnParams?.[0];
-      const slotSource = parameterSource?.tupleItems?.[index] ?? parameterSource;
+      const parameterSource = sourceAtPath(
+        sourceForTypedExpr(calleeExpr, callee, provenance),
+        [{ kind: "fn-param", index: 0 }],
+      );
+      const slotSource = sourceAtPath(parameterSource, [{ kind: "tuple-item", index }]) ??
+        parameterSource;
       try {
         constrainAt(expectedArgs[index]!, actual, argument, undefined, [], provenance, {
           message: "call argument",
@@ -170,7 +175,7 @@ export function inferApplication(invocation: InvocationPlan, context: InferConte
           {
             primarySource: "right",
             sources: {
-              left: calleeSource.fnParams?.[0],
+              left: sourceAtPath(calleeSource, [{ kind: "fn-param", index: 0 }]),
               right: callArgSource(args, partial, provenance),
             },
             premise: {
@@ -218,7 +223,7 @@ export function inferApplication(invocation: InvocationPlan, context: InferConte
     const argumentSources = {
       primarySource: "right" as const,
       sources: {
-        left: calleeSource.fnParams?.[0],
+        left: sourceAtPath(calleeSource, [{ kind: "fn-param", index: 0 }]),
         right: callArgSource(args, argTypes, provenance),
       },
     };
@@ -281,7 +286,7 @@ export function inferApplication(invocation: InvocationPlan, context: InferConte
           rightRole: "callee result",
         },
         sources: {
-          right: calleeSource.fnResult ?? calleeSource,
+          right: sourceAtPath(calleeSource, [{ kind: "fn-result" }]) ?? calleeSource,
         },
       },
     );
@@ -689,6 +694,7 @@ function constrainPipe(
       callDepth: 0,
     },
     {
+      primarySource: argExprs.length > 1 ? "right" : undefined,
       premise: {
         code: "type.pipe-input-mismatch",
         rule: "InferPipe.StepInput",
@@ -698,7 +704,14 @@ function constrainPipe(
         rightRole: "pipe function",
       },
       sources: {
-        left: sourceForExpr(callee, callee.kind === "Var" ? callee.name : "callee"),
+        left: argExprs.length > 1
+          ? sourceForTypedExpr(
+            callee,
+            calleeType,
+            provenance,
+            callee.kind === "Var" ? callee.name : "callee",
+          )
+          : sourceForExpr(callee, callee.kind === "Var" ? callee.name : "callee"),
         right: fnSource(
           [pipeArgSource(argExprs, argTypes, provenance)],
           sourceForExpr(expr, "pipe result"),

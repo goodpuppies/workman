@@ -117,6 +117,199 @@ Deno.test("call mismatch produces an auditable diagnostic artifact", async () =>
   );
 });
 
+Deno.test("traversal callback collisions retain the library constraint and call-site head", async () => {
+  const source = `record Pair = { first: Int32, second: Int32 };
+let parsePair = (s: String) => {
+  Ok(Pair(1, 2)) :> Result.debug
+};
+let bad = List.traverse(["1-2"], parsePair);`;
+  const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+  assertEquals(error.diagnostic.code, "type.call-argument-mismatch");
+  const collision = error.diagnostic.support.entries.find((entry) => entry.kind === "collision");
+  if (!collision || collision.kind !== "collision") throw new Error("missing collision");
+  const observed = error.diagnostic.support.edges
+    .filter((edge) => edge.to === collision.id && edge.role === "observed")
+    .map((edge) => error.diagnostic.support.entries.find((entry) => entry.id === edge.from));
+  const types = new Map(error.diagnostic.support.types.map((type) => [type.id, type.rendered]));
+  const expected = observed.find((entry) =>
+    entry?.kind === "claim" && entry.claim.kind === "has-type" &&
+    types.get(entry.claim.type)?.startsWith("Result<")
+  );
+  if (!expected || expected.kind !== "claim" || expected.origin.kind !== "source") {
+    throw new Error("missing source-aware Result expectation");
+  }
+  assertEquals(expected.origin.filePath, "subml-basis/subset_list.wm");
+  const primary = error.diagnostic.primary;
+  if (primary.kind !== "source") throw new Error("missing call-site head");
+  assertEquals(primary.span.start, source.lastIndexOf("parsePair"));
+  const rendered = formatDiagnostic(error.diagnostic, "app/day2.wm", source);
+  assertStringIncludes(rendered, "type error: parsePair function type can't be both:");
+  assertStringIncludes(rendered, "-> Result<T, U>  List.traverse callback");
+  assertStringIncludes(rendered, "String -> Pair");
+  assertEquals(rendered.includes("collision in callback"), false);
+  const origins = rendered.split("-- Origins")[1].split("-- Provenance")[0];
+  assertStringIncludes(origins, "Result<");
+  assertStringIncludes(origins, "SubsetResult.Err(error)");
+  assertStringIncludes(origins, "Result.debug");
+  assertEquals(origins.includes("Ok(value) => { value }"), false);
+  assertEquals(origins.includes("List.traverse"), false);
+  assertStringIncludes(rendered, "subml-basis/subset_list.wm:");
+  assertStringIncludes(rendered, "app/day2.wm:3:");
+  assertEquals(origins.includes("std/result.wm:"), false);
+  const detailed = formatDiagnosticInspection(error.diagnostic, "app/day2.wm", source);
+  assertStringIncludes(detailed, "type error: parsePair function type");
+  assertStringIncludes(detailed, "-> Result<T, U>  List.traverse callback");
+  assertStringIncludes(detailed, "String -> Pair");
+  assertEquals(detailed.includes("collision in callback"), false);
+  assertStringIncludes(detailed, "-- Origins");
+  const document = formatDiagnosticDocument(error.diagnostic, "app/day2.wm", source);
+  const rows = document.lines.filter((row) =>
+    row.spans.some((item) =>
+      item.role === "secondary" && ["List.traverse callback", "parsePair"].includes(item.text)
+    )
+  );
+  assertEquals(rows.length, 2);
+  const text = rows.map((row) => row.spans.map((item) => item.text).join(""));
+  assertEquals(text[0].indexOf("->"), text[1].indexOf("->"));
+  assertEquals(text[0].indexOf("List.traverse callback"), text[1].indexOf("parsePair"));
+  assertEquals(text[0].trimEnd().endsWith("List.traverse callback"), true);
+  assertEquals(text[1].trimEnd().endsWith("parsePair"), true);
+});
+
+Deno.test("generic forwarding calls keep the caller's origin beside concrete library constraints", async () => {
+  const source = `record Pair = { first: Int32, second: Int32 };
+let parsePair = (s: String) => Result.debug(Ok(Pair(1, 2)));
+let bad = List.traverse(["1-2"], parsePair);`;
+  const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+  const rendered = formatDiagnostic(error.diagnostic, "app/direct.wm", source);
+  const origins = rendered.split("-- Origins")[1];
+  assertStringIncludes(origins, "Result.debug(Ok(Pair(1, 2)))");
+  assertStringIncludes(origins, "app/direct.wm:2:");
+  assertStringIncludes(origins, "SubsetResult.Err(error)");
+  assertEquals(origins.includes("std/result.wm:"), false);
+});
+
+Deno.test("pipe argument collisions retain both origins and highlight the explicit argument", async () => {
+  const source = `type ParseError = | ExpectedPair;
+let bad = Int32.fromString("12") :> Result.mapErr(ExpectedPair);`;
+  const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+  assertEquals(error.diagnostic.code, "type.pipe-input-mismatch");
+  const primary = error.diagnostic.primary;
+  if (primary.kind !== "source") throw new Error("missing argument location");
+  assertEquals(primary.span.start, source.lastIndexOf("ExpectedPair"));
+  assertEquals(primary.span.end, source.lastIndexOf("ExpectedPair") + "ExpectedPair".length);
+  const rendered = formatDiagnostic(error.diagnostic, "app/mapper.wm", source);
+  assertStringIncludes(rendered, "type error: Result.mapErr argument 1 can't be both:");
+  assertStringIncludes(rendered, "ParseError");
+  assertStringIncludes(rendered, "-> T");
+  const origins = rendered.split("-- Origins")[1];
+  assertStringIncludes(origins, "Err(f(error))");
+  assertStringIncludes(origins, "subml-basis/subset_result.wm:");
+  assertStringIncludes(origins, "app/mapper.wm:2:");
+  const detailed = formatDiagnosticInspection(error.diagnostic, "app/mapper.wm", source);
+  assertEquals(detailed.includes("no source path was retained"), false);
+  assertEquals(rendered.includes("expected:"), false);
+  assertEquals(rendered.includes("actual:"), false);
+});
+
+Deno.test("unwrapped Result arms keep their full excerpt and a tentative hint", async () => {
+  for (const piped of [true, false]) {
+    const source = `type Problem = | Bad;
+${
+      piped
+        ? "let bad = Ok(1) :> Result.mapErr((_) => Bad) :> match {"
+        : "let input: Result<Int32, Problem> = Err(Bad);\nlet bad = match(input) {"
+    }
+  Ok(n) => Ok(n),
+  Err(e) => e
+};`;
+    const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+    const rendered = formatDiagnostic(error.diagnostic, "unwrap.wm", source);
+    assertStringIncludes(rendered, "Err(e) => e");
+    assertEquals(rendered.includes("Err(e) => {..}"), false);
+    const hint = "Hint: Did you accidentally unwrap?";
+    assertEquals(rendered.split(hint).length - 1, 1);
+    assertEquals(rendered.includes("Err(e) => Err(e)"), false);
+    const payloadClaim = error.diagnostic.support.entries.find((entry) =>
+      entry.kind === "claim" && entry.claim.kind === "has-type" &&
+      entry.claim.subject === "returned constructor payload"
+    );
+    if (!payloadClaim || payloadClaim.kind !== "claim" || payloadClaim.claim.kind !== "has-type") {
+      throw new Error("missing payload result evidence");
+    }
+    const typeId = payloadClaim.claim.type;
+    const type = error.diagnostic.support.types.find((type) => type.id === typeId);
+    assertEquals(type?.rendered, "Problem");
+    const detailed = formatDiagnosticInspection(error.diagnostic, "unwrap.wm", source);
+    assertStringIncludes(detailed, hint);
+    const document = formatDiagnosticDocument(error.diagnostic, "unwrap.wm", source);
+    assertEquals(
+      document.lines.flatMap((row) => row.spans)
+        .some((item) => item.role === "hint" && item.text.includes(hint)),
+      true,
+    );
+  }
+});
+
+Deno.test("unwrap hints cover constructor payloads beyond errors and either arm order", async () => {
+  const cases = [
+    {
+      prefix: "",
+      input: "Some(one)",
+      arms: ["None => None", "Some(x) => x"],
+      payload: "Int32.Int",
+    },
+    {
+      prefix: "",
+      input: "Ok(one)",
+      arms: ["Err(e) => Err(e)", "Ok(x) => x"],
+      payload: "Int32.Int",
+    },
+    {
+      prefix: "type Box<a> = Empty | Boxed<a>;",
+      input: "Boxed(one)",
+      arms: ["Empty => Empty", "Boxed(x) => x"],
+      payload: "Int32.Int",
+    },
+    { prefix: "", input: "[one]", arms: ["[] => []", "[x, ..rest] => x"], payload: "Int32.Int" },
+  ];
+  for (const item of cases) {
+    for (const reverse of [false, true]) {
+      const arms = reverse ? [...item.arms].reverse() : item.arms;
+      const source = `${item.prefix}\nlet one: Int32 = 1;\nlet bad = ${item.input} :> match {\n${
+        arms.join(",\n")
+      }\n};`;
+      const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+      const rendered = formatDiagnostic(error.diagnostic, "payload.wm", source);
+      assertStringIncludes(rendered, "Hint: Did you accidentally unwrap?");
+      const claim = error.diagnostic.support.entries.find((entry) =>
+        entry.kind === "claim" && entry.claim.kind === "has-type" &&
+        entry.claim.subject === "returned constructor payload"
+      );
+      if (!claim || claim.kind !== "claim" || claim.claim.kind !== "has-type") {
+        throw new Error("missing payload type");
+      }
+      const typeId = claim.claim.type;
+      assertEquals(
+        error.diagnostic.support.types.find((type) => type.id === typeId)?.rendered,
+        item.payload,
+      );
+    }
+  }
+});
+
+Deno.test("intentional payload returns do not receive an accidental unwrap hint", async () => {
+  const source = `let input: Result<Int32, Int32> = Err(1);
+let value = match(input) {
+  Ok(n) => n,
+  Err(e) => e
+};
+let bad = String.length(value);`;
+  const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+  const rendered = formatDiagnosticInspection(error.diagnostic, "intentional.wm", source);
+  assertEquals(rendered.includes("Did you accidentally unwrap"), false);
+});
+
 Deno.test("parameter annotation mismatch uses the authored collision renderer", async () => {
   const source = `let consumeText = (thing) => { thing == "text" };
 let useKind = (kind: Real64.Real) => { consumeText(kind) };`;
@@ -175,7 +368,11 @@ let bad = run(.{ x=0, y=0 }, update);`;
 
   const rendered = formatDiagnostic(error.diagnostic, "case.wm", source);
   assertStringIncludes(rendered, "Error: TYPE CHECKER[type.call-argument-mismatch]");
-  assertStringIncludes(rendered, "type error: update can't be both:\n  - Void\n  - Coord");
+  assertStringIncludes(rendered, "type error: update function type can't be both:");
+  assertStringIncludes(rendered, "-> T");
+  assertStringIncludes(rendered, "run callback");
+  assertStringIncludes(rendered, "-> Step<Void>  update");
+  assertEquals(rendered.includes("collision in callback"), false);
   assertStringIncludes(rendered, "case.wm:9:");
   assertEquals(rendered.includes(" ~ "), false);
   assertStringIncludes(rendered, "Coord");
@@ -198,9 +395,14 @@ let bad = run(.{ x=0, y=0 }, update);`;
   const typed = document.lines.flatMap((line) => line.spans)
     .filter((span) => span.role === "type")
     .map((span) => span.text);
-  assertEquals(typed, ["Void", "Coord", "Void", "Coord"]);
+  assertEquals(typed, [
+    "(Int32.Int, Coord) -> T",
+    " (Int32.Int, Void) -> Step<Void>",
+    "Void",
+    "Coord",
+  ]);
   const hint = document.lines.flatMap((line) => line.spans)
-    .find((span) => span.text.startsWith("- use wm err"));
+    .find((span) => span.text.startsWith("Hint: use wm err"));
   assertEquals(hint?.role, "hint");
 
   const inspection = formatDiagnosticInspection(error.diagnostic, "case.wm", source);
@@ -370,9 +572,9 @@ Deno.test("pipe mismatch uses the enhanced authored renderer", async () => {
   assertStringIncludes(rendered, "Error: TYPE CHECKER[type.pipe-input-mismatch]");
   assertStringIncludes(rendered, "Main.wm");
   assertStringIncludes(rendered, "type error: pipe sides can't be both:");
-  assertStringIncludes(rendered, "let bad = {..}");
+  assertStringIncludes(rendered, 'let bad = "x"');
   assertStringIncludes(rendered, ": String");
-  assertStringIncludes(rendered, 'let bad = "x" :> {..}');
+  assertStringIncludes(rendered, 'let bad = "x" :> render');
   assertStringIncludes(rendered, ": Real64.Real");
   assertStringIncludes(rendered, "-- Origins");
 });
@@ -441,7 +643,7 @@ let bad = input
   );
 
   const rendered = formatDiagnostic(error.diagnostic, "test.wm", source);
-  assertStringIncludes(rendered, "type error: pipe sides can't be both:");
+  assertStringIncludes(rendered, "type error: Result.andThen argument 1 can't be both:");
   assertStringIncludes(rendered, ": Void");
   assertStringIncludes(rendered, ": Js.Error");
   assertStringIncludes(rendered, "6|     e;");
@@ -632,8 +834,10 @@ let bad = match(true) {
   const rendered = formatDiagnostic(error.diagnostic, "test.wm", source);
   assertStringIncludes(rendered, "Error: TYPE CHECKER[type.match-arm-results-disagree]");
   assertStringIncludes(rendered, "type error: match arms can't be both:");
-  assertStringIncludes(rendered, "4|   true => {..} : Result<T, String>");
-  assertStringIncludes(rendered, "5|   false => {..}: Result<T, AppError>");
+  assertStringIncludes(rendered, '4|   true => { Result|Err("js")| }');
+  assertStringIncludes(rendered, '5|   false => { Err(renderErr("app")) }');
+  assertStringIncludes(rendered, ": Result<T, String>");
+  assertStringIncludes(rendered, ": Result<T, AppError>");
   assertStringIncludes(rendered, "expression: String");
   assertStringIncludes(rendered, "RenderError call result: AppError");
   assertStringIncludes(rendered, "-- Origins ");
@@ -690,8 +894,10 @@ let update = match(event, model) => {
 
   const rendered = formatDiagnostic(error.diagnostic, "case.wm", source);
   assertStringIncludes(rendered, "type error: match arms can't be both:");
-  assertStringIncludes(rendered, "10|   (3, _) => {..}: Step<Void>");
-  assertStringIncludes(rendered, "12|   _ => {..}     : Step<Coord>");
+  assertStringIncludes(rendered, "10|   (3, _) => { Continue(coordUpdate(model)) }");
+  assertStringIncludes(rendered, "12|   _ => { Continue(.{..model, x=model.x}) }");
+  assertStringIncludes(rendered, ": Step<Void>");
+  assertStringIncludes(rendered, ": Step<Coord>");
   assertEquals(rendered.includes("11|   (4, _) => {..}"), false);
   assertStringIncludes(rendered, "^ ending semicolon: Void");
   assertStringIncludes(rendered, "record literal: Coord");
@@ -703,8 +909,8 @@ let update = match(event, model) => {
   assertEquals(types, ["Step<Void>", "Step<Coord>", "Void", "Coord"]);
 
   const inspection = formatDiagnosticInspection(error.diagnostic, "case.wm", source);
-  assertStringIncludes(inspection, "10|   (3, _) => {..}: Step<Void>");
-  assertStringIncludes(inspection, "12|   _ => {..}     : Step<Coord>");
+  assertStringIncludes(inspection, "10|   (3, _) => { Continue(coordUpdate(model)) }");
+  assertStringIncludes(inspection, "12|   _ => { Continue(.{..model, x=model.x}) }");
   assertStringIncludes(inspection, "-- Provenance ");
   assertStringIncludes(inspection, "* low-level diagnostic:");
 });
@@ -807,7 +1013,10 @@ Deno.test("unary operand mismatch records a unary premise", async () => {
   );
 
   assertEquals(error.diagnostic.failure.frame.rule, "InferUnary.NumericOperand");
-  assertEquals(error.diagnostic.failure.premise.role, "unary - operand has a supported numeric type");
+  assertEquals(
+    error.diagnostic.failure.premise.role,
+    "unary - operand has a supported numeric type",
+  );
   assertEquals(constraintRoles(error.diagnostic), ["required type", "operand"]);
 });
 

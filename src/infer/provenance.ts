@@ -12,6 +12,7 @@ import type { AstNode, SourceSpan } from "../source.ts";
 import { type DiffPath, type DiffPathSegment, TypeMismatchError } from "../type_diff.ts";
 import { JsBoundaryError, prune, type Scheme, show, type Ty, type UnifyBind } from "../types.ts";
 import { isDecl, resultExpr } from "./ast_utils.ts";
+import { pipeInvocationPlan } from "../pipe_elaboration.ts";
 import { constrain } from "./shared.ts";
 
 export type TypeProvenance = Map<number, TypeProvenanceEntry>;
@@ -57,6 +58,13 @@ export type TypeSource = {
   derivedFrom?: TypeSource[];
   related?: TypeSource[];
   document?: { filePath: string; source: string };
+  /** Definition shape paired with this use's fresh type variables, rather than shared generics. */
+  instantiatedFrom?: TypeSource;
+  payloadReturn?: {
+    containerId: number;
+    payload: ConstraintOrigin;
+    wrapped?: ConstraintOrigin;
+  };
 };
 
 const expressionSources = new WeakMap<Expr, TypeSource>();
@@ -117,6 +125,8 @@ function mapSourceOrigins(
   seen = new WeakMap<TypeSource, TypeSource>(),
   document = source.document,
 ): TypeSource {
+  // A re-export's document must not replace the document of its original definition.
+  document = source.document ?? document;
   const previous = seen.get(source);
   if (previous) return previous;
   const mapped: TypeSource = {};
@@ -132,6 +142,14 @@ function mapSourceOrigins(
     namedArgs: source.namedArgs?.map((item) => mapSourceOrigins(item, map, seen, document)),
     derivedFrom: source.derivedFrom?.map((item) => mapSourceOrigins(item, map, seen, document)),
     related: source.related?.map((item) => mapSourceOrigins(item, map, seen, document)),
+    instantiatedFrom: source.instantiatedFrom
+      ? mapSourceOrigins(source.instantiatedFrom, map, seen, document)
+      : undefined,
+    payloadReturn: source.payloadReturn && {
+      ...source.payloadReturn,
+      payload: map(source.payloadReturn.payload),
+      wrapped: source.payloadReturn.wrapped ? map(source.payloadReturn.wrapped) : undefined,
+    },
   });
   return mapped;
 }
@@ -307,19 +325,45 @@ function constraintFailure(
     ? undefined
     : provenance?.get(error.boundVariableId)?.commitment;
   const attempted = error.attemptedSide === "left" ? error.left : error.right;
-  const attemptedOrigin = error.attemptedSide
+  // Only reorder origins when a recorded commitment also reorders the observed types below.
+  // An instantiated variable can have an instance without having local provenance.
+  const attemptedOrigin = commitment && error.attemptedSide
     ? sourceAt(options.sources?.[error.attemptedSide], error.path)
     : undefined;
   const observedLeft = writer.snapshotType(commitment ? attempted : error.left);
   const observedRight = writer.snapshotType(commitment?.type ?? error.right);
   const useSourcePathOrigins = options.primarySource !== undefined;
-  const leftOrigin = attemptedOrigin ??
+  let leftOrigin = attemptedOrigin ??
     (useSourcePathOrigins ? sourceAt(options.sources?.left, error.path) : undefined);
-  const rightOrigin = commitmentOriginWithDownstream(commitment, provenance) ??
+  let rightOrigin = commitmentOriginWithDownstream(commitment, provenance) ??
     (useSourcePathOrigins ? sourceAt(options.sources?.right, error.path) : undefined);
-  const primaryOrigin = options.primarySource && !isInheritedCallsitePrimary(primary, reason)
+  let primaryOrigin = options.primarySource && !isInheritedCallsitePrimary(primary, reason)
     ? primaryOriginForSource(options.sources?.[options.primarySource], error.path)
     : undefined;
+  const payloadSource = [
+    commitment?.source,
+    commitment && provenance ? payloadReturnSource(commitment.type, provenance) : undefined,
+    options.sources?.left,
+    options.sources?.right,
+  ]
+    .find((source) => source?.payloadReturn?.wrapped);
+  const payloadReturn = payloadSource?.payloadReturn;
+  if (payloadReturn?.wrapped) {
+    const leftType = prune(commitment ? attempted : error.left);
+    const rightType = prune(commitment?.type ?? error.right);
+    const leftWrapped = leftType.tag === "named" && leftType.id === payloadReturn.containerId;
+    const rightWrapped = rightType.tag === "named" && rightType.id === payloadReturn.containerId;
+    if (leftWrapped !== rightWrapped) {
+      const payload = {
+        ...originWithDocument(payloadReturn.payload, payloadSource?.document),
+        note: "Did you accidentally unwrap?",
+      };
+      const wrapped = originWithDocument(payloadReturn.wrapped, payloadSource?.document);
+      leftOrigin = leftWrapped ? wrapped : payload;
+      rightOrigin = rightWrapped ? wrapped : payload;
+      primaryOrigin = payload;
+    }
+  }
   const leftClaim = addObservedOriginClaim(writer, leftOrigin, observedLeft);
   const rightClaim = addObservedOriginClaim(writer, rightOrigin, observedRight);
   writer.add({
@@ -681,6 +725,9 @@ export function rememberVariableSource(
     type,
     provenance,
     derivedFrom: definition ? [definition] : undefined,
+    instantiatedFrom: definition,
+    // The variable occurrence belongs to the caller; only definition children retain its unit.
+    document: undefined,
   });
 }
 
@@ -732,9 +779,30 @@ export function rememberExpressionSource(
     }
     case "Call": {
       const callee = expressionSources.get(expr.callee);
+      const result = concreteCallResultSource(callee);
       expressionSources.set(expr, {
         ...base,
-        derivedFrom: callee?.fnResult ? [callee.fnResult] : undefined,
+        derivedFrom: result ? [result] : undefined,
+      });
+      return;
+    }
+    case "Pipe": {
+      const callee = expressionSources.get(pipeInvocationPlan(expr).callee);
+      const result = concreteCallResultSource(callee);
+      expressionSources.set(expr, {
+        ...base,
+        origin: sourceForExpr(expr.right, "pipe stage result").origin,
+        derivedFrom: result ? [result] : undefined,
+      });
+      return;
+    }
+    case "Match": {
+      expressionSources.set(expr, {
+        ...base,
+        derivedFrom: expr.arms.flatMap((arm) => {
+          const result = expressionSources.get(arm.body);
+          return result ? [result] : [];
+        }),
       });
       return;
     }
@@ -782,6 +850,14 @@ function expressionSourceMessage(expr: Expr): string {
     default:
       return "expression";
   }
+}
+
+function concreteCallResultSource(callee: TypeSource | undefined): TypeSource | undefined {
+  const definitionResult = callee?.fnResult;
+  // A generic result variable forwards the caller's type; its body does not establish that
+  // concrete type. Keep the call as the origin instead of descending into a generic value.
+  if (definitionResult?.type && prune(definitionResult.type).tag === "var") return undefined;
+  return sourceAtPath(callee, [{ kind: "fn-result" }]);
 }
 
 export function fnSource(params: TypeSource[], result?: TypeSource): TypeSource {
@@ -854,7 +930,10 @@ function sourceAt(source: TypeSource | undefined, path: DiffPath): ConstraintOri
   return origin && note ? { ...origin, note } : origin;
 }
 
-function sourceAtPath(source: TypeSource | undefined, path: DiffPath): TypeSource | undefined {
+export function sourceAtPath(
+  source: TypeSource | undefined,
+  path: DiffPath,
+): TypeSource | undefined {
   let current = source;
   for (const segment of path) {
     if (!current) break;
@@ -876,9 +955,13 @@ function primaryOriginForSource(
     current = current ? childSource(current, segment) : undefined;
     if (current?.origin) {
       const resolved = current.type ? prune(current.type) : undefined;
-      const entersFunction = resolved?.tag === "fn" &&
-        path.slice(index + 1).some((part) => part.kind === "fn-param" || part.kind === "fn-result");
-      if (entersFunction) {
+      const callbackPath = path.slice(index + 1);
+      // A callback result collision belongs to its use in this application. Keep parameter
+      // collisions at their specific parameter, where an annotation can impose the type.
+      if (resolved?.tag === "fn" && callbackPath[0]?.kind === "fn-result") {
+        return current.origin;
+      }
+      if (resolved?.tag === "fn" && callbackPath.some((part) => part.kind === "fn-param")) {
         functionDefinition = current.definition ?? current.origin;
         continue;
       }
@@ -926,6 +1009,21 @@ function containsProjectionOrigin(origin: ConstraintOrigin): boolean {
 }
 
 function childSource(source: TypeSource, segment: DiffPathSegment): TypeSource | undefined {
+  if (source.instantiatedFrom && source.type && source.provenance) {
+    const type = childType(source.type, segment);
+    const definition = childSource(source.instantiatedFrom, segment);
+    if (type && definition) {
+      const committed = commitmentOriginForType(type, source.provenance);
+      return {
+        ...definition,
+        type,
+        provenance: source.provenance,
+        origin: committed ?? definition.origin,
+        document: committed ? undefined : definition.document,
+        instantiatedFrom: definition,
+      };
+    }
+  }
   const committedSource = source.type?.tag === "var" && source.provenance
     ? source.provenance.get(source.type.id)?.commitment?.source
     : undefined;
@@ -1024,6 +1122,20 @@ function commitmentOriginForType(
     return type.instance ? commitmentOriginForType(type.instance, provenance, seen) : undefined;
   }
   return undefined;
+}
+
+function payloadReturnSource(
+  type: Ty,
+  provenance: TypeProvenance,
+  seen = new Set<number>(),
+): TypeSource | undefined {
+  if (type.tag === "view") return payloadReturnSource(type.value, provenance, seen);
+  if (type.tag !== "var" || seen.has(type.id)) return undefined;
+  seen.add(type.id);
+  const commitment = provenance.get(type.id)?.commitment;
+  if (commitment?.source?.payloadReturn?.wrapped) return commitment.source;
+  const next = commitment?.type ?? type.instance;
+  return next ? payloadReturnSource(next, provenance, seen) : undefined;
 }
 
 function commitmentOriginWithDownstream(

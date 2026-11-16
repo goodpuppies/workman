@@ -19,7 +19,7 @@ import {
   type TypeEnv,
   typeInfoByName,
 } from "../types.ts";
-import { isDecl } from "./ast_utils.ts";
+import { isDecl, resultExpr } from "./ast_utils.ts";
 import { deriveInferContext, type InferContext } from "./context.ts";
 import { inferDecl, predeclareTypeGroup } from "./decl.ts";
 import { assertEqualityType } from "./equality.ts";
@@ -84,10 +84,17 @@ export function inferMatch(
     recordExpectedExprType(facts, arm.body, result);
     const armType = inferExpr(arm.body, deriveInferContext(context, { env: local }));
     const armSource = sourceForTypedExpr(arm.body, armType, provenance, "match arm result");
+    const unwrap = returnedConstructorPayload(arm, valueType);
+    const previousUnwrap = previousArmSources.find((source) => source.payloadReturn)?.payloadReturn;
+    const payloadReturn = unwrap
+      ? { ...unwrap, wrapped: previousArmSources.at(-1)?.origin }
+      : previousUnwrap && { ...previousUnwrap, wrapped: armSource.origin };
+    armSource.payloadReturn = payloadReturn;
     const participant: TypeSource = {
       ...sourceForTypedExpr(arm.body, armType, provenance, "earlier match arm"),
       type: snapshotType(armType),
       derivedFrom: undefined,
+      payloadReturn: unwrap,
     };
     try {
       constrainAt(
@@ -121,6 +128,7 @@ export function inferMatch(
               type: result,
               provenance,
               related: previousArmSources,
+              payloadReturn,
             },
             right: armSource,
           },
@@ -173,6 +181,30 @@ export function inferMatch(
     diagnostics.push(warningDiagnostic(exhaustiveWarning, expr.node, "pattern.non-exhaustive"));
   }
   return result;
+}
+
+function returnedConstructorPayload(
+  arm: Extract<Expr, { kind: "Match" }>["arms"][number],
+  input: Ty,
+) {
+  const pattern = arm.pattern;
+  const body = resultExpr(arm.body);
+  const inputType = prune(input);
+  if (
+    inputType.tag !== "named" || pattern.kind !== "PCtor" ||
+    arm.body.kind === "Block" && arm.body.items.length > 0 ||
+    body.kind !== "Var" ||
+    !pattern.args.some((argument) => argument.kind === "PVar" && argument.name === body.name) ||
+    !pattern.node || !arm.body.node
+  ) return undefined;
+  return {
+    containerId: inputType.id,
+    payload: {
+      message: "returned constructor payload",
+      node: pattern.node,
+      span: { ...pattern.node.span, end: arm.body.node.span.end },
+    },
+  };
 }
 
 function isEmptyBlock(expr: Expr): expr is Extract<Expr, { kind: "Block" }> {
@@ -613,7 +645,9 @@ export function inferParam(
   /** A nominal record annotation, which a record pattern needs to select its type. */
   recordAnnotation?: Ty,
 ): Ty {
-  const expected = param.pattern.kind === "PRecord" && recordAnnotation ? recordAnnotation : fresh();
+  const expected = param.pattern.kind === "PRecord" && recordAnnotation
+    ? recordAnnotation
+    : fresh();
   return inferPattern(
     param.pattern,
     expected,

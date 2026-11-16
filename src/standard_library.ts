@@ -17,6 +17,7 @@ import {
   pervasiveSourceName,
 } from "./library_pervasives.ts";
 import { libraryImport } from "./host_modules.ts";
+import { inheritSchemeSource } from "./infer/provenance.ts";
 
 export type StandardModule = {
   path: string;
@@ -387,7 +388,9 @@ function withStandardValueIds(
     cloneTypeEnv(environment.tyEnv),
     new Map([...environment.valEnv].map(([name, scheme]) => {
       const qualified = prefix ? `${prefix}.${name}` : name;
-      return [name, { ...scheme, valueId: standardValueId(modulePath, qualified) }];
+      const exported = { ...scheme, valueId: standardValueId(modulePath, qualified) };
+      inheritSchemeSource(scheme, exported);
+      return [name, exported];
     })),
   );
 }

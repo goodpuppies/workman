@@ -39,7 +39,7 @@ Deno.test("field access on print's return value has authored receiver provenance
   assertStringIncludes(rendered, "type Void! has no field name");
   assertStringIncludes(rendered, "print call result: Void!");
   assertStringIncludes(rendered, "-- Origins ");
-  assertStringIncludes(rendered, "- use wm err scratch3.wm to see a more detailed error");
+  assertStringIncludes(rendered, "Hint: use wm err scratch3.wm to see a more detailed error");
   assertEquals(
     diagnostic.support.entries.some((entry) =>
       entry.kind === "claim" && entry.claim.kind === "fact" &&

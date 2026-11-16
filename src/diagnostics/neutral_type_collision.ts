@@ -84,6 +84,13 @@ type CollisionRendering = { text: string; document: Document };
 type CollisionParticipant = { claim: ClaimEntry; type: string };
 type CollisionParticipants = { left: CollisionParticipant; right: CollisionParticipant };
 type CallArityMismatch = { expected: number; actual: number };
+type CallbackCollision = {
+  subject: string;
+  left: string;
+  right: string;
+  leftLabel: string;
+  rightLabel: string;
+};
 
 function renderNeutralTypeCollision(
   diagnostic: AuditableDiagnostic,
@@ -125,6 +132,12 @@ function renderNeutralTypeCollision(
   const arityMismatch = adapter.code === "type.call-argument-mismatch"
     ? callArityMismatch(diagnostic)
     : undefined;
+  const callback = adapter.code === "type.call-argument-mismatch" && constraint
+    ? callbackCollision(diagnostic, source)
+    : undefined;
+  const pipeArgument = adapter.code === "type.pipe-input-mismatch"
+    ? explicitPipeArgument(diagnostic)
+    : undefined;
   const leftObserved = observed.find((claim) =>
     claim.claim.kind === "has-type" &&
     typeSnapshotRendered(diagnostic, claim.claim.type) === leftLeaf
@@ -135,7 +148,7 @@ function renderNeutralTypeCollision(
   );
   const participants = adapter.code === "type.match-arm-results-disagree"
     ? matchParticipants(diagnostic, leftType, rightType)
-    : adapter.code === "type.pipe-input-mismatch"
+    : adapter.code === "type.pipe-input-mismatch" && pipeArgument === undefined
     ? pipeParticipants(diagnostic, leftType, rightType)
     : adapter.code === "type.if-branch-results-disagree"
     ? ifParticipants(diagnostic, leftType, rightType)
@@ -226,7 +239,9 @@ function renderNeutralTypeCollision(
     originColumns,
     ...(provenanceColumns ? [provenanceColumns] : []),
   );
-  const subject = callSlot?.subject ?? adapter.subject(diagnostic, source);
+  const subject = pipeArgument !== undefined
+    ? `${diagnostic.failure.frame.subject} argument ${pipeArgument}`
+    : callSlot?.subject ?? adapter.subject(diagnostic, source);
   if (detailed) {
     const collisionLines = arityMismatch
       ? [
@@ -245,11 +260,12 @@ function renderNeutralTypeCollision(
         ),
       ]
       : [
-        `  type error: ${subject}`,
+        `  type error: ${callback ? `${callback.subject} function type` : subject}`,
         "",
         "  can't be both:",
-        indent(renderTypeBullet(leftType), 2),
-        indent(renderTypeBullet(rightType), 2),
+        ...(callback
+          ? callbackTypeLines(callback).map((row) => plainText({ lines: [row] }))
+          : [indent(renderTypeBullet(leftType), 2), indent(renderTypeBullet(rightType), 2)]),
         "",
         ...(collisionExcerpt ? collisionExcerpt.map((line) => `  ${line}`) : []),
       ];
@@ -261,16 +277,26 @@ function renderNeutralTypeCollision(
       sectionHeader("Origins", columnWidth, availableWidth),
       "",
       ...renderAdaptiveColumns(originColumns, columnWidth, availableWidth),
-      ...originNotes(diagnostic, [leftDisplayOrigin, rightDisplayOrigin]).map((note) =>
-        `  ${note}`
-      ),
+      ...originNotes(diagnostic, [
+        leftDisplayOrigin,
+        rightDisplayOrigin,
+        participants?.left.claim,
+        participants?.right.claim,
+      ]).map((note) => `  ${note}`),
       "",
       sectionHeader("Provenance", columnWidth, availableWidth),
       "",
       ...renderAdaptiveColumns(provenanceColumns!, columnWidth, availableWidth),
     ];
     const text = `${lines.join("\n")}\n`;
-    return { text, document: plainDocument(text) };
+    const callbackRows = callback ? callbackTypeLines(callback) : [];
+    const document = plainDocument(text);
+    for (const row of callbackRows) {
+      const rowText = plainText({ lines: [row] });
+      const index = lines.indexOf(rowText);
+      if (index !== -1) document.lines[index] = row;
+    }
+    return { text, document };
   }
 
   const document = compactCollisionDocument(
@@ -292,6 +318,7 @@ function renderNeutralTypeCollision(
     rightOriginLabel,
     availableWidth,
     arityMismatch,
+    callback,
   );
   return { text: `${plainText(document)}\n`, document };
 }
@@ -315,7 +342,9 @@ function compactCollisionDocument(
   rightOriginLabel?: string,
   availableWidth = 120,
   arityMismatch?: CallArityMismatch,
+  callback?: CallbackCollision,
 ): Document {
+  if (callback) subject = `${callback.subject} function type`;
   const lines: Line[] = [header];
   const tiny = availableWidth <= TINY_TERMINAL_WIDTH;
   if (arityMismatch) {
@@ -365,7 +394,11 @@ function compactCollisionDocument(
     lines.push(documentLine(span(`  type error: ${subject} can't be both:`, "error")));
   }
   if (!arityMismatch && (!participants || !source)) {
-    lines.push(typeBulletLine(leftType), typeBulletLine(rightType));
+    lines.push(
+      ...(callback
+        ? callbackTypeLines(callback)
+        : [typeBulletLine(leftType), typeBulletLine(rightType)]),
+    );
   }
   let leftCell = compactOriginCell(
     diagnostic,
@@ -418,12 +451,15 @@ function compactCollisionDocument(
     ),
   );
   lines.push(
-    ...originNotes(diagnostic, [leftOrigin, rightOrigin]).map((note) =>
-      documentLine(span(`  ${note}`, "hint"))
-    ),
+    ...originNotes(diagnostic, [
+      leftOrigin,
+      rightOrigin,
+      participants?.left.claim,
+      participants?.right.claim,
+    ]).map((note) => documentLine(span(`  ${note}`, "hint"))),
   );
   lines.push(documentLine(
-    span(`- use wm err ${relativeFile(filePath)} to see a more detailed error`, "hint"),
+    span(`Hint: use wm err ${relativeFile(filePath)} to see a more detailed error`, "hint"),
   ));
   return { lines };
 }
@@ -442,7 +478,7 @@ function originNotes(
           claim.origin.span.start === anchor.span.start &&
           claim.origin.span.end === anchor.span.end
         )
-        ? [entry.message]
+        ? [entry.message.startsWith("Hint:") ? entry.message : `Hint: ${entry.message}`]
         : [];
     })),
   ];
@@ -516,12 +552,12 @@ function pipeParticipants(
     /(?:call|block|match|callback) result$/.test(claim.claim.subject) &&
     claimContainsType(diagnostic, claim.claim.type, neededType)
   );
-  const needed = direct ? callee : result ?? claimForSubject(
+  const needed = direct ? callee : claimForSubject(
     diagnostic.failure.violation.kind === "contradicted"
       ? diagnostic.failure.violation.origins?.left
       : undefined,
     neededType,
-  ) ?? callee;
+  ) ?? result ?? callee;
   return produced && needed
     ? {
       left: { claim: produced, type: producedType },
@@ -634,14 +670,6 @@ function participantEquationLines(
       if (location) lines.push(documentLine(span(location, "secondary")));
       lines.push(equation);
     }
-    const note = participantOrigin.kind === "source"
-      ? diagnostic.support.entries.find((entry): entry is Extract<SupportEntry, { kind: "note" }> =>
-        entry.kind === "note" && entry.origin.kind === "source" &&
-        entry.origin.span.start === participantOrigin.span.start &&
-        entry.origin.span.end === participantOrigin.span.end
-      )
-      : undefined;
-    if (note) lines.push(documentLine(span(`    ${note.message}`, "hint")));
   }
   return lines;
 }
@@ -659,12 +687,42 @@ function participantSource(claim: ClaimEntry, source: string): ParticipantSource
   const bodyStart = Math.max(0, span.start - lineStart);
   return {
     gutter: `${span.line}| `,
-    code: `${sourceLine.slice(0, bodyStart)}{..}`,
+    code: span.end <= lineStart + sourceLine.length
+      ? sourceLine.slice(0, span.end - lineStart)
+      : `${sourceLine.slice(0, bodyStart)}{..}`,
   };
 }
 
 function typeBulletLine(type: string): Line {
   return documentLine(span("  - "), span(type, "type"));
+}
+
+function callbackTypeLines(callback: CallbackCollision): Line[] {
+  // Nested callback parameters can contain arrows too; align the outer function arrow.
+  const split = (type: string): [string, string] => {
+    let depth = 0;
+    for (let index = 0; index < type.length - 1; index++) {
+      const char = type[index];
+      if (depth === 0 && type.slice(index, index + 2) === "->") {
+        return [type.slice(0, index).trimEnd(), type.slice(index + 2).trimStart()];
+      }
+      if ("(<[{".includes(char)) depth++;
+      else if (")>]}".includes(char) && type[index - 1] !== "-") depth--;
+    }
+    return [type, ""];
+  };
+  const parts = [split(callback.left), split(callback.right)];
+  const inputWidth = Math.max(...parts.map(([input]) => input.length));
+  const outputWidth = Math.max(...parts.map(([, output]) => output.length));
+  const labels = [callback.leftLabel, callback.rightLabel];
+  return parts.map(([input, output], index) =>
+    documentLine(
+      span("  - "),
+      span(input.padStart(inputWidth) + " -> " + output, "type"),
+      span(" ".repeat(outputWidth - output.length + 2)),
+      span(labels[index], "secondary"),
+    )
+  );
 }
 
 /**
@@ -797,6 +855,48 @@ function collisionSubject(
   return diagnostic.failure.frame.subject || "call";
 }
 
+function callbackCollision(
+  diagnostic: AuditableDiagnostic,
+  source: string | undefined,
+): CallbackCollision | undefined {
+  if (diagnostic.failure.violation.kind !== "contradicted") return undefined;
+  const path = diagnostic.failure.violation.conflictPath;
+  // Only a function inside an argument slot is a callback, rather than the called function.
+  const index = path.findIndex((part) => part.kind === "fn-param" || part.kind === "fn-result");
+  if (index < 1 || path[0]?.kind !== "tuple-item") return undefined;
+  const constraint = findConstraintForFrame(diagnostic);
+  if (!constraint) return undefined;
+  const prefix = path.slice(0, index);
+  const left = typeAtPath(diagnostic, constraint.left, prefix);
+  const right = typeAtPath(diagnostic, constraint.right, prefix);
+  if (!left || !right) return undefined;
+  const subject = collisionSubject(diagnostic, source);
+  const callee = diagnostic.support.entries.find((entry) =>
+    entry.kind === "claim" && entry.claim.kind === "fact" &&
+    entry.claim.text.startsWith("callee ")
+  );
+  const calleeName = callee?.kind === "claim" && callee.claim.kind === "fact"
+    ? /^callee ([^:]+):/.exec(callee.claim.text)?.[1]
+    : undefined;
+  return {
+    subject,
+    left,
+    right,
+    leftLabel: `${calleeName ?? "callee"} callback`,
+    rightLabel: subject,
+  };
+}
+
+/** Slot zero is the piped input; later slots are explicitly written arguments. */
+function explicitPipeArgument(diagnostic: AuditableDiagnostic): number | undefined {
+  if (diagnostic.failure.violation.kind !== "contradicted") return undefined;
+  const path = diagnostic.failure.violation.conflictPath;
+  return path[0]?.kind === "fn-param" && path[0].index === 0 &&
+      path[1]?.kind === "tuple-item" && path[1].index > 0
+    ? path[1].index
+    : undefined;
+}
+
 function annotationMismatchSubject(
   diagnostic: AuditableDiagnostic,
   source: string | undefined,
@@ -895,6 +995,15 @@ function callCollisionSlot(
     : undefined;
   const outerArgument = path[0]?.kind === "tuple-item" ? path[0].index : undefined;
   const fnParameterAt = path.findIndex((segment) => segment.kind === "fn-param");
+  if (outerArgument !== undefined && path[1]?.kind === "fn-result") {
+    return {
+      subject: `${baseSubject} result`,
+      calleeClaim,
+      calleeLabel: calleeName ? `${calleeName} callback result` : "callback result",
+      argumentClaim,
+      argumentLabel: "callback supplied here",
+    };
+  }
   if (outerArgument === undefined || fnParameterAt < 0) {
     if (!calleeClaim && !argumentClaim) return undefined;
     return {

@@ -81,7 +81,7 @@ function recordProjectionDocument(
   }
   if (filePath) {
     lines.push(line(span(
-      `- use wm err ${relativeDiagnosticPath(filePath)} to see a more detailed error`,
+      `Hint: use wm err ${relativeDiagnosticPath(filePath)} to see a more detailed error`,
       "hint",
     )));
   }

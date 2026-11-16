@@ -220,13 +220,13 @@ Deno.test("pipe task error mismatch points at both origin slots", async () => {
   const rendered = formatDiagnostic(error.diagnostic, "task-pipe.wm", source);
   assertStringIncludes(
     rendered,
-    "type error: pipe sides can't be both:",
+    "type error: Task.andThen argument 1 can't be both:",
   );
-  assertStringIncludes(rendered, "let bad = {..}");
+  assertStringIncludes(rendered, "let left: Result<Real64.Real, String> = Err(");
   assertStringIncludes(rendered, ": String");
   assertStringIncludes(rendered, ": Js.Error");
   assertStringIncludes(rendered, "let annotation: Js.Error");
-  assertStringIncludes(rendered, "Err call result: String");
+  assertStringIncludes(rendered, "expression: String");
 });
 
 async function importGenerated(source: string): Promise<Record<string, unknown>> {
