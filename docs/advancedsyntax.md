@@ -123,7 +123,7 @@ let fromOption = Some(3)
 ```
 
 The supplied error must have the existing Result's error type. For a
-`Result<Number, Js.Error>`, supply `Js.Error("not positive")`, or use
+`Result<Real64, Js.Error>`, supply `Js.Error("not positive")`, or use
 `Result.mapErr` first to convert existing errors to the type you want to return.
 As with other function arguments, the supplied error value is evaluated before
 the call; only the predicate callback is conditional on an `Ok` input.

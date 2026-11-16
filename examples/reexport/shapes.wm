@@ -1,5 +1,5 @@
 // The module everything comes from.
-type Shape = | Circle<Number> | Square<Number>;
+type Shape = | Circle<Real64> | Square<Real64>;
 
 let area = (shape) => {
   match(shape) {

@@ -110,6 +110,16 @@ Consequences to check:
 `docs/numbers.md`, `docs/smlparallels.md`, `docs/content-mapper.md`, the FFI docs, the std
 README; mark `i32-plan.md` and the default rule in `numeric-overloading.md` superseded.
 
+## Later: table-driven infix overloading
+
+Planned, not part of this work. Today `+ - * < <= > >=` accept only `Int32` and `Real64`
+(`OPERATOR_NUMERIC_TYPES` in `src/numeric.ts`); the other sized types use named functions such as
+`Word8.add`. With every numeric type now an SML-shaped structure, the obvious next step is SML's
+approach: a fixed table of overloaded infix operators and the types each accepts (the
+Definition's Appendix E, the Basis's `num`/`realint`/`wordint` classes), extended to `Int64`,
+`Word8`…`Word64` and `Real32`. It stays a hardcoded table, not user-definable overloading. The
+current limited overloading is fine until then.
+
 ## Order with the Basis work
 
 1. This plan's step 1 (rename) first, so the Basis migration writes `Int32.toReal64` directly

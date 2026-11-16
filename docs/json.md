@@ -23,7 +23,7 @@ let releases = Json.read(source)
 ```
 
 The result is checked once at the end. Each accessor propagates an earlier error.
-A mismatch can report `$["releases"][0]["count"]: expected I32 integer` instead of
+A mismatch can report `$["releases"][0]["count"]: expected Int32 integer` instead of
 losing the field or array position.
 
 ## Input, values and output
@@ -37,7 +37,7 @@ losing the field or array position.
 | `root(value)` | A checked root node for an already built value. |
 | `encode(value)` / `encodeBytes(value)` | Compact JSON as host text or UTF-8 bytes; invalid constructed values return errors. |
 
-`JsonValue.Value`, declared in `std/json_value.wm`, has `Null`, `Boolean`, `Number`,
+`JsonValue.Value`, declared in `std/json_value.wm`, has `Null`, `Boolean`, `Real64`,
 `Text`, `Array`, and `Object` cases. Strings and object keys hold strict UTF-8 byte
 lists, arrays hold value lists, and objects hold ordered key/value pairs. Use the
 shared text conversion functions when constructing Unicode payloads manually.
@@ -45,18 +45,18 @@ shared text conversion functions when constructing Unicode payloads manually.
 
 Numbers retain their exact spelling. For example, `9007199254740993`, `-0`,
 `1e400` and `1.2300E+004` can be decoded and encoded without floating-point
-conversion, rounding or I32 overflow. Encoding validates number spelling rather
-than inserting arbitrary text from a hand-built `Number` case.
+conversion, rounding or Int32 overflow. Encoding validates number spelling rather
+than inserting arbitrary text from a hand-built `Real64` case.
 
 ## Checked access
 
 | Operation | Behavior |
 | --- | --- |
 | `get(found, key)` | Find an object field; the key is host text. Last duplicate wins. |
-| `at(found, index)` / `index(found, index)` | Select an array element using an I32 index. |
+| `at(found, index)` / `index(found, index)` | Select an array element using an Int32 index. |
 | `text(found)` | Return a native Unicode string. |
 | `number(found)` | Return the number's original spelling. |
-| `integer(found)` | Decode a literal integer in the signed I32 range; fractions, exponents and overflow are mismatches. |
+| `integer(found)` | Decode a literal integer in the signed Int32 range; fractions, exponents and overflow are mismatches. |
 | `boolean(found)` | Return the boolean. |
 | `isNull(found)` | Test null without treating it as missing. |
 | `items(found, decodeItem)` | Decode each array element from left to right, preserving its path; stop on the first error. |
@@ -67,7 +67,7 @@ than inserting arbitrary text from a hand-built `Number` case.
 | `optional(found)` | Turn missing access into `Ok(None)`; present null remains `Ok(Some(node))`. Other errors propagate. |
 | `problemText(problem)` | Format a syntax, missing-field or mismatch diagnostic. |
 
-Decode/encode errors have `byteOffset: I32` and `message: String`. Access problems
+Decode/encode errors have `byteOffset: Int32` and `message: String`. Access problems
 are `Malformed`, `Missing`, or `Mismatch` in `JsonValue`. Paths use quoted bracket
 notation so dots, brackets, escaped characters and Unicode names remain clear.
 

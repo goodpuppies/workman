@@ -22,7 +22,7 @@ Deno.test("only a colon followed by a letter is a command", () => {
   for (
     const text of [
       "x",
-      "let x : Number = 1;",
+      "let x : Real64.Real = 1;",
       ":: x",
       ":> f",
       ": x",

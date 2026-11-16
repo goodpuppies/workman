@@ -8,8 +8,8 @@ import { show } from "../src/types.ts";
 import { expectBinding } from "./type_helpers.ts";
 
 const records = `
-  record Inner = { n: Number, label: String };
-  record Outer = { did: String, inner: Inner, add: Number -> Number };
+  record Inner = { n: Real64.Real, label: String };
+  record Outer = { did: String, inner: Inner, add: Real64.Real -> Real64.Real };
   let make = (did: String) => {
     Outer(did, Inner(1, "one"), (n) => { n + 1 })
   };
@@ -43,9 +43,9 @@ Deno.test("a field can be read from any expression without a binding", async () 
   `);
   expectBinding(result.env, "call", { type: "String", vars: 0 });
   expectBinding(result.env, "grouped", { type: "String", vars: 0 });
-  expectBinding(result.env, "chained", { type: "Number", vars: 0 });
+  expectBinding(result.env, "chained", { type: "Real64.Real", vars: 0 });
   expectBinding(result.env, "groupedChain", { type: "String", vars: 0 });
-  expectBinding(result.env, "inOperand", { type: "Number", vars: 0 });
+  expectBinding(result.env, "inOperand", { type: "Real64.Real", vars: 0 });
 });
 
 Deno.test("a field holding a function can be called", async () => {
@@ -53,16 +53,16 @@ Deno.test("a field holding a function can be called", async () => {
     ${records}
     let called = make("a").add(1);
   `);
-  expectBinding(result.env, "called", { type: "Number", vars: 0 });
+  expectBinding(result.env, "called", { type: "Real64.Real", vars: 0 });
 });
 
 const paged = `
   ${records}
-  let page = (did: String, n: Number) => {
+  let page = (did: String, n: Real64.Real) => {
     print("page " ++ did);
     Outer(did, Inner(n, "label"), (m) => { m + n })
   };
-  let same = (n: Number) => { n };
+  let same = (n: Real64.Real) => { n };
 `;
 
 Deno.test("a pipe goes into the first call of a field access", async () => {
@@ -75,9 +75,9 @@ Deno.test("a pipe goes into the first call of a field access", async () => {
     let placeholder = "a" :> page(_, 1).did;
   `);
   expectBinding(result.env, "field", { type: "String!", vars: 0 });
-  expectBinding(result.env, "chain", { type: "Number!", vars: 0 });
-  expectBinding(result.env, "called", { type: "Number!", vars: 0 });
-  expectBinding(result.env, "staged", { type: "Number!", vars: 0 });
+  expectBinding(result.env, "chain", { type: "Real64.Real!", vars: 0 });
+  expectBinding(result.env, "called", { type: "Real64.Real!", vars: 0 });
+  expectBinding(result.env, "staged", { type: "Real64.Real!", vars: 0 });
   expectBinding(result.env, "placeholder", { type: "String!", vars: 0 });
 });
 
@@ -87,8 +87,8 @@ Deno.test("parentheses make a piped field access a value", async () => {
     let groupedReceiver = 1 :> (make("a")).add;
     let groupedWhole = 1 :> (make("a").add);
   `);
-  expectBinding(result.env, "groupedReceiver", { type: "Number", vars: 0 });
-  expectBinding(result.env, "groupedWhole", { type: "Number", vars: 0 });
+  expectBinding(result.env, "groupedReceiver", { type: "Real64.Real", vars: 0 });
+  expectBinding(result.env, "groupedWhole", { type: "Real64.Real", vars: 0 });
 });
 
 Deno.test("a piped field access runs the pipeline once, in order", async () => {
@@ -180,7 +180,7 @@ Deno.test("a field access on a computed primitive is rejected", async () => {
   await assertRejects(
     () => checkSource("record Named = { did: String }; let read = (1 + 2).did;"),
     Error,
-    "requires a nominal record, got Number",
+    "requires a nominal record, got Real64.Real",
   );
 });
 
@@ -197,12 +197,12 @@ Deno.test("names and space calls keep their existing meaning", async () => {
   const result = await checkSource(`
     ${records}
     let value = make("a");
-    let same = (n: Number) => { n };
+    let same = (n: Real64.Real) => { n };
     let spaced = same value.inner.n;
     let qualified = value.inner.n;
   `);
-  expectBinding(result.env, "spaced", { type: "Number", vars: 0 });
-  expectBinding(result.env, "qualified", { type: "Number", vars: 0 });
+  expectBinding(result.env, "spaced", { type: "Real64.Real", vars: 0 });
+  expectBinding(result.env, "qualified", { type: "Real64.Real", vars: 0 });
 });
 
 Deno.test("an ascribed expression still can't be projected", async () => {
@@ -219,7 +219,7 @@ let c = make("z").add(1);`;
   assertEquals(await formatFrontendV2Source(source), source);
 });
 
-const editorSource = `record Inner = { n: Number };
+const editorSource = `record Inner = { n: Real64.Real };
 record Outer = { did: String, inner: Inner };
 let make = (did: String) => { Outer(did, Inner(1)) };
 let plain = make("a");
@@ -244,7 +244,7 @@ Deno.test("hover on a field access shows the field, not a compiler binding", asy
   const cases: [string, number, string][] = [
     ['make("a").did', 'make("a").'.length, ".did: String"],
     ['make("a").inner.n', 'make("a").'.length, ".inner: Inner"],
-    ['make("a").inner.n', 'make("a").inner.'.length, ".n: Number"],
+    ['make("a").inner.n', 'make("a").inner.'.length, ".n: Real64.Real"],
   ];
   for (const [needle, offset, expected] of cases) {
     const hover = await hoverAt(uri, positionOf(needle, offset), new Map());

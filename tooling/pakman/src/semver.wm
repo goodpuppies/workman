@@ -1,18 +1,17 @@
 -- Deliberately small first subset: exact stable X.Y.Z and ~X.Y.Z.
 from "basis/text.wm" import * as UnicodeText;
-from "basis/int.wm" import * as Int;
 from "basis/result.wm" import * as R;
 from "pakman/model.wm" import { Candidate };
 
-record Version = { major: I32, minor: I32, patch: I32 };
+record Version = { major: Int32, minor: Int32, patch: Int32 };
 
 let component = (text: String) => {
   if (text != "0" && (UnicodeText.isPrefix(text, "0") :> R.getOr(false))) { None }
-  else { R.toOption(Int.parseNatural(text)) }
+  else { R.toOption(Int32.parseNatural(text)) }
 };
 
 let parse = (text: String) => {
-  match(UnicodeText.fields(text, (scalar) => { scalar == (46: I32) })) {
+  match(UnicodeText.fields(text, (scalar) => { scalar == (46: Int32) })) {
     Ok([major, minor, patch]) => {
       match(component(major), component(minor), component(patch)) {
         (Some(a), Some(b), Some(c)) => { Some(Version(a, b, c)) },
@@ -25,7 +24,7 @@ let parse = (text: String) => {
 
 let matches = (selector, version) => {
   let patchRange = UnicodeText.isPrefix(selector, "~") :> Result.getOr(false);
-  let base = if (patchRange) { UnicodeText.extract(selector, (1: I32), None) :> Result.getOr("") } else { selector };
+  let base = if (patchRange) { UnicodeText.extract(selector, (1: Int32), None) :> Result.getOr("") } else { selector };
   match(parse(base)) {
     None => { Err("unsupported dependency version " ++ selector ++ "; expected X.Y.Z or ~X.Y.Z") },
     Some(wanted) => {

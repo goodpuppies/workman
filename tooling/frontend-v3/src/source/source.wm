@@ -1,9 +1,9 @@
-type SourceOffset = | SourceOffset<I32>;
+type SourceOffset = | SourceOffset<Int32>;
 
 record Position = {
-  index: I32,
-  line: I32,
-  col: I32
+  index: Int32,
+  line: Int32,
+  col: Int32
 };
 
 record Span = {

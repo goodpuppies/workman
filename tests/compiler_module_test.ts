@@ -27,7 +27,7 @@ Deno.test("source-only frontend rejects imports with clear API boundary", async 
 });
 
 Deno.test("type diagnostics retain the constraint origin across an imported callback", async () => {
-  const mainSource = `record Coord = { x: Number };
+  const mainSource = `record Coord = { x: Real64.Real };
 from "./runtime.wm" import * as Runtime;
 let render = (model: Coord, state) => { model.x };
 let bad = Runtime.run(.{x=0}, render);`;
@@ -58,7 +58,7 @@ let bad = Runtime.run(.{x=0}, render);`;
 
 Deno.test("instantiated field requirement errors retain the declaring module source", async () => {
   const librarySource = `record Post = { author: String };
-record FeedPost = { author: Number };
+record FeedPost = { author: Real64.Real };
 record FeedPage = { posts: List<FeedPost>, cursor: Option<String> };
 let renderPost = (post) => { post.author ++ "!" };
 let renderPosts = (posts) => { List.map(posts, renderPost) };`;
@@ -84,7 +84,7 @@ let bad = renderFeed(Views.FeedPage([Views.FeedPost(1)], None));`;
   }
   const rendered = formatDiagnostic(error.originalError.diagnostic, error.path, error.source);
   assertStringIncludes(rendered, "post.author");
-  assertStringIncludes(rendered, "FeedPost.author field: Number");
+  assertStringIncludes(rendered, "FeedPost.author field: Real64.Real");
   assertStringIncludes(rendered, "views.wm:4:");
 });
 
@@ -114,7 +114,7 @@ Deno.test("supports long type constructors from imported files", async () => {
     ["/test/box.wm", "type Box<T> = | Box<T>; let make = (x) => { Box(x) };"],
     [
       "/test/main.wm",
-      'from "./box.wm" import * as Boxed; let x: Boxed.Box<Number> = Boxed.make(1);',
+      'from "./box.wm" import * as Boxed; let x: Boxed.Box<Real64.Real> = Boxed.make(1);',
     ],
   ]);
   await checkVirtual("/test/main.wm", virtualFs);
@@ -145,7 +145,7 @@ Deno.test("supports named imports for values constructors and types", async () =
     ],
     [
       "/test/main.wm",
-      'from "./option.wm" import { Option, Some, None, make as wrap }; let value: Option<Number> = wrap(1); let get = match(value) => { Some(x) => { x }, None => { 0 } };',
+      'from "./option.wm" import { Option, Some, None, make as wrap }; let value: Option<Real64.Real> = wrap(1); let get = match(value) => { Some(x) => { x }, None => { 0 } };',
     ],
   ]);
   await checkVirtual("/test/main.wm", virtualFs);
@@ -214,7 +214,7 @@ Deno.test("local declarations shadow imported bindings", async () => {
 
 Deno.test("a constructor and namespace with the same name retain distinct runtime identities", async () => {
   const files = new Map([
-    ["/test/image.wm", "record Image = { value: Number }; let marker = 5; let carrier = 99;"],
+    ["/test/image.wm", "record Image = { value: Real64.Real }; let marker = 5; let carrier = 99;"],
     [
       "/test/main.wm",
       `from "./image.wm" import * as Image;
@@ -296,7 +296,7 @@ Deno.test("staged FFI reinference rebuilds shared monotypes with consumer nomina
         from "./runtime.wm" import * as Runtime;
         from "./trigger.wm" import * as Trigger;
 
-        type State = | State<Number>;
+        type State = | State<Real64.Real>;
 
         let label = Trigger.clean("hello", "h");
         let result = Runtime.run(

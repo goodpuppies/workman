@@ -45,7 +45,7 @@ export const LIBRARY_PERVASIVES: readonly Readonly<{
   ),
   ...["before", "ignore", "o"].map((name) => Object.freeze({ modulePath: "std/general.wm", name })),
   ...["ceil", "floor", "round", "trunc"].map((name) =>
-    Object.freeze({ modulePath: "std/real.wm", name })
+    Object.freeze({ modulePath: "std/real64.wm", name })
   ),
   Object.freeze({ modulePath: "std/vector.wm", name: "vector", sourceName: "fromList" }),
   Object.freeze({ modulePath: "std/string.wm", name: "toList" }),

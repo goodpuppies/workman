@@ -10,7 +10,7 @@ for (
 ) {
   Deno.test(`a typed hole in ${label} terminates despite active event-loop handles`, async () => {
     const source = `from js.global import unsafe {
-  setInterval: (Void -> Void, Number) -> Number,
+  setInterval: (Void -> Void, Real64.Real) -> Real64.Real,
 };
 let main = () => {
   let _ = setInterval((_) => { void }, 1000);

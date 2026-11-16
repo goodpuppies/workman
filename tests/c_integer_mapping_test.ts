@@ -17,7 +17,7 @@ Deno.test("C integer mapping uses reflected width and signedness rather than typ
       );
       assertEquals(signed.type, {
         kind: "TName",
-        name: bits <= 32 ? "I32" : "Int64.Int",
+        name: bits <= 32 ? "Int32.Int" : "Int64.Int",
         args: [],
       });
     }

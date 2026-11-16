@@ -6,7 +6,7 @@ type AppError =
   | RaylibError<Js.Error>
   | RenderError<Js.Error>;
 
-record Color = {r:Number, g:Number, b:Number, a:Number};
+record Color = {r:Real64, g:Real64, b:Real64, a:Real64};
 
 let raylibpath = "./examples/raylib/raylib.dll";
 let title = "raylib ffi bindings demo";

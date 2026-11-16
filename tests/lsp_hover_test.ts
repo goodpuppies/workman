@@ -152,7 +152,7 @@ let outer = {
 
   const hover = await hoverAt(pathToFileUri(main), positionOf(source, "x ="), new Map());
 
-  assertEquals(hover?.contents.value, "```wm\nx: Number\n```");
+  assertEquals(hover?.contents.value, "```wm\nx: Real64.Real\n```");
 });
 
 Deno.test("lsp hover uses current compiler facts after a failed phrase", async () => {
@@ -167,7 +167,7 @@ Deno.test("lsp hover uses current compiler facts after a failed phrase", async (
     new Map(),
   );
 
-  assertEquals(hover?.contents.value, "```wm\ngood: Number\n```");
+  assertEquals(hover?.contents.value, "```wm\ngood: Real64.Real\n```");
 });
 
 Deno.test("lsp hover does not infer a fallback type for a failed phrase", async () => {
@@ -213,14 +213,14 @@ let host = (1.0, 2.0);
   assertEquals(coord?.contents.value, "```wm\ncoord: f32x2\n```");
   assertEquals(helper?.contents.value, "```wm\nhelper: f32 -> f32\n```");
   assertEquals(projected?.contents.value, "```wm\nlocal.y: f32\n```");
-  assertEquals(host?.contents.value, "```wm\nhost: (Number, Number)\n```");
+  assertEquals(host?.contents.value, "```wm\nhost: (Real64.Real, Real64.Real)\n```");
 });
 
 Deno.test("lsp hover presents curried environment fields in their GPU representation", async () => {
   const dir = await Deno.makeTempDir();
   const main = `${dir}/main.wm`;
   const source = `
-record Uniforms = { resolution: (Number, Number), time: Number };
+record Uniforms = { resolution: (Real64.Real, Real64.Real), time: Real64.Real };
 let shade = (uniforms: Uniforms) => {
   (coord) => {
     @gpu;
@@ -247,7 +247,7 @@ let fragment = Gpu.fragment(shade(current));
   assertEquals(lane?.contents.value, "```wm\nuniforms.resolution.y: f32\n```");
 });
 
-Deno.test("lsp hover presents occurrence-local i32 types without changing host Number", async () => {
+Deno.test("lsp hover presents occurrence-local i32 types without changing host Real64.Real", async () => {
   const dir = await Deno.makeTempDir();
   const main = `${dir}/main.wm`;
   const source = `
@@ -273,7 +273,7 @@ let host = 7;
   assertEquals(count?.contents.value, "```wm\ncount: i32\n```");
   assertEquals(lanes?.contents.value, "```wm\nlanes: i32x2\n```");
   assertEquals(literal?.contents.value, "```wm\nInt: i32\n```");
-  assertEquals(host?.contents.value, "```wm\nhost: Number\n```");
+  assertEquals(host?.contents.value, "```wm\nhost: Real64.Real\n```");
 });
 
 Deno.test("lsp hover elaborates every selected fragment root and resource type", async () => {
@@ -355,7 +355,7 @@ let value = id(1);
 
   assertEquals(
     hover?.contents.value,
-    "```wm\nid\ntype: Number -> Number\ngeneral: 'a -> 'a\n```",
+    "```wm\nid\ntype: Real64.Real -> Real64.Real\ngeneral: 'a -> 'a\n```",
   );
 });
 
@@ -387,7 +387,7 @@ let speed = "12" :> toNumber;
 
   assertEquals(
     hover?.contents.value,
-    "```wm\ntoNumber\ntype: String -> Number\ngeneral: 'a -> Number\n```",
+    "```wm\ntoNumber\ntype: String -> Real64.Real\ngeneral: 'a -> Real64.Real\n```",
   );
 });
 
@@ -452,7 +452,7 @@ let use = match(lib) {
 
   const value = hover?.contents.value ?? "";
   assertStringIncludes(value, "SDL_PollEvent:");
-  assertStringIncludes(value, "SDL_PollEvent: Option<Js.Object> -> Result<Number, Js.Error>");
+  assertStringIncludes(value, "SDL_PollEvent: Option<Js.Object> -> Result<Real64.Real, Js.Error>");
   assertEquals(value.includes("__Deep"), false);
 });
 
@@ -497,26 +497,26 @@ Deno.test("annotated hover shows independently inferred types only when differen
   const uri = pathToFileUri(path);
   const cases = [
     [
-      "let id: Number -> Number = (x) => { x };",
+      "let id: Real64.Real -> Real64.Real = (x) => { x };",
       "id:",
-      "id: Number -> Number\nunannotated: 'a -> 'a",
+      "id: Real64.Real -> Real64.Real\nunannotated: 'a -> 'a",
     ],
-    ["let id = (x: Number) => { x };", "id =", "id: Number -> Number\nunannotated: 'a -> 'a"],
-    ["let id = (x): Number => { x };", "id =", "id: Number -> Number\nunannotated: 'a -> 'a"],
-    ["let id = (x) => { x }: Number;", "id =", "id: Number -> Number\nunannotated: 'a -> 'a"],
+    ["let id = (x: Real64.Real) => { x };", "id =", "id: Real64.Real -> Real64.Real\nunannotated: 'a -> 'a"],
+    ["let id = (x): Real64.Real => { x };", "id =", "id: Real64.Real -> Real64.Real\nunannotated: 'a -> 'a"],
+    ["let id = (x) => { x }: Real64.Real;", "id =", "id: Real64.Real -> Real64.Real\nunannotated: 'a -> 'a"],
     [
-      "let id = ((x) => { x }): Number -> Number;",
+      "let id = ((x) => { x }): Real64.Real -> Real64.Real;",
       "id =",
-      "id: Number -> Number\nunannotated: 'a -> 'a",
+      "id: Real64.Real -> Real64.Real\nunannotated: 'a -> 'a",
     ],
-    ["let id = (x: Number) => { x };", "x: Number", "x: Number\nunannotated: 'a"],
-    ["let id = (x: Number) => { x };", "x }", "x: Number\nunannotated: 'a"],
-    ["let value: Number = 1;", "value:", "value: Number"],
-    ["let id: Number -> Number = (x) => { x + 1 };", "id:", "id: Number -> Number"],
+    ["let id = (x: Real64.Real) => { x };", "x: Real64.Real", "x: Real64.Real\nunannotated: 'a"],
+    ["let id = (x: Real64.Real) => { x };", "x }", "x: Real64.Real\nunannotated: 'a"],
+    ["let value: Real64.Real = 1;", "value:", "value: Real64.Real"],
+    ["let id: Real64.Real -> Real64.Real = (x) => { x + 1 };", "id:", "id: Real64.Real -> Real64.Real"],
     [
-      "let id: /* nested /* : */ : */ Number -> Number = (x) => { x };",
+      "let id: /* nested /* : */ : */ Real64.Real -> Real64.Real = (x) => { x };",
       "id:",
-      "id: Number -> Number\nunannotated: 'a -> 'a",
+      "id: Real64.Real -> Real64.Real\nunannotated: 'a -> 'a",
     ],
   ];
   for (const [source, needle, expected] of cases) {
@@ -527,13 +527,13 @@ Deno.test("annotated hover shows independently inferred types only when differen
 
 Deno.test("annotated hover follows references and preserves instantiated type", async () => {
   const path = "/test/annotated-use.wm";
-  const source = "let id: Number -> Number = (x) => { x }; let result = id(1);";
+  const source = "let id: Real64.Real -> Real64.Real = (x) => { x }; let result = id(1);";
   const hover = await hoverAt(
     pathToFileUri(path),
     positionOf(source, "id(1)"),
     new Map([[path, source]]),
   );
-  assertEquals(hover?.contents.value, "```wm\nid: Number -> Number\nunannotated: 'a -> 'a\n```");
+  assertEquals(hover?.contents.value, "```wm\nid: Real64.Real -> Real64.Real\nunannotated: 'a -> 'a\n```");
 });
 
 Deno.test("annotated hover follows imported declarations in unsaved sources", async () => {
@@ -541,16 +541,16 @@ Deno.test("annotated hover follows imported declarations in unsaved sources", as
   const source = 'from "./identity.wm" import { id }; let result = id(1);';
   const overrides = new Map([
     [path, source],
-    ["/test/identity.wm", "let id: Number -> Number = (x) => { x };"],
+    ["/test/identity.wm", "let id: Real64.Real -> Real64.Real = (x) => { x };"],
   ]);
   const hover = await hoverAt(pathToFileUri(path), positionOf(source, "id(1)"), overrides);
-  assertEquals(hover?.contents.value, "```wm\nid: Number -> Number\nunannotated: 'a -> 'a\n```");
+  assertEquals(hover?.contents.value, "```wm\nid: Real64.Real -> Real64.Real\nunannotated: 'a -> 'a\n```");
 });
 
 Deno.test("annotated hover shows generalized field requirements after annotation erasure", async () => {
   const path = "/test/annotation-required.wm";
   const source = `
-record First = { value: Number };
+record First = { value: Real64.Real };
 record Second = { value: String };
 let get = (r: Second) => { r.value };
 let result = get(.{ value = "hello" }: Second);

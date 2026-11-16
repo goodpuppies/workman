@@ -24,12 +24,12 @@ export { BASIS_INTRINSICS, GPU_INTRINSIC_ENTRIES };
  */
 const LAYER0_TYPES = Object.freeze(
   [
-    { name: "Number", typeNameId: -1, arity: 0, profiles, equality: "always" },
+    { name: "Real64.Real", typeNameId: -1, arity: 0, profiles, equality: "always" },
     { name: "Bool", typeNameId: -2, arity: 0, profiles, equality: "always" },
     { name: "String", typeNameId: -3, arity: 0, profiles, equality: "always" },
     { name: "Void", typeNameId: -4, arity: 0, profiles, equality: "always" },
     { name: "Char", typeNameId: -34, arity: 0, profiles, equality: "always" },
-    { name: "I32", typeNameId: -35, arity: 0, profiles, equality: "always" },
+    { name: "Int32.Int", typeNameId: -35, arity: 0, profiles, equality: "always" },
     {
       name: "Option",
       typeNameId: -10,
@@ -126,16 +126,8 @@ const LAYER0_TYPES = Object.freeze(
       hostOwned: true,
     },
     {
-      name: "Float32.Real",
+      name: "Real32.Real",
       typeNameId: -30,
-      arity: 0,
-      profiles,
-      equality: "never",
-      hostOwned: true,
-    },
-    {
-      name: "Float64.Real",
-      typeNameId: -31,
       arity: 0,
       profiles,
       equality: "never",
@@ -242,16 +234,15 @@ export const BASIS_VALUES: readonly BasisValueDescriptor[] = Object.freeze([
     "checkedAdd",
     "checkedSub",
     "checkedMul",
-    "toNumber",
-    "fromNumber",
+    "toReal64",
+    "fromReal64",
     "toString",
-    "fromString",
     "minimum",
     "maximum",
   ].map((name) => ({
-    exportName: `I32.${name}`,
+    exportName: `Int32.${name}`,
     profiles: defaultOnly,
-    runtimeName: `I32.${name}`,
+    runtimeName: `__wm_basis_Int32.${name}`,
   })),
   ...JS_HOST_VALUES,
 ]);

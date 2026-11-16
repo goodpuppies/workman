@@ -10,8 +10,8 @@ from "basis/result.wm" import * as R;
 // Projected mark ranges are metadata. The diff still derives emergent whitespace.
 record VirtualSpan = {
   markId: Marks.MarkId,
-  projectedStart: I32,
-  projectedEnd: I32,
+  projectedStart: Int32,
+  projectedEnd: Int32,
   delimiter: Option<Ast.DelimiterId>,
 };
 record Projection = {
@@ -20,9 +20,9 @@ record Projection = {
   virtualSpans: List<VirtualSpan>,
 };
 record Writer = {
-  unitsRev: List<I32>,
-  length: I32,
-  indent: I32,
+  unitsRev: List<Int32>,
+  length: Int32,
+  indent: Int32,
   atLineStart: Bool,
   pendingSpace: Bool,
   correspondenceRev: List<Diff.Correspondence>,

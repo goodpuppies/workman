@@ -27,7 +27,7 @@ type AppError =
 let raylibpath = "./examples/raylib/libraylib.so";
 let screenW = 960;
 let screenH = 540;
-record Color = { r: Number, g: Number, b: Number, a: Number };
+record Color = { r: Real64, g: Real64, b: Real64, a: Real64 };
 let title = "wmslang mandelbrot in raylib";
 let hint = "Gpu.shaderSource(GLSL) -> raylib fragment shader - ESC to exit";
 
@@ -38,7 +38,7 @@ let hudColor = .{ r = 232, g = 234, b = 244, a = 255 };
 -- Verbatim from markdown/wmslang/v1-acceptance.md (`static_mandelbrot.wm`):
 -- the shader accepted by the compiler's own Slang backend test, so this
 -- example tracks a source known to compile through the whole pipeline.
-type Escape = Inside | Escaped<Number>;
+type Escape = Inside | Escaped<Real64>;
 
 let mandelbrotShade = (coord) => {
   @gpu;

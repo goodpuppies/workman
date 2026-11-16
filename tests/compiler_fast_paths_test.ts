@@ -16,7 +16,7 @@ Deno.test("kernel source, graph, recovered, and emission paths do not load the l
       new URL("../src/compiler.ts", import.meta.url).href,
     )
   });
-    const source = "-- @no-prelude\\nlet square = (n: Number) => { n * n }; let answer = square(7);";
+    const source = "-- @no-prelude\\nlet square = (n: Real64.Real) => { n * n }; let answer = square(7);";
     const files = new Map([["/test/main.wm", source]]);
     await api.checkSource(source);
     await api.checkSourceSteps(source);

@@ -6,7 +6,7 @@ const modules = (main: string, extra: Record<string, string> = {}) =>
     "/test/base.wm": `
       let value = 7;
       let add = (a, b) => { a + b };
-      type Shape = | Circle<Number> | Dot;
+      type Shape = | Circle<Real64.Real> | Dot;
       let area = (shape) => { match(shape) { Circle(r) => { r }, Dot => { 0 } } };
     `,
     "/test/mid.wm": `export from "./base.wm" import *; let own = value + 1;`,

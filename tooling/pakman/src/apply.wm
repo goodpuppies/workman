@@ -77,7 +77,7 @@ let writeOwned = (root, files: List<String>) => {
 };
 
 let isSafePath = (path) => {
-  match(UnicodeText.fields(path, (scalar) => { scalar == (47: I32) })) {
+  match(UnicodeText.fields(path, (scalar) => { scalar == (47: Int32) })) {
     Err(_) => { false },
     Ok(parts) => {
       path != "" && !(UnicodeText.isPrefix(path, "/") :> Result.getOr(true))

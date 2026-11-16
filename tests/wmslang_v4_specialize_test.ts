@@ -4,7 +4,7 @@ import { inferModule } from "../src/infer.ts";
 import type { GpuOperationRow } from "../src/infer/type_facts.ts";
 import { parseCompilerModule as parse } from "../src/compiler_frontend.ts";
 import { standardInferOptions } from "../src/standard_library.ts";
-import { fn, fresh, NumberTy, prune, show, tuple } from "../src/types.ts";
+import { fn, fresh, Real64Ty, prune, show, tuple } from "../src/types.ts";
 import {
   canonicalGpuType,
   type GpuFunctionTemplate,
@@ -63,13 +63,13 @@ Deno.test("v4 catalog skeletons contribute only universal HM equalities", async 
     return show(binding.type).replaceAll(/'\w+/g, "'a");
   };
   assertEquals(scheme("floored"), "'a -> 'a");
-  assertEquals(scheme("magnitude"), "'a -> Number");
-  assertEquals(scheme("dotted"), "('a, 'a) -> Number");
+  assertEquals(scheme("magnitude"), "'a -> Real64.Real");
+  assertEquals(scheme("dotted"), "('a, 'a) -> Real64.Real");
   assertEquals(
     scheme("crossed"),
-    "((Number, Number, Number), (Number, Number, Number)) -> (Number, Number, Number)",
+    "((Real64.Real, Real64.Real, Real64.Real), (Real64.Real, Real64.Real, Real64.Real)) -> (Real64.Real, Real64.Real, Real64.Real)",
   );
-  assertEquals(scheme("bent"), "('a, 'a, Number) -> 'a");
+  assertEquals(scheme("bent"), "('a, 'a, Real64.Real) -> 'a");
   assertEquals(scheme("eased"), "('a, 'a, 'a) -> 'a");
 });
 
@@ -87,7 +87,7 @@ Deno.test("v4 GPU operators see Result payloads and retain a separate carrier pl
     item.identity === "gpu.operator.add"
   );
   if (!operation) throw new Error("missing lifted GPU operator fact");
-  assertEquals(operation.args.map(show), ["(Number, Number, Number)", "Number"]);
+  assertEquals(operation.args.map(show), ["(Real64.Real, Real64.Real, Real64.Real)", "Real64.Real"]);
   assertEquals(prune(operation.result).tag, "var");
   const carrier = result.facts.primitiveCarriers.get(operation.occurrence);
   assertEquals(carrier?.carrier, "Result");
@@ -113,7 +113,7 @@ Deno.test("v4 Result carrier plans preserve two wrapped operands and one error t
   );
   if (!carrier) throw new Error("missing two-sided Result carrier plan");
   const operation = result.facts.gpuOperations.get(carrier.occurrence);
-  assertEquals(operation?.args.map(show), ["(Number, Number)", "Number"]);
+  assertEquals(operation?.args.map(show), ["(Real64.Real, Real64.Real)", "Real64.Real"]);
   assertEquals(carrier.operands, ["wrapped", "wrapped"]);
   assertEquals(
     show(result.facts.bindings.get("lifted")?.at(-1)?.general?.type!),
@@ -147,7 +147,7 @@ Deno.test("v4 specialization freshens one helper body for scalar and vector seed
   const vectorResult = fresh();
   const scalarCall = expression("Call") as Extract<Expr, { kind: "Call" }>;
   const vectorCall = expression("Call") as Extract<Expr, { kind: "Call" }>;
-  const rgba = tuple([NumberTy, NumberTy, NumberTy, NumberTy]);
+  const rgba = tuple([Real64Ty, Real64Ty, Real64Ty, Real64Ty]);
   const root: GpuFunctionTemplate = {
     bindingId: 1,
     name: "root",
@@ -159,14 +159,14 @@ Deno.test("v4 specialization freshens one helper body for scalar and vector seed
       {
         occurrence: scalarCall,
         targetBindingId: 2,
-        args: [NumberTy],
+        args: [Real64Ty],
         result: scalarResult,
         staticFunctionArgs: [undefined],
       },
       {
         occurrence: vectorCall,
         targetBindingId: 2,
-        args: [tuple([NumberTy, NumberTy, NumberTy])],
+        args: [tuple([Real64Ty, Real64Ty, Real64Ty])],
         result: vectorResult,
         staticFunctionArgs: [undefined],
       },
@@ -181,13 +181,13 @@ Deno.test("v4 specialization freshens one helper body for scalar and vector seed
   });
   assertEquals(instances.map((instance) => instance.seedKey), [
     "1<>[]",
-    "2<Number>[?]",
-    "2<(Number,Number,Number)>[?]",
+    "2<Real64.Real>[?]",
+    "2<(Real64.Real,Real64.Real,Real64.Real)>[?]",
   ]);
-  assertEquals(canonicalGpuType(instances[0].occurrenceTypes.get(scalarCall)!), "Number");
+  assertEquals(canonicalGpuType(instances[0].occurrenceTypes.get(scalarCall)!), "Real64.Real");
   assertEquals(
     canonicalGpuType(instances[0].occurrenceTypes.get(vectorCall)!),
-    "(Number,Number,Number)",
+    "(Real64.Real,Real64.Real,Real64.Real)",
   );
   assertEquals(instances[1].operations[0].row.id, 0);
   assertEquals(instances[2].operations[0].row.id, 2);
@@ -217,7 +217,7 @@ Deno.test("v4 specialization worklist lets one selected row make the next select
         kind: "operator",
         identity: "gpu.operator.add",
         occurrence: add,
-        args: [x, NumberTy],
+        args: [x, Real64Ty],
         result: sum,
         rows: [
           { id: 0, args: ["f32", "f32"], result: "f32" },
@@ -237,7 +237,7 @@ Deno.test("v4 specialization worklist lets one selected row make the next select
     ],
     calls: [],
   };
-  const vector = tuple([NumberTy, NumberTy, NumberTy]);
+  const vector = tuple([Real64Ty, Real64Ty, Real64Ty]);
   const instances = specializeGpuTemplates({
     rootBindingId: 3,
     rootArgs: [vector],
@@ -245,7 +245,7 @@ Deno.test("v4 specialization worklist lets one selected row make the next select
     templates: new Map([[3, rounded]]),
   });
   assertEquals(instances[0].operations.map((operation) => operation.row.id), [1, 12]);
-  assertEquals(canonicalGpuType(instances[0].result), "(Number,Number,Number)");
+  assertEquals(canonicalGpuType(instances[0].result), "(Real64.Real,Real64.Real,Real64.Real)");
 });
 
 Deno.test("v4 seed keys deduplicate fresh call-result variables", () => {
@@ -273,12 +273,12 @@ Deno.test("v4 seed keys deduplicate fresh call-result variables", () => {
   const secondResult = fresh();
   const firstCall = expression("Call") as Extract<Expr, { kind: "Call" }>;
   const secondCall = expression("Call") as Extract<Expr, { kind: "Call" }>;
-  const vector = tuple([NumberTy, NumberTy, NumberTy]);
+  const vector = tuple([Real64Ty, Real64Ty, Real64Ty]);
   const root: GpuFunctionTemplate = {
     bindingId: 1,
     name: "root",
     params: [],
-    result: NumberTy,
+    result: Real64Ty,
     occurrenceTypes: new Map([[firstCall, firstResult], [secondCall, secondResult]]),
     operations: [],
     calls: [firstCall, secondCall].map((occurrence, index) => ({
@@ -292,12 +292,12 @@ Deno.test("v4 seed keys deduplicate fresh call-result variables", () => {
   const instances = specializeGpuTemplates({
     rootBindingId: 1,
     rootArgs: [],
-    rootResult: NumberTy,
+    rootResult: Real64Ty,
     templates: new Map([[1, root], [2, twice]]),
   });
   assertEquals(instances.map((instance) => instance.seedKey), [
     "1<>[]",
-    "2<(Number,Number,Number)>[?]",
+    "2<(Real64.Real,Real64.Real,Real64.Real)>[?]",
   ]);
   assertEquals(
     canonicalGpuType(instances[0].occurrenceTypes.get(firstCall)!),
@@ -337,7 +337,7 @@ Deno.test("v4 specialization IDs are independent of call discovery order", () =>
       return {
         occurrence,
         targetBindingId: 2,
-        args: [shape === "scalar" ? NumberTy : tuple([NumberTy, NumberTy, NumberTy])],
+        args: [shape === "scalar" ? Real64Ty : tuple([Real64Ty, Real64Ty, Real64Ty])],
         result,
         staticFunctionArgs: [undefined],
       };
@@ -346,7 +346,7 @@ Deno.test("v4 specialization IDs are independent of call discovery order", () =>
       bindingId: 1,
       name: "root",
       params: [],
-      result: NumberTy,
+      result: Real64Ty,
       occurrenceTypes: new Map(calls.map((call) => [call.occurrence, call.result])),
       operations: [],
       calls,
@@ -354,7 +354,7 @@ Deno.test("v4 specialization IDs are independent of call discovery order", () =>
     return specializeGpuTemplates({
       rootBindingId: 1,
       rootArgs: [],
-      rootResult: NumberTy,
+      rootResult: Real64Ty,
       templates: new Map([[1, root], [2, twice]]),
     }).map((instance) => ({
       id: instance.id,
@@ -400,21 +400,21 @@ Deno.test("v4 specialization keys instances by syntactic argument seeds", () => 
     bindingId: 1,
     name: "root",
     params: [],
-    result: NumberTy,
+    result: Real64Ty,
     occurrenceTypes: new Map([[intCall, intResult], [floatCall, floatResult]]),
     operations: [],
     calls: [
       {
         occurrence: intCall,
         targetBindingId: 2,
-        args: [NumberTy],
+        args: [Real64Ty],
         result: intResult,
         staticFunctionArgs: [undefined],
       },
       {
         occurrence: floatCall,
         targetBindingId: 2,
-        args: [NumberTy],
+        args: [Real64Ty],
         result: floatResult,
         staticFunctionArgs: [undefined],
       },
@@ -423,13 +423,13 @@ Deno.test("v4 specialization keys instances by syntactic argument seeds", () => 
   const instances = specializeGpuTemplates({
     rootBindingId: 1,
     rootArgs: [],
-    rootResult: NumberTy,
+    rootResult: Real64Ty,
     templates: new Map([[1, root], [2, twice]]),
   });
   assertEquals(instances.map((instance) => instance.seedKey), [
     "1<>[]",
-    "2<Number>[i32]",
-    "2<Number>[f32]",
+    "2<Real64.Real>[i32]",
+    "2<Real64.Real>[f32]",
   ]);
 });
 
@@ -470,21 +470,21 @@ Deno.test("v4 pinned bindings specialize per call site", () => {
     bindingId: 1,
     name: "root",
     params: [],
-    result: NumberTy,
+    result: Real64Ty,
     occurrenceTypes: new Map([[firstCall, firstResult], [secondCall, secondResult]]),
     operations: [],
     calls: [
       {
         occurrence: firstCall,
         targetBindingId: 2,
-        args: [NumberTy],
+        args: [Real64Ty],
         result: firstResult,
         staticFunctionArgs: [undefined],
       },
       {
         occurrence: secondCall,
         targetBindingId: 2,
-        args: [NumberTy],
+        args: [Real64Ty],
         result: secondResult,
         staticFunctionArgs: [undefined],
       },
@@ -493,28 +493,28 @@ Deno.test("v4 pinned bindings specialize per call site", () => {
   const shared = specializeGpuTemplates({
     rootBindingId: 1,
     rootArgs: [],
-    rootResult: NumberTy,
+    rootResult: Real64Ty,
     templates: new Map([[1, root], [2, twice]]),
   });
-  assertEquals(shared.map((instance) => instance.seedKey), ["1<>[]", "2<Number>[i32]"]);
+  assertEquals(shared.map((instance) => instance.seedKey), ["1<>[]", "2<Real64.Real>[i32]"]);
   const split = specializeGpuTemplates({
     rootBindingId: 1,
     rootArgs: [],
-    rootResult: NumberTy,
+    rootResult: Real64Ty,
     templates: new Map([[1, root], [2, twice]]),
     pinnedPerSite: new Set([2]),
   });
   assertEquals(split.map((instance) => instance.seedKey), [
     "1<>[]",
-    "2<Number>[i32]@0:7",
-    "2<Number>[i32]@0:9",
+    "2<Real64.Real>[i32]@0:7",
+    "2<Real64.Real>[i32]@0:9",
   ]);
 });
 
 Deno.test("v4 rejects polymorphic recursion instead of creating another seed", () => {
   const recursiveCall = expression("Call") as Extract<Expr, { kind: "Call" }>;
-  const vector2 = tuple([NumberTy, NumberTy]);
-  const vector3 = tuple([NumberTy, NumberTy, NumberTy]);
+  const vector2 = tuple([Real64Ty, Real64Ty]);
+  const vector3 = tuple([Real64Ty, Real64Ty, Real64Ty]);
   const process: GpuFunctionTemplate = {
     bindingId: 1,
     name: "process",
@@ -545,8 +545,8 @@ Deno.test("v4 rejects dynamic and returned function values before shader IR", ()
   const dynamic: GpuFunctionTemplate = {
     bindingId: 1,
     name: "dynamic",
-    params: [fn([NumberTy], NumberTy)],
-    result: NumberTy,
+    params: [fn([Real64Ty], Real64Ty)],
+    result: Real64Ty,
     occurrenceTypes: new Map(),
     operations: [],
     calls: [],
@@ -554,8 +554,8 @@ Deno.test("v4 rejects dynamic and returned function values before shader IR", ()
   const dynamicError = assertThrows(() =>
     specializeGpuTemplates({
       rootBindingId: 1,
-      rootArgs: [fn([NumberTy], NumberTy)],
-      rootResult: NumberTy,
+      rootArgs: [fn([Real64Ty], Real64Ty)],
+      rootResult: Real64Ty,
       templates: new Map([[1, dynamic]]),
     })
   );
@@ -565,7 +565,7 @@ Deno.test("v4 rejects dynamic and returned function values before shader IR", ()
     bindingId: 2,
     name: "returned",
     params: [],
-    result: fn([NumberTy], NumberTy),
+    result: fn([Real64Ty], Real64Ty),
     occurrenceTypes: new Map(),
     operations: [],
     calls: [],
@@ -583,7 +583,7 @@ Deno.test("v4 rejects dynamic and returned function values before shader IR", ()
 
 Deno.test("v4 distinguishes ambiguous rows from insufficient argument context", () => {
   const specializeOperation = (
-    argument: ReturnType<typeof fresh> | typeof NumberTy,
+    argument: ReturnType<typeof fresh> | typeof Real64Ty,
     rows: GpuOperationRow[],
   ) => {
     const occurrence = expression("Call");
@@ -592,7 +592,7 @@ Deno.test("v4 distinguishes ambiguous rows from insufficient argument context", 
       bindingId: 1,
       name: "operation",
       params: [],
-      result: NumberTy,
+      result: Real64Ty,
       occurrenceTypes: new Map([[occurrence, result]]),
       operations: [{
         kind: "builtin",
@@ -609,7 +609,7 @@ Deno.test("v4 distinguishes ambiguous rows from insufficient argument context", 
       specializeGpuTemplates({
         rootBindingId: 1,
         rootArgs: [],
-        rootResult: NumberTy,
+        rootResult: Real64Ty,
         templates: new Map([[1, template]]),
       });
       throw new Error("expected specialization failure");
@@ -618,7 +618,7 @@ Deno.test("v4 distinguishes ambiguous rows from insufficient argument context", 
       return error;
     }
   };
-  const ambiguous = specializeOperation(NumberTy, [
+  const ambiguous = specializeOperation(Real64Ty, [
     { id: 1, args: ["f32"], result: "f32" },
     { id: 2, args: ["f32"], result: "f32x2" },
   ]);
@@ -662,7 +662,7 @@ Deno.test("v4 does not select an operation backward from its expected result", (
       specializeGpuTemplates({
         rootBindingId: 1,
         rootArgs: [],
-        rootResult: NumberTy,
+        rootResult: Real64Ty,
         templates: new Map([[1, template]]),
       });
       throw new Error("expected specialization failure");
@@ -691,7 +691,7 @@ Deno.test("library pervasives are hidden in @gpu code, and only there", async ()
   const result = inferModule(module, new Map(), await standardInferOptions());
   const general = (name: string) => show(result.facts.bindings.get(name)!.at(-1)!.general!.type);
   assertEquals(general("floored").replaceAll(/'\w+/g, "'a"), "'a -> 'a");
-  assertEquals(general("hostFloor"), "Number -> Result<Number!, Error>!");
+  assertEquals(general("hostFloor"), "Real64.Real -> Result<Real64.Real!, Error>!");
 });
 
 Deno.test("a name the program binds itself still wins over a GPU builtin", async () => {
@@ -706,6 +706,6 @@ Deno.test("a name the program binds itself still wins over a GPU builtin", async
   const result = inferModule(module, new Map(), await standardInferOptions());
   assertEquals(
     show(result.facts.bindings.get("floored")!.at(-1)!.general!.type),
-    "Number -> Number",
+    "Real64.Real -> Real64.Real",
   );
 });

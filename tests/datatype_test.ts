@@ -5,9 +5,9 @@ import { expectBinding } from "./type_helpers.ts";
 Deno.test("basis exposes Option and Result constructors", async () => {
   const result = await checkSource(`
     let maybe = Some(1);
-    let missing: Option<Number> = None;
+    let missing: Option<Real64.Real> = None;
     let ok = Ok("value");
-    let err: Result<String, Number> = Err(404);
+    let err: Result<String, Real64.Real> = Err(404);
     let get = match(maybe) => {
       Some(value) => { value },
       None => { 0 },
@@ -19,12 +19,12 @@ Deno.test("basis exposes Option and Result constructors", async () => {
   expectBinding(result.env, "None", { type: "Option<T>", vars: 1 });
   expectBinding(result.env, "Ok", { type: "T -> Result<T, E>", vars: 2 });
   expectBinding(result.env, "Err", { type: "E -> Result<T, E>", vars: 2 });
-  expectBinding(result.env, "maybe", { type: "Option<Number>", vars: 0 });
-  expectBinding(result.env, "missing", { type: "Option<Number>", vars: 0 });
+  expectBinding(result.env, "maybe", { type: "Option<Real64.Real>", vars: 0 });
+  expectBinding(result.env, "missing", { type: "Option<Real64.Real>", vars: 0 });
   expectBinding(result.env, "ok", { type: "Result<String, 'a>", vars: 1 });
-  expectBinding(result.env, "err", { type: "Result<String, Number>", vars: 0 });
-  expectBinding(result.env, "get", { type: "Option<Number> -> Number", vars: 0 });
-  expectBinding(result.env, "unwrapped", { type: "Number", vars: 0 });
+  expectBinding(result.env, "err", { type: "Result<String, Real64.Real>", vars: 0 });
+  expectBinding(result.env, "get", { type: "Option<Real64.Real> -> Real64.Real", vars: 0 });
+  expectBinding(result.env, "unwrapped", { type: "Real64.Real", vars: 0 });
 });
 
 Deno.test("no-prelude directive permits a self-contained Result", async () => {
@@ -37,7 +37,7 @@ Deno.test("no-prelude directive permits a self-contained Result", async () => {
   `);
 
   expectBinding(result.env, "Ok", { type: "T -> Result<T, E>", vars: 2 });
-  expectBinding(result.env, "value", { type: "Result<Number, 'a>", vars: 1 });
+  expectBinding(result.env, "value", { type: "Result<Real64.Real, 'a>", vars: 1 });
   if (result.env.has("Some") || result.env.has("Result.map")) {
     throw new Error("no-prelude module unexpectedly received prelude bindings");
   }
@@ -54,7 +54,7 @@ Deno.test("polymorphic datatype constructors generalize over type parameters", a
   expectBinding(result.env, "None", { type: "Option<T>", vars: 1 });
   expectBinding(result.env, "Some", { type: "T -> Option<T>", vars: 1 });
   expectBinding(result.env, "none", { type: "Option<'a>", vars: 1 });
-  expectBinding(result.env, "some_number", { type: "Option<Number>", vars: 0 });
+  expectBinding(result.env, "some_number", { type: "Option<Real64.Real>", vars: 0 });
   expectBinding(result.env, "some_string", { type: "Option<String>", vars: 0 });
 });
 
@@ -93,14 +93,14 @@ Deno.test("mutually recursive type groups work in local declaration sequences", 
 
 Deno.test("constructor arity is checked in expressions and patterns", async () => {
   await assertRejects(
-    () => checkSource("type Pair = | Pair<Number, Number>; let bad = Pair(1);"),
+    () => checkSource("type Pair = | Pair<Real64.Real, Real64.Real>; let bad = Pair(1);"),
     Error,
     "type collision",
   );
   await assertRejects(
     () =>
       checkSource(`
-        type Pair = | Pair<Number, Number>;
+        type Pair = | Pair<Real64.Real, Real64.Real>;
         let value = Pair(1, 2);
         let bad = match(value) => { Pair(x) => { x } };
       `),
@@ -116,7 +116,7 @@ Deno.test("value restriction keeps ordinary call results monomorphic", async () 
         type Option<T> = None | Some<T>;
         let make = () => { None };
         let value = make();
-        let as_number: Option<Number> = value;
+        let as_number: Option<Real64.Real> = value;
         let as_string: Option<String> = value;
       `),
     Error,
@@ -128,7 +128,7 @@ Deno.test("value restriction still generalizes non-expansive constructor applica
   const result = await checkSource(`
     type Option<T> = None | Some<T>;
     let value = Some(None);
-    let as_number: Option<Option<Number>> = value;
+    let as_number: Option<Option<Real64.Real>> = value;
     let as_string: Option<Option<String>> = value;
   `);
 
@@ -168,10 +168,10 @@ Deno.test("value restriction allows later declarations to constrain expansive mo
     type Option<T> = None | Some<T>;
     let make = () => { None };
     let value = make();
-    let as_number: Option<Number> = value;
+    let as_number: Option<Real64.Real> = value;
   `);
 
-  expectBinding(result.env, "value", { type: "Option<Number>", vars: 0 });
+  expectBinding(result.env, "value", { type: "Option<Real64.Real>", vars: 0 });
 });
 
 Deno.test("type constructor arity is checked for datatypes and aliases", async () => {
@@ -226,13 +226,13 @@ Deno.test("type aliases reject direct cycles", async () => {
 Deno.test("type alias parameter substitution preserves sharing", async () => {
   const result = await checkSource(`
     type Pair<T> = (T, T);
-    let first_same = (pair: Pair<Number>) => {
+    let first_same = (pair: Pair<Real64.Real>) => {
       let (x, _) = pair;
       x
     };
   `);
 
-  expectBinding(result.env, "first_same", { type: "(Number, Number) -> Number", vars: 0 });
+  expectBinding(result.env, "first_same", { type: "(Real64.Real, Real64.Real) -> Real64.Real", vars: 0 });
 });
 
 Deno.test("type alias substitution is applied inside datatype constructor payloads", async () => {
@@ -246,8 +246,8 @@ Deno.test("type alias substitution is applied inside datatype constructor payloa
   `);
 
   expectBinding(result.env, "Box", { type: "(T, T) -> Box<T>", vars: 1 });
-  expectBinding(result.env, "boxed", { type: "Box<Number>", vars: 0 });
-  expectBinding(result.env, "unbox", { type: "Box<Number> -> Number", vars: 0 });
+  expectBinding(result.env, "boxed", { type: "Box<Real64.Real>", vars: 0 });
+  expectBinding(result.env, "unbox", { type: "Box<Real64.Real> -> Real64.Real", vars: 0 });
 });
 
 Deno.test("datatype constructors reject payloads mentioning unbound type variables", async () => {

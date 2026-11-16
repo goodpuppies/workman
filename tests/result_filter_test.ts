@@ -7,16 +7,16 @@ Deno.test("Result.filter preserves the success and error types through direct ca
   const result = await checkSource(`
     let kept = Ok(3) :> Result.filter(x => x > 0, "not positive");
     let rejected = Result.filter(Ok(0), x => x > 0, "not positive");
-    let existing = Err("original") :> Result.filter((x: Number) => x > 0, "replacement");
+    let existing = Err("original") :> Result.filter((x: Real64.Real) => x > 0, "replacement");
     let converted = Some(3) :> Option.toResult("missing") :> Result.filter(x => x > 0, "not positive");
-    let jsError: Result<Number, Js.Error> = Err(Js.Error("original"));
+    let jsError: Result<Real64.Real, Js.Error> = Err(Js.Error("original"));
     let retained = jsError :> Result.filter(x => x > 0, Js.Error("not positive"));
     let mapped = jsError :> Result.mapErr(_ => "original") :> Result.filter(x => x > 0, "not positive");
   `);
   for (const name of ["kept", "rejected", "existing", "converted", "mapped"]) {
-    expectBinding(result.env, name, { type: "Result<Number, String>", vars: 0 });
+    expectBinding(result.env, name, { type: "Result<Real64.Real, String>", vars: 0 });
   }
-  expectBinding(result.env, "retained", { type: "Result<Number, Js.Error>", vars: 0 });
+  expectBinding(result.env, "retained", { type: "Result<Real64.Real, Js.Error>", vars: 0 });
 });
 
 Deno.test("Result.filter returns original passing and failed results unchanged", async () => {
@@ -24,7 +24,7 @@ Deno.test("Result.filter returns original passing and failed results unchanged",
     let input = Ok(3);
     let kept = input :> Result.filter(x => x > 0, "rejected");
     let original = Err("original");
-    let preserved = original :> Result.filter((_: Number) => Panic "predicate ran", "replacement");
+    let preserved = original :> Result.filter((_: Real64.Real) => Panic "predicate ran", "replacement");
   `;
   const code = await compileLibraryVirtual(
     "/test/filter.wm",
@@ -41,7 +41,7 @@ Deno.test("Result.filter evaluates the predicate once per Ok and skips it for Er
     let main = () => {
       print(Ok(3) :> Result.filter(predicate, "rejected"));
       print(Result.filter(Ok(0), predicate, "rejected"));
-      print(Err("original") :> Result.filter((_: Number) => Panic "predicate ran", "replacement"))
+      print(Err("original") :> Result.filter((_: Real64.Real) => Panic "predicate ran", "replacement"))
     };
   `;
   const code = await compileVirtual("/test/main.wm", new Map([["/test/main.wm", source]]));
@@ -68,7 +68,7 @@ Deno.test("Result.filter evaluates the predicate once per Ok and skips it for Er
 Deno.test("Result.filter rejects a different error type or a non-Boolean predicate", async () => {
   for (
     const source of [
-      'let input: Result<Number, Js.Error> = Err(Js.Error("original")); let output = input :> Result.filter(x => x > 0, "rejected");',
+      'let input: Result<Real64.Real, Js.Error> = Err(Js.Error("original")); let output = input :> Result.filter(x => x > 0, "rejected");',
       'let output = Ok(3) :> Result.filter(x => x + 1, "rejected");',
     ]
   ) {

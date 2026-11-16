@@ -125,7 +125,7 @@ const __wm_abi_convert = (value, shape, outward) => {
   const cache = outward ? __wm_abi_out : __wm_abi_in;
   let entries = cache.get(value);
   if (entries?.has(key)) return entries.get(key);
-  if (!entries) { entries = new Map(); cache.set(value, entries); }
+  if (!entries) { entries = new globalThis.Map(); cache.set(value, entries); }
   const [, arity, parameters, resultShape] = shape;
   const fast = outward && value[Symbol.for("wm.tupleEntry.v1." + arity)];
   const simple = parameters.every(item => item === null) && resultShape === null;

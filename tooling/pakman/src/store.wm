@@ -224,7 +224,7 @@ let realizePlanWith = (paths: Paths, def: PackageInfo, entry: LockEntry, private
         inputsText(if (privateInstance) { "@private" } else { baseFor(paths, def) }, def, pkg, sources, builder, entry.ref)
           :> Task.fromResult :> Task.andThen(sha256Text)
       }
-        :> Task.map((fullHash) => { (sources, ByteString.substring(fullHash, (0: I32), (32: I32)) :> Result.getOr(fullHash)) })
+        :> Task.map((fullHash) => { (sources, ByteString.substring(fullHash, (0: Int32), (32: Int32)) :> Result.getOr(fullHash)) })
     };
     let locate = via Task (sources, hash) => {
       let storePath = paths.store ++ "/" ++ hash ++ "-" ++ packageStoreName(def.name) ++ "-" ++ packageStoreName(pkg.version);

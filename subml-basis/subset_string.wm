@@ -18,7 +18,7 @@ from "./subset_text_host.wm" import * as SubsetTextHost;
 from "./subset_bytes.wm" import * as SubsetBytes;
 from "./subset_option_value.wm" import * as SubsetOptionValue;
 
-type Error = | NonByte<I32>;
+type Error = | NonByte<Int32.Int>;
 type Slice_error = InvalidIndex | StringError<Error>;
 let fromNative = (value) => {
   let rec go = match {
@@ -26,11 +26,11 @@ let fromNative = (value) => {
     ([code, ..rest], Var(offset), Var(bytes)) => {
       match(SubsetChar.fromCode(code)) {
         SubsetResult.Err(error) => { SubsetResult.Err(NonByte(offset)) },
-        SubsetResult.Ok(c) => { go(rest, offset + (1: I32), [c, ..bytes]) }
+        SubsetResult.Ok(c) => { go(rest, offset + (1: Int32.Int), [c, ..bytes]) }
       }
     }
   };
-  go(SubsetTextHost.codes(value), (0: I32), [])
+  go(SubsetTextHost.codes(value), (0: Int32.Int), [])
 };
 
 let compare = (left, right) => {
@@ -83,11 +83,11 @@ let toNative = (bytes) => {
     ([c, ..rest], Var(offset), Var(codes)) => {
       match(SubsetChar.toCode(c)) {
         SubsetResult.Err(error) => { SubsetResult.Err(NonByte(offset)) },
-        SubsetResult.Ok(code) => { go(rest, offset + (1: I32), [code, ..codes]) }
+        SubsetResult.Ok(code) => { go(rest, offset + (1: Int32.Int), [code, ..codes]) }
       }
     }
   };
-  go(bytes, (0: I32), [])
+  go(bytes, (0: Int32.Int), [])
 };
 
 // Checked byte-string helpers share the extraction/reconstruction boundaries.

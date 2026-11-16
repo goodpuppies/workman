@@ -6,7 +6,7 @@
 from "./ansi.wm" import * as Ansi;
 from js.module("node:tty") import type { ReadStream, WriteStream };
 -- Reflection doesn't find process's members, so they're declared (unsafe).
-from js.global("process") import unsafe { stdin: ReadStream, stdout: WriteStream, exit: Number -> Void };
+from js.global("process") import unsafe { stdin: ReadStream, stdout: WriteStream, exit: Real64 -> Void };
 from js.global import { String as toString };
 from js.global("String") import { fromCharCode };
 

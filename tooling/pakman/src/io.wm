@@ -5,8 +5,8 @@ from "basis/path.wm" import * as Path;
 from js.module("./host.ts") import * as Host;
 from js.module("./host.ts") import unsafe {
   envOr as envOrRaw: (String, String) -> String,
-  nowSeconds as nowRaw: Void -> Number,
-  isoToSeconds as isoRaw: String -> Number,
+  nowSeconds as nowRaw: Void -> Real64,
+  isoToSeconds as isoRaw: String -> Real64,
   confirmYes: String -> Bool,
   denoPath as denoPathRaw: Void -> String,
   prettyJson as prettyRaw: Js.Value -> String

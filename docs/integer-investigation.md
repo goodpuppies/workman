@@ -57,7 +57,7 @@ successful checked overflow do not establish this particular path works.
 - Ordinary MLWorks `int` is a useful target for counters and indexing without
   double-precision arithmetic or boxing each integer.
 - Choose the range explicitly: a fixed signed 30-bit contract is cheap on
-  MLWorks and exactly representable using JS Number; signed 32-bit needs the
+  MLWorks and exactly representable using JS Real64; signed 32-bit needs the
   boxed Int32 path or a different representation. Target-dependent machine
   int bounds are another option, with weaker cross-target consistency.
 - Thirty bits do not cover current Unix epoch seconds or arbitrary file

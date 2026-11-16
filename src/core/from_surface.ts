@@ -872,7 +872,7 @@ const I32_BINARY_HELPERS: Readonly<Record<string, string>> = {
 const I32_UNARY_HELPERS: Readonly<Record<string, string>> = { "-": "__wm_i32_neg" };
 
 /**
- * Host I32 arithmetic goes through checked prelude helpers that panic on overflow; comparisons and
+ * Host Int32.Int arithmetic goes through checked prelude helpers that panic on overflow; comparisons and
  * equality keep the plain operators. The shared Core keeps the operator for backends with a native
  * 32-bit integer.
  */
@@ -888,7 +888,7 @@ function i32Operator(
   const type = context.types.get(operand);
   if (!type) return undefined;
   const resolved = prune(type);
-  if (resolved.tag !== "prim" || resolved.name !== "I32") return undefined;
+  if (resolved.tag !== "prim" || resolved.name !== "Int32.Int") return undefined;
   return { kind: "CoreVar", name: helper, node: operand.node };
 }
 

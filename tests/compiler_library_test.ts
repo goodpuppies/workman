@@ -12,7 +12,7 @@ Deno.test("library emission exports entry bindings and does not invoke main", as
       "/test/library.wm",
       `
         let main = () => { Panic("library main must not run") };
-        let double = (value: Number) => { value * 2 };
+        let double = (value: Real64.Real) => { value * 2 };
       `,
     ],
   ]);

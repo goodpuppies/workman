@@ -12,7 +12,7 @@ type Value =
   | Record<List<(String, Value)>>
   | Tag<String, List<(String, Value)>, Value>;
 
-record Error = {offset: I32, message: String};
+record Error = {offset: Int32.Int, message: String};
 let makeError = (offset, message) => { (.{ offset = offset, message = message }: Error) };
 
 // A value reached by access, with its reversed path for reporting problems.

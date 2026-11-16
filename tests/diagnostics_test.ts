@@ -20,7 +20,7 @@ Deno.test("diagnostic snapshots retain introduction types across later unificati
   const variable = fresh("input");
   const type = fn([variable], variable);
   const before = writer.snapshotType(type);
-  unify(variable, prim("Number"));
+  unify(variable, prim("Real64.Real"));
   const after = writer.snapshotType(type);
   const support = writer.buildSupport([]);
   assertEquals(
@@ -29,7 +29,7 @@ Deno.test("diagnostic snapshots retain introduction types across later unificati
   );
   assertEquals(
     support.types.find((snapshot) => snapshot.id === after)?.rendered,
-    "Number -> Number",
+    "Real64.Real -> Real64.Real",
   );
   assertEquals(writer.buildSupport([]), support);
 });
@@ -60,7 +60,7 @@ Deno.test("terminal diagnostic documents wrap on words and keep their indentatio
 
 Deno.test("instantiated field requirements retain source-aware type mismatch origins", async () => {
   const source = `record Post = { author: String };
-record FeedPost = { author: Number };
+record FeedPost = { author: Real64.Real };
 record FeedPage = { posts: List<FeedPost>, cursor: Option<String> };
 let renderPost = (post) => { post.author ++ "!" };
 let renderPosts = (posts) => { List.map(posts, renderPost) };
@@ -74,7 +74,7 @@ let bad = renderFeed(FeedPage([FeedPost(1)], None));`;
   assertEquals(diagnostic.failure.frame.rule, "InferRecord.ProjectField");
   const rendered = formatDiagnostic(diagnostic, "feed.wm", source);
   assertStringIncludes(rendered, "post.author");
-  assertStringIncludes(rendered, "FeedPost.author field: Number");
+  assertStringIncludes(rendered, "FeedPost.author field: Real64.Real");
   assertStringIncludes(rendered, "String");
   assertStringIncludes(rendered, "feed.wm:4:");
   assertEquals(rendered.includes("ambiguous record projection"), false);
@@ -82,7 +82,7 @@ let bad = renderFeed(FeedPage([FeedPost(1)], None));`;
 
 Deno.test("call mismatch produces an auditable diagnostic artifact", async () => {
   const error = await assertRejects(
-    () => checkSource('let inc = (x: Number) => { x + 1 }; let bad = inc("no");'),
+    () => checkSource('let inc = (x: Real64.Real) => { x + 1 }; let bad = inc("no");'),
     FrontendDiagnosticError,
   );
 
@@ -97,7 +97,7 @@ Deno.test("call mismatch produces an auditable diagnostic artifact", async () =>
   assertEquals(diagnostic.support.entries.some((entry) => entry.kind === "note"), false);
   assertEquals(constraintRoles(diagnostic), ["parameter", "argument"]);
   assertEquals(
-    diagnostic.support.types.some((snapshot) => snapshot.rendered === "Number"),
+    diagnostic.support.types.some((snapshot) => snapshot.rendered === "Real64.Real"),
     true,
   );
   assertEquals(
@@ -109,7 +109,7 @@ Deno.test("call mismatch produces an auditable diagnostic artifact", async () =>
     [
       "type collision: InferCall.Argument: argument matches parameter",
       "  conflict: type",
-      "  left: Number",
+      "  left: Real64.Real",
       "    source: parameter x",
       "  right: String",
       "    source: argument",
@@ -119,7 +119,7 @@ Deno.test("call mismatch produces an auditable diagnostic artifact", async () =>
 
 Deno.test("parameter annotation mismatch uses the authored collision renderer", async () => {
   const source = `let consumeText = (thing) => { thing == "text" };
-let useKind = (kind: Number) => { consumeText(kind) };`;
+let useKind = (kind: Real64.Real) => { consumeText(kind) };`;
   const error = await assertRejects(
     () => checkSource(source),
     FrontendDiagnosticError,
@@ -127,7 +127,7 @@ let useKind = (kind: Number) => { consumeText(kind) };`;
 
   const rendered = formatDiagnostic(error.diagnostic, "case.wm", source);
   assertStringIncludes(rendered, "type error: parameter thing can't be both:");
-  assertStringIncludes(rendered, "annotation requires: Number");
+  assertStringIncludes(rendered, "annotation requires: Real64.Real");
   assertStringIncludes(rendered, "parameter thing inferred as: String");
   assertStringIncludes(rendered, "case.wm:1:");
   assertStringIncludes(rendered, "case.wm:2:");
@@ -136,8 +136,8 @@ let useKind = (kind: Number) => { consumeText(kind) };`;
 });
 
 Deno.test("call arity mismatch retains callee and argument locations", async () => {
-  const source = `let takes = (a: Number, b: String, c: Bool, d: Number) => { void };
-let f = (x: Number) => {
+  const source = `let takes = (a: Real64.Real, b: String, c: Bool, d: Real64.Real) => { void };
+let f = (x: Real64.Real) => {
   takes(
     x "text",
     true,
@@ -159,7 +159,7 @@ let f = (x: Number) => {
 });
 
 Deno.test("HM call collision renders neutral origins and both provenance paths", async () => {
-  const source = `record Coord = { x: Number, y: Number };
+  const source = `record Coord = { x: Real64.Real, y: Real64.Real };
 type Step<State> = | Continue<State>;
 let coordUpdate = (coord) => {};
 let update = match(event, model) => {
@@ -249,7 +249,7 @@ Deno.test("call mismatch preserves the nested HM constraint origin through gener
   listPrinter(list, 0)
 };
 
-let tokens: List<Number> = [];
+let tokens: List<Real64.Real> = [];
 let bad = printList(tokens);`;
   const error = await assertRejects(
     () => checkSource(source),
@@ -299,7 +299,7 @@ Deno.test("carrier tuple mismatch points at later offending item", async () => {
 });
 
 Deno.test("multi-argument call mismatch points at offending argument", async () => {
-  const source = `let draw = (x: Number, y: Number) => { x }; let bad = draw(1, Ok(2));`;
+  const source = `let draw = (x: Real64.Real, y: Real64.Real) => { x }; let bad = draw(1, Ok(2));`;
   const error = await assertRejects(
     () => checkSource(source),
     FrontendDiagnosticError,
@@ -343,7 +343,7 @@ let rec filterList = (fn, list) => {
 
 Deno.test("pipe mismatch records a pipe step premise", async () => {
   const error = await assertRejects(
-    () => checkSource('let render = (n: Number) => { n }; let bad = "x" :> render;'),
+    () => checkSource('let render = (n: Real64.Real) => { n }; let bad = "x" :> render;'),
     FrontendDiagnosticError,
   );
 
@@ -360,7 +360,7 @@ Deno.test("pipe mismatch records a pipe step premise", async () => {
 });
 
 Deno.test("pipe mismatch uses the enhanced authored renderer", async () => {
-  const source = 'let render = (n: Number) => { n };\nlet bad = "x" :> render;';
+  const source = 'let render = (n: Real64.Real) => { n };\nlet bad = "x" :> render;';
   const error = await assertRejects(
     () => checkSource(source),
     FrontendDiagnosticError,
@@ -373,7 +373,7 @@ Deno.test("pipe mismatch uses the enhanced authored renderer", async () => {
   assertStringIncludes(rendered, "let bad = {..}");
   assertStringIncludes(rendered, ": String");
   assertStringIncludes(rendered, 'let bad = "x" :> {..}');
-  assertStringIncludes(rendered, ": Number");
+  assertStringIncludes(rendered, ": Real64.Real");
   assertStringIncludes(rendered, "-- Origins");
 });
 
@@ -390,7 +390,7 @@ let result = input :> Result.map(toActor);`;
 });
 
 Deno.test("REPL diagnostics keep one compact source excerpt", async () => {
-  const source = 'let inc = (x: Number) => { x + 1 };\nlet bad = inc("no");';
+  const source = 'let inc = (x: Real64.Real) => { x + 1 };\nlet bad = inc("no");';
   const error = await assertRejects(
     () => checkSource(source),
     FrontendDiagnosticError,
@@ -398,7 +398,7 @@ Deno.test("REPL diagnostics keep one compact source excerpt", async () => {
 
   const rendered = formatReplDiagnostic(error.diagnostic, "Main.wm", source);
   assertStringIncludes(rendered, "error[type.call-argument-mismatch] Main.wm:2:");
-  assertStringIncludes(rendered, "Number conflicts with String");
+  assertStringIncludes(rendered, "Real64.Real conflicts with String");
   assertStringIncludes(rendered, '2 | let bad = inc("no");');
   assertEquals(rendered.includes("Error: TYPE CHECKER"), false);
   assertEquals(rendered.includes("support:"), false);
@@ -427,8 +427,8 @@ Deno.test("REPL syntax explanations stay below the excerpt without truncating th
 
 Deno.test("pipe mismatch points at trailing semicolon Void source", async () => {
   const source = `
-let parseConfig: Number -> Result<String, Js.Error> = (n) => { Ok("ok") };
-let input: Result<Number, Js.Error> = Err(Js.Unknown);
+let parseConfig: Real64.Real -> Result<String, Js.Error> = (n) => { Ok("ok") };
+let input: Result<Real64.Real, Js.Error> = Err(Js.Unknown);
 let bad = input
   :> Result.mapErr((e) => {
     e;
@@ -597,7 +597,7 @@ let bad = match(value) {
   const rendered = formatDiagnostic(error.diagnostic, "app/literal.wm", source);
   const origins = rendered.split("-- Origins")[1];
   assertStringIncludes(origins, "String");
-  assertStringIncludes(origins, "Number");
+  assertStringIncludes(origins, "Real64.Real");
   assertStringIncludes(origins, "app/literal.wm:3:3");
   assertStringIncludes(origins, "pattern 1");
 });
@@ -611,7 +611,7 @@ Deno.test("nested pattern mismatches retain the concrete payload origin", async 
   const rendered = formatDiagnostic(error.diagnostic, "app/nested.wm", source);
   const origins = rendered.split("-- Origins")[1];
   assertStringIncludes(origins, "expression: String");
-  assertStringIncludes(origins, "pattern 1: Number");
+  assertStringIncludes(origins, "pattern 1: Real64.Real");
   assertStringIncludes(origins, "app/nested.wm:1:");
   assertStringIncludes(origins, "app/nested.wm:2:8");
 });
@@ -670,7 +670,7 @@ Deno.test("match arm summaries retain relative file locations at wide and narrow
 });
 
 Deno.test("match arm collision traces Void to an ending semicolon", async () => {
-  const source = `record Coord = { x: Number, y: Number };
+  const source = `record Coord = { x: Real64.Real, y: Real64.Real };
 type Step<State> = | Continue<State> | Quit;
 let coordUpdate = (coord) => {
   coord;
@@ -758,7 +758,7 @@ Deno.test("if mismatch traces a recursive match result to its concrete empty arm
 });
 
 Deno.test("compact collision excerpts collapse excessive indentation", async () => {
-  const source = `let inc = (x: Number) => { x + 1 };
+  const source = `let inc = (x: Real64.Real) => { x + 1 };
 let main = () => {
                     inc("no")
 };`;

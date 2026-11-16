@@ -127,7 +127,7 @@ basis support is already being developed.
 | `.3`, `4.E5` | Neither is an SML real constant | Current v3 also requires digits before and after a fractional dot |
 
 Literal spelling does not settle numeric types: WM's current default numeric type
-is `Number`, rather than SML's overloaded numeric types. Word literals need to be
+is `Real64`, rather than SML's overloaded numeric types. Word literals need to be
 connected to the corresponding basis types during elaboration. V3 accepts both
 `e` and `E`, and optional `+`/`-` exponent signs. Prefixes remain lowercase;
 hexadecimal digits accept either case. Word representation is not a lexer decision.

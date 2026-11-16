@@ -3,7 +3,7 @@ import { checkSource } from "../src/compiler.ts";
 
 Deno.test("supports annotations on tuple lambda parameters", async () => {
   await checkSource(`
-    let first = ((x, _): (Number, String)) => { x };
+    let first = ((x, _): (Real64.Real, String)) => { x };
     let value = first((1, "a"));
   `);
 });

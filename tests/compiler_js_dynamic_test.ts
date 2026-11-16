@@ -60,7 +60,7 @@ Deno.test("JSON literal variables can settle to primitive types", async () => {
     let value = response("ok", 200);
   `);
 
-  expectBinding(result.env, "response", { type: "(String, Number) -> Response!", vars: 0 });
+  expectBinding(result.env, "response", { type: "(String, Real64.Real) -> Response!", vars: 0 });
   expectBinding(result.env, "value", { type: "Response!", vars: 0 });
 });
 
@@ -157,7 +157,7 @@ Deno.test("deep reflected generic calls expose concrete result members", async (
   `;
   const result = await checkSource(source);
 
-  expectBinding(result.env, "use", { type: "Result<Number, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "use", { type: "Result<Real64.Real, Js.Error>!", vars: 0 });
 
   const js = await compile(source);
   if (js.includes("__dynamic.symbols.SDL_PollEvent")) {
@@ -172,7 +172,7 @@ Deno.test("deep reflected receiver arity errors point at the source call", async
       checkSource(`
         from js.global("Deno") import { dlopen: _deep_ };
 
-        let expectNumber = (value: Number) => { value };
+        let expectNumber = (value: Real64.Real) => { value };
         let lib = dlopen("SDL2", JSON{
           SDL_PollEvent: JSON{ parameters: JSON["pointer"], result: "i32" }
         });
@@ -197,7 +197,7 @@ Deno.test("dynamic JS callback parameter annotations are rejected", async () => 
             Err(_) => { Panic("ffi") },
           }
         };
-        let double = (value: Number, index, array) => {
+        let double = (value: Real64.Real, index, array) => {
           value + value
         };
         let items = JSON.parse("[1,2]");
@@ -218,7 +218,7 @@ Deno.test("dynamic JS callback parameter annotations are rejected", async () => 
           }
         };
         let items = JSON.parse("[1,2]");
-        let doubled: Js.Object = items :> .map((value: Number, index, array) => {
+        let doubled: Js.Object = items :> .map((value: Real64.Real, index, array) => {
           value + value
         }) :> try :> Json.assert :> try;
       `),
@@ -248,7 +248,7 @@ Deno.test("dynamic JS annotations require explicit Json.assert", async () => {
 
 Deno.test("annotated record handlers allow statically typed JS member calls", async () => {
   await checkSource(`
-    record Payload = { amount: Number };
+    record Payload = { amount: Real64.Real };
     record Api = { add: (Payload, String) -> Void };
     let api: Api = .{
       add = (payload, sender) => {
@@ -402,9 +402,9 @@ Deno.test("primitive JS methods constrain unannotated helper receivers", async (
       text :> .repeat(count) :> try
     };
   `);
-  expectBinding(result.env, "numberText", { type: "Number -> String!", vars: 0 });
-  expectBinding(result.env, "paddedRight", { type: "(String, Number) -> String!", vars: 0 });
-  expectBinding(result.env, "repeated", { type: "(String, Number) -> String!", vars: 0 });
+  expectBinding(result.env, "numberText", { type: "Real64.Real -> String!", vars: 0 });
+  expectBinding(result.env, "paddedRight", { type: "(String, Real64.Real) -> String!", vars: 0 });
+  expectBinding(result.env, "repeated", { type: "(String, Real64.Real) -> String!", vars: 0 });
 });
 
 Deno.test("a member's primitive default waits for receiver evidence", async () => {
@@ -421,7 +421,7 @@ Deno.test("a member's primitive default waits for receiver evidence", async () =
     let viaLaterCall = Buffer.from("hi") :> Result.andThen(plain);
   `);
   expectBinding(result.env, "inCallback", { type: "Result<String, Js.Error>!", vars: 0 });
-  expectBinding(result.env, "sliced", { type: "Result<Number, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "sliced", { type: "Result<Real64.Real, Js.Error>!", vars: 0 });
   expectBinding(result.env, "viaHelper", { type: "Result<String, Js.Error>!", vars: 0 });
   expectBinding(result.env, "viaLaterCall", { type: "Result<String, Js.Error>!", vars: 0 });
 });
@@ -441,17 +441,17 @@ Deno.test("a member's primitive default doesn't accept the wrong arguments", asy
 
 Deno.test("a function's annotation doesn't treat pending calls in its body as casts", async () => {
   const result = await checkSource(`
-    record Payload = { amount: Number };
+    record Payload = { amount: Real64.Real };
     record Api = { describe: Payload -> Result<String, Js.Error> };
     let api: Api = .{ describe = (payload) => { payload.amount :> .toExponential() } };
-    let describe: Number -> Result<String, Js.Error> = (n) => { n :> .toExponential() };
+    let describe: Real64.Real -> Result<String, Js.Error> = (n) => { n :> .toExponential() };
   `);
-  expectBinding(result.env, "describe", { type: "Number -> Result<String, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "describe", { type: "Real64.Real -> Result<String, Js.Error>!", vars: 0 });
   await assertRejects(
     () =>
       checkSource(`
         from js.global("JSON") import unsafe { parse: String -> Js.Object } as JSON;
-        let f: String -> Result<Number, Js.Error> = (s) => { JSON.parse(s) :> .commits };
+        let f: String -> Result<Real64.Real, Js.Error> = (s) => { JSON.parse(s) :> .commits };
       `),
     Error,
     "type mismatch",
@@ -462,14 +462,14 @@ Deno.test("generic JS globals keep their arity when imported by name", async () 
   const result = await checkSource(`
     from js.global import { ArrayBuffer, DataView, Map, Set, WeakMap, WeakSet };
     from js.global import type { Date };
-    record Views = { view: DataView<ArrayBuffer>, dates: WeakMap<Date, Number> };
+    record Views = { view: DataView<ArrayBuffer>, dates: WeakMap<Date, Real64.Real> };
     let map = Map.new() :> Result.debug;
     let set = Set.new() :> Result.debug;
     let weakMap = WeakMap.new() :> Result.debug;
     let weakSet = WeakSet.new() :> Result.debug;
     let size = map :> .size;
   `);
-  expectBinding(result.env, "size", { type: "Result<Number, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "size", { type: "Result<Real64.Real, Js.Error>!", vars: 0 });
 });
 
 Deno.test("numeric typed arrays stay non-generic when imported by name", async () => {
@@ -609,7 +609,7 @@ Deno.test("Js.Dict supports typed string-key access through Dict.get and Dict.se
       stringify: Js.Value -> String,
     } as JSON;
     from js.host("dict") import * as Dict;
-    record CacheEntry = { fetchedAt: Number, city: String };
+    record CacheEntry = { fetchedAt: Real64.Real, city: String };
     let try = (result) => {
       match(result) {
         Ok(value) => { value },
@@ -719,7 +719,7 @@ Deno.test("Array.from works with explicit typed array element annotations", asyn
         Err(_) => { Panic("ffi") },
       }
     };
-    let hexByte = (byte: Number, index, array) => {
+    let hexByte = (byte: Real64.Real, index, array) => {
       byte :> .toString(16) :> try
     };
     let makeHex = () => {
@@ -762,7 +762,7 @@ Deno.test("Array.from monomorphizes a reflected iterable without a typed shim", 
 
 Deno.test("match-bound Workman record fields do not become JS FFI projections", async () => {
   const result = await checkSource(`
-    record Binding = { definitionExprId: Number };
+    record Binding = { definitionExprId: Real64.Real };
     let field = match(value) => {
       Some(item) => { item.definitionExprId },
       None => { 0 }
@@ -770,7 +770,7 @@ Deno.test("match-bound Workman record fields do not become JS FFI projections", 
     let answer = field(Some(Binding{ definitionExprId = 42 }));
   `);
 
-  expectBinding(result.env, "answer", { type: "Number", vars: 0 });
+  expectBinding(result.env, "answer", { type: "Real64.Real", vars: 0 });
 });
 
 Deno.test("existing JS members with unsupported reflected signatures say so", async () => {
@@ -790,7 +790,7 @@ Deno.test("JSON literals reject ordinary ML values at the JS boundary", async ()
   await assertRejects(
     () =>
       checkSource(`
-        type Int_list = Empty | Cons<Number, Int_list>;
+        type Int_list = Empty | Cons<Real64.Real, Int_list>;
         let bad = JSON{ xs: Cons(1, Empty) };
       `),
     Error,

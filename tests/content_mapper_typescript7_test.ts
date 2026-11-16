@@ -49,10 +49,10 @@ async function fixture(): Promise<string> {
   );
   await Deno.writeTextFile(
     join(dir, "math.wm"),
-    "let double = (value: Number) => value + value;\nlet identity = (item) => item;\n" +
-      "let sum = (left: Number, right: Number) => left + right;\n" +
-      "let curried = (first: Number) => (second: Number) => first + second;\nlet shared = 1;\n" +
-      "let invoke = (function, a: Number, b: Number) => function(a, b);\n",
+    "let double = (value: Real64.Real) => value + value;\nlet identity = (item) => item;\n" +
+      "let sum = (left: Real64.Real, right: Real64.Real) => left + right;\n" +
+      "let curried = (first: Real64.Real) => (second: Real64.Real) => first + second;\nlet shared = 1;\n" +
+      "let invoke = (function, a: Real64.Real, b: Real64.Real) => function(a, b);\n",
   );
   await Deno.writeTextFile(
     join(dir, "mid.wm"),
@@ -123,7 +123,7 @@ Deno.test({
       assertStringIncludes(new TextDecoder().decode(bad.stdout), "TS2345");
       await Deno.writeTextFile(
         join(dir, "math.wm"),
-        "let double = (x: Number) => x + x; let broken = 1 + true;",
+        "let double = (x: Real64.Real) => x + x; let broken = 1 + true;",
       );
       const broken = await compile();
       assertStringIncludes(new TextDecoder().decode(broken.stdout), "type.mismatch");
@@ -347,7 +347,7 @@ for (const bridge of [false, true]) {
         // contains an inferred type rather than a TS import of that WM dependency.
         await Deno.writeTextFile(
           join(dir, "math.wm"),
-          'let double = (value: Number) => value + value; let shared = "saved";',
+          'let double = (value: Real64.Real) => value + value; let shared = "saved";',
         );
         await send({
           jsonrpc: "2.0",

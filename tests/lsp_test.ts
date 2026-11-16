@@ -239,7 +239,7 @@ Deno.test("lsp validation localizes recursive binding return mismatches", async 
   const dir = await Deno.makeTempDir();
   const main = `${dir}/main.wm`;
   const source = `
-type Int_list = Empty | Cons<Number, Int_list>;
+type Int_list = Empty | Cons<Real64.Real, Int_list>;
 
 let rec sumList = (list, val) => {
   match(list) => {
@@ -260,16 +260,16 @@ let rec sumList = (list, val) => {
   assertDiagnosticMessageIncludes(diagnostics?.[0].message, [
     "`sumList` is recursive",
     "Recursive calls produce:",
-    "Number",
+    "Real64.Real",
     "But the body produces:",
-    "Int_list -> Number",
+    "Int_list -> Real64.Real",
     "This looks like an accidental match-function expression.",
   ]);
   assertEquals(diagnostics?.[0].range.start, { line: 6, character: 22 });
   assertEquals(diagnostics?.[0].range.end, { line: 6, character: 42 });
   assertEquals(
     diagnostics?.[0].relatedInformation?.[0].message,
-    "body: Int_list -> Number",
+    "body: Int_list -> Real64.Real",
   );
   assertEquals(diagnostics?.[0].relatedInformation?.[0].location.range.start, {
     line: 4,
@@ -291,12 +291,12 @@ let rec sumList = (list, val) => {
     },
   );
   assertEquals(
-    diagnostics?.[0].relatedInformation?.find((item) => item.message === "operator +: Number")
+    diagnostics?.[0].relatedInformation?.find((item) => item.message === "operator +: Real64.Real")
       ?.message,
-    "operator +: Number",
+    "operator +: Real64.Real",
   );
   assertEquals(
-    diagnostics?.[0].relatedInformation?.find((item) => item.message === "operator +: Number")
+    diagnostics?.[0].relatedInformation?.find((item) => item.message === "operator +: Real64.Real")
       ?.location.range.start,
     {
       line: 6,
@@ -309,7 +309,7 @@ Deno.test("lsp validation relates call argument provenance through published bin
   const dir = await Deno.makeTempDir();
   const main = `${dir}/main.wm`;
   const source = `
-type Int_list = Empty | Cons<Number, Int_list>;
+type Int_list = Empty | Cons<Real64.Real, Int_list>;
 
 let rec sumList = (list) => {
   let rec inner = (list, acc) => {
@@ -333,11 +333,11 @@ let bad = sumList(Cons(1, Empty));
     "type.call-argument-mismatch",
   ]);
   assertDiagnosticMessageIncludes(diagnostics?.[0].message, [
-    "type error: inner(list) can't be both:\n  - (Int_list, Number)\n  - Int_list",
-    "(Int_list, Number)",
+    "type error: inner(list) can't be both:\n  - (Int_list, Real64.Real)\n  - Int_list",
+    "(Int_list, Real64.Real)",
     "Int_list",
     "-- Origins ",
-    "call argument: (Int_list, Number)",
+    "call argument: (Int_list, Real64.Real)",
     "Cons: Int_list",
     "main.wm:11:3",
     "main.wm:14:19",

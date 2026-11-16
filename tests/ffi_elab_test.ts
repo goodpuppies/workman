@@ -147,7 +147,7 @@ Deno.test("FFI elaboration rewrites annotated Js.Object property reads", async (
 
 Deno.test("FFI elaboration rewrites annotated primitive receiver methods", async () => {
   const module = await parse(`
-    let hex = (byte: Number) => {
+    let hex = (byte: Real64.Real) => {
       byte :> .toString(16)
     };
   `);

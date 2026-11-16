@@ -4,7 +4,7 @@ The repository includes a local content mapper for TypeScript **7.1.0-beta**. It
 project import `.wm` modules with types inferred by Workman, without generating intermediate files
 on disk.
 
-The first implementation supports `Number`, `Bool`, `String`, `Void`, tuples, structural records,
+The first implementation supports `Real64`, `Bool`, `String`, `Void`, tuples, structural records,
 functions, currying, and unconstrained polymorphic functions. Types come from wm's semantic
 analysis; TypeScript does not infer them from a translated function body. wm syntax and type errors
 are reported through the mapper, retaining independently valid declarations. Hover, signature help,
@@ -157,19 +157,19 @@ projection diagnostic, since TS has a single exported value namespace.
 The projection describes the current JavaScript library ABI. For this wm function:
 
 ```ts
-let sum = (left: Number, right: Number) => left + right;
+let sum = (left: Real64, right: Real64) => left + right;
 ```
 
 The TypeScript call is `sum(left, right)`. Library emission and the mapper share the same
 argument-shape rule: the outer parameter tuple becomes positional JS arguments. Tuple components and
 return values keep their tuple representation. For example, a WM function taking
-`((Number, Number), Number)` is called as `fn([first, second], extra)`, and a tuple result remains
+`((Real64, Real64), Real64)` is called as `fn([first, second], extra)`, and a tuple result remains
 an array. Tuples project as `readonly [...]`, like records: WM never mutates them, so TS
 `readonly` and `as const` tuples are accepted as arguments, and a tuple without converted
 components can cross without a copy, so a returned tuple must not be mutated. Curried stages stay separate: `curried(first)(second)`.
 
 This convention applies recursively to callbacks, function factories, and exported namespaces. A
-callback typed `(Number, Number) -> Number` is a JS `(left, right) => number` callback. A generic
+callback typed `(Real64, Real64) -> Real64` is a JS `(left, right) => number` callback. A generic
 callback `T -> U` still receives one value; if `T` is a tuple, that value is an array. JS function
 `.length` does not decide the convention.
 
@@ -207,7 +207,7 @@ WM modules are interchangeable.
 
 ```ts
 import { fromNullable } from "@goodpuppies/workman/interop";
-import { fadeAt } from "./geometry.wm"; // fadeAt: (Option<Fade>, Number) -> Number
+import { fadeAt } from "./geometry.wm"; // fadeAt: (Option<Fade>, Real64) -> Real64
 
 fadeAt(fromNullable(maybeFade), zoom);
 ```
@@ -218,7 +218,7 @@ payloads; `Ok` and `Err` in the interop module build Results. Constructor number
 Tasks remain eager and rejection is not converted into a typed error by this adapter; use ordinary
 safe WM FFI boundaries for that.
 
-Payloads use the positional JS ABI: an `Option<(Number, Number) -> Number>` holds a function
+Payloads use the positional JS ABI: an `Option<(Real64, Real64) -> Real64>` holds a function
 called as `f(left, right)`. Nullary basis constructors such as `None` are shared through
 `globalThis`, so separately compiled WM libraries and the interop helpers agree on them.
 Constructors of ADTs defined in WM modules, including `Order` from `basis/order.wm`, are numbered
@@ -233,7 +233,7 @@ WM records are plain JS objects, so the mapper exports each record as a TS type 
 readonly fields, alongside its ordered constructor function:
 
 ```ts
-// record ConvPoint = { id: Number, u: Number, v: Number };
+// record ConvPoint = { id: Real64, u: Real64, v: Real64 };
 export type ConvPoint = { readonly "id": number; readonly "u": number; readonly "v": number };
 export declare const ConvPoint: (id: number, u: number, v: number) => ConvPoint;
 ```

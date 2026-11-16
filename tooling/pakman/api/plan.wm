@@ -225,7 +225,7 @@ record Info = {
   target: Target,
   scope: Scope,
   channel: String,
-  minAgeDays: Number,
+  minAgeDays: Real64.Real,
   onlyLatest: Bool,
   hosts: List<String>
 };

@@ -1,9 +1,9 @@
 from "./basis.wm" import * as Basis;
 from js.module("./js/byte_vector.js") import unsafe {
-  length as vectorLength: Word8Vector.Vector -> Number,
-  sliceLength: Word8VectorSlice.Slice -> Number,
-  packSubVec as primSubVec: (String, Bool, Word8Vector.Vector, Number) -> Word32.Word,
-  packSubSlice as primSubSlice: (String, Bool, Word8VectorSlice.Slice, Number) -> Word32.Word,
+  length as vectorLength: Word8Vector.Vector -> Real64.Real,
+  sliceLength: Word8VectorSlice.Slice -> Real64.Real,
+  packSubVec as primSubVec: (String, Bool, Word8Vector.Vector, Real64.Real) -> Word32.Word,
+  packSubSlice as primSubSlice: (String, Bool, Word8VectorSlice.Slice, Real64.Real) -> Word32.Word,
   pack as primPack: (String, Bool, Word32.Word) -> Word8Vector.Vector
 };
 
@@ -11,7 +11,7 @@ let bytesPerElem = 4;
 
 let isBigEndian = false;
 
-let subVec = (vector, index: Number) => {
+let subVec = (vector, index: Real64.Real) => {
   if (index >= 0 && index % 1 == 0 && (index + 1) * 4 <= vectorLength(vector)) {
     Ok(primSubVec("word32", false, vector, index))
   } else {
@@ -19,7 +19,7 @@ let subVec = (vector, index: Number) => {
   }
 };
 
-let subSlice = (slice, index: Number) => {
+let subSlice = (slice, index: Real64.Real) => {
   if (index >= 0 && index % 1 == 0 && (index + 1) * 4 <= sliceLength(slice)) {
     Ok(primSubSlice("word32", false, slice, index))
   } else {

@@ -20,7 +20,7 @@ Deno.test("editor queries survive recovery with imported record pipe members", a
       [path, source],
       [
         join(dir, "draw.wm"),
-        "record Box = { value: Number }; let read = () => { Box(42) :> .value };",
+        "record Box = { value: Real64.Real }; let read = () => { Box(42) :> .value };",
       ],
     ]);
     const index = new ProjectIndex();
@@ -31,7 +31,7 @@ Deno.test("editor queries survive recovery with imported record pipe members", a
     });
     assertEquals((await service.documentContext(uri))?.recovered, true);
     const hover = await hoverAt(uri, { line: 1, character: 4 }, overrides, {}, service);
-    assertEquals(hover?.contents.value, "```wm\ngood: Number\n```");
+    assertEquals(hover?.contents.value, "```wm\ngood: Real64.Real\n```");
     const hints = await semanticInlayHints(
       uri,
       {
@@ -43,7 +43,7 @@ Deno.test("editor queries survive recovery with imported record pipe members", a
       {},
       service,
     );
-    assertEquals(hints.some((hint) => hint.label === ": Number"), true);
+    assertEquals(hints.some((hint) => hint.label === ": Real64.Real"), true);
     const highlights = await documentHighlightsAt(
       uri,
       { line: 1, character: 4 },
@@ -287,7 +287,7 @@ Deno.test("unannotated hover leaves live snapshots intact and refreshes after ed
   try {
     const path = join(dir, "main.wm");
     const uri = pathToFileUri(path);
-    const overrides = new Map([[path, "let id: Number -> Number = (x) => { x };"]]);
+    const overrides = new Map([[path, "let id: Real64.Real -> Real64.Real = (x) => { x };"]]);
     const index = new ProjectIndex();
     await index.refreshFile(path, overrides);
     const service = new SemanticService(index.discovery, {
@@ -298,19 +298,19 @@ Deno.test("unannotated hover leaves live snapshots intact and refreshes after ed
     const ordinary = await hoverAt(uri, { line: 0, character: 4 }, overrides, {}, service, {
       unannotated: false,
     });
-    assertEquals(ordinary?.contents.value, "```wm\nid: Number -> Number\n```");
+    assertEquals(ordinary?.contents.value, "```wm\nid: Real64.Real -> Real64.Real\n```");
     for (let repeat = 0; repeat < 2; repeat++) {
       const hover = await hoverAt(uri, { line: 0, character: 4 }, overrides, {}, service);
       assertEquals(
         hover?.contents.value,
-        "```wm\nid: Number -> Number\nunannotated: 'a -> 'a\n```",
+        "```wm\nid: Real64.Real -> Real64.Real\nunannotated: 'a -> 'a\n```",
       );
       assertStrictEquals((await service.documentContext(uri))?.project, before?.project);
     }
-    overrides.set(path, "let id: Number -> Number = (x) => { x + 1 };");
+    overrides.set(path, "let id: Real64.Real -> Real64.Real = (x) => { x + 1 };");
     await service.invalidatePaths([path]);
     const after = await hoverAt(uri, { line: 0, character: 4 }, overrides, {}, service);
-    assertEquals(after?.contents.value, "```wm\nid: Number -> Number\n```");
+    assertEquals(after?.contents.value, "```wm\nid: Real64.Real -> Real64.Real\n```");
     assertNotStrictEquals((await service.documentContext(uri))?.project, before?.project);
   } finally {
     await Deno.remove(dir, { recursive: true });
@@ -327,7 +327,7 @@ Deno.test("a dependency that recovery can't handle leaves requests empty, with a
   );
   await Deno.writeTextFile(
     lib,
-    'from js.global("Math") import { floor: Number -> Number };\nlet value = floor(1);',
+    'from js.global("Math") import { floor: Real64.Real -> Real64.Real };\nlet value = floor(1);',
   );
   const index = new ProjectIndex();
   index.rememberWorkspaceRoots({ workspaceFolders: [{ uri: pathToFileUri(dir) }] });

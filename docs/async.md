@@ -342,7 +342,7 @@ combinators do not see rejections: `Task.recover` and `Task.orElse` are skipped,
 stops with an uncaught error.
 
 ```workman
-from js.global("JSON") import unsafe { parse: String -> Number };
+from js.global("JSON") import unsafe { parse: String -> Real64 };
 
 -- Stops with "Uncaught (in promise) SyntaxError"; the recover never runs.
 Task.succeed("{{")

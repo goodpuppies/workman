@@ -238,7 +238,7 @@ Deno.test("reverse discovery prefers a directory-local head at equal import dist
       "/ws/colony/main3d.wm",
       'from "../orbital/color.wm" import { Color }; let main = () => { Color };',
     ],
-    ["/ws/orbital/color.wm", "record Color = { r: Number };"],
+    ["/ws/orbital/color.wm", "record Color = { r: Real64.Real };"],
   ]);
   const discovery = await discoveryIndex(files);
 
@@ -377,7 +377,7 @@ Deno.test("closing a project's anchor reselects its remaining open documents", a
 });
 
 Deno.test("[module update G21a] overlapping project snapshots isolate every semantic artifact", async () => {
-  const sharedSource = "record First = { x: Number }; record Second = { x: Number }; " +
+  const sharedSource = "record First = { x: Real64.Real }; record Second = { x: Real64.Real }; " +
     "let read = (value) => { value.x };";
   const files = new Map<string, string>([
     [

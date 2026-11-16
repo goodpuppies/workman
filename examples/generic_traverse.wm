@@ -14,10 +14,10 @@ let requirePositive = (number) => {
   if (number > 0) { Ok(number) } else { Err("not positive") }
 };
 
-let parsed: Result<List<Number>, String> = resultTraverse(["one", "one"], parseNumber);
-let positive: Result<List<Number>, String> = resultTraverse([1, 2, 3], requirePositive);
-let rejected: Result<List<Number>, String> = resultTraverse(["one", "two"], parseNumber);
+let parsed: Result<List<Real64>, String> = resultTraverse(["one", "one"], parseNumber);
+let positive: Result<List<Real64>, String> = resultTraverse([1, 2, 3], requirePositive);
+let rejected: Result<List<Real64>, String> = resultTraverse(["one", "two"], parseNumber);
 
-let completed: Task<List<Number>, String> = taskTraverse([1, 2, 3], (number) => {
+let completed: Task<List<Real64>, String> = taskTraverse([1, 2, 3], (number) => {
   Task.succeed(number + 1)
 });

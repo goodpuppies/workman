@@ -49,7 +49,7 @@ Allocation is an ordinary imported C operation:
 from "host/c/pointer.wm" import * as Pointer;
 from c.header("stdlib.h") import unsafe { malloc, free };
 let main = () => {
-  match(malloc(Word64.fromNumber(1024))) {
+  match(malloc(Word64.fromReal64(1024))) {
     None => { Panic("malloc failed") },
     Some(raw) => {
       let bytes = Pointer.cast(raw);
@@ -115,8 +115,8 @@ let address = sockaddr_in{
 ```
 
 The result is an ordinary `CStorage<sockaddr_in>` record with `pointer: Ptr<sockaddr_in>`
-and `size: Number` fields. Pass `Some(Pointer.cast(address.pointer))` as the native
-address, and convert `address.size` with `I32.fromNumber` for `bind`'s C `int`
+and `size: Real64` fields. Pass `Some(Pointer.cast(address.pointer))` as the native
+address, and convert `address.size` with `Int32.fromReal64` for `bind`'s C `int`
 length argument. The size is the allocated aggregate's byte count,
 including padding. Qualified type names also work. Nested
 initializers infer their struct or union type from the containing field; a union
@@ -143,17 +143,17 @@ explicit offsets. No permanent keepalive array or fixed-size string ring is used
 | C representation | Workman representation |
 | --- | --- |
 | Unsigned 8-, 16-, 32-bit integers | `Word8.Word`, `Word16.Word`, `Word32.Word` |
-| Signed integers through 32 bits | `I32` |
+| Signed integers through 32 bits | `Int32` |
 | Signed 64-bit integer | `Int64.Int` |
 | Unsigned 64-bit integer | `Word64.Word` |
 
-The 64-bit types carry JavaScript bigints. Use `Int64.fromNumber`,
-`Int64.fromString`, `Int64.toNumber`, `Int64.toString`, or the existing `Word64`
+The 64-bit types carry JavaScript bigints. Use `Int64.fromReal64`,
+`Int64.fromString`, `Int64.toReal64`, `Int64.toString`, or the existing `Word64`
 operations. Number conversions reject inexact values. Constants such as
 `INVALID_SOCKET` also preserve every bit. Wider C integers are unsupported.
 
 Calls pass existing `Int64` and `Word64` values directly as bigints, including
-64-bit results. CFFI does not implicitly cast a `Number` to these types; use an
+64-bit results. CFFI does not implicitly cast a `Real64` to these types; use an
 explicit conversion when the value comes from a Number-based API.
 
 Known named C imports called with literal tuple arguments use fixed-argument
@@ -164,8 +164,8 @@ or calling it with an existing tuple retains the ordinary WM calling convention.
 Widths and signedness come from Aro for the selected target, rather than the C
 type's spelling: a 16-bit `unsigned short` maps to `Word16.Word`, while a target
 with a 32-bit `unsigned short` maps to `Word32.Word`. `htons`, for example, takes
-and returns `Word16.Word` on Windows. Use `Word16.fromNumber(8080)` at the call
-site. Signed 8- and 16-bit values use `I32`, with their narrower native ABI
+and returns `Word16.Word` on Windows. Use `Word16.fromReal64(8080)` at the call
+site. Signed 8- and 16-bit values use `Int32`, with their narrower native ABI
 preserved; wm currently has no separate signed 8-/16-bit types. Integer constants,
 scalar pointer pointees, struct fields, getters, and setters use the same mapping.
 
@@ -173,8 +173,8 @@ Ordinary integer literals take their type from reflected parameters and aggregat
 fields. For example, `calloc(1, 1024)` and `htons(8080)` select the exact ABI types
 without explicit conversions. See [numeric literals](numbers.md) for ranges and defaults.
 
-Convert ordinary byte counts to `I32` when a C function expects `int`, and use
-`I32.toNumber` when a returned C integer is needed for Number-based pointer byte
+Convert ordinary byte counts to `Int32` when a C function expects `int`, and use
+`Int32.toReal64` when a returned C integer is needed for Number-based pointer byte
 offsets. Unsigned word conversions retain the existing standard library semantics.
 
 ## Windows HTTP example
@@ -248,7 +248,7 @@ In an explicitly authored `c.lib` signature, `Void -> T` means a C function with
 no native arguments, corresponding to `T f(void)`:
 
 ```wm
-from c.lib("c") import unsafe { getpid: Void -> I32 };
+from c.lib("c") import unsafe { getpid: Void -> Int32 };
 let processId = getpid();
 ```
 

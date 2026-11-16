@@ -16,24 +16,24 @@ from "./listx.wm" import { filter, count, isEmpty };
 -- we in", and pattern matching keeps the transitions honest.
 type Status = Running | Won | Lost;
 
-record Ship  = { pos: Vec2, vel: Vec2, fuel: Number, thrusting: Bool };
-record Orb   = { pos: Vec2, vel: Vec2, hue: Number };
+record Ship  = { pos: Vec2, vel: Vec2, fuel: Real64, thrusting: Bool };
+record Orb   = { pos: Vec2, vel: Vec2, hue: Real64 };
 -- `size` also keeps Spark structurally distinct from Orb; two nominal records
 -- with identical fields make `.{ ... }` literals ambiguous to infer.
-record Spark = { pos: Vec2, vel: Vec2, hue: Number, size: Number };
+record Spark = { pos: Vec2, vel: Vec2, hue: Real64, size: Real64 };
 
 record Game = {
   ship: Ship,
   orbs: List<Orb>,
   sparks: List<Spark>,
-  score: Number,
+  score: Real64,
   status: Status,
-  t: Number
+  t: Real64
 };
 
 -- A normalized thrust direction (length 0 or 1) plus the meta keys, all read at
 -- the FFI boundary and handed in as plain pure data.
-record Input = { thrust: Vec2, start: Bool, restart: Bool, wheel: Number };
+record Input = { thrust: Vec2, start: Bool, restart: Bool, wheel: Real64 };
 
 -- ---- world constants ------------------------------------------------------
 
@@ -48,11 +48,11 @@ let maxFuel = 100;
 
 -- ---- small pure helpers ---------------------------------------------------
 
-let clamp = (v: Number, lo: Number, hi: Number) => {
+let clamp = (v: Real64, lo: Real64, hi: Real64) => {
   if (v < lo) { lo } else { if (v > hi) { hi } else { v } }
 };
 
-let fmod = (a: Number, m: Number) => {
+let fmod = (a: Real64, m: Real64) => {
   let r = a % m;
   if (r < 0) { r + m } else { r }
 };
@@ -62,12 +62,12 @@ let wrap = (p: Vec2) => {
   .{ x = fmod(p.x, screenW), y = fmod(p.y, screenH) }
 };
 
-let withinSq = (a: Vec2, b: Vec2, radius: Number) => {
+let withinSq = (a: Vec2, b: Vec2, radius: Real64) => {
   lengthSq(sub(a, b)) < radius * radius
 };
 
 -- Newtonian-ish gravity with softening, identical idea to the sandbox.
-let gravity = (target: Vec2, p: Vec2, g: Number) => {
+let gravity = (target: Vec2, p: Vec2, g: Real64) => {
   let d = sub(target, p);
   let distSq = lengthSq(d) + 400;
   let dist = sqrt(distSq);
@@ -83,13 +83,13 @@ let unit = (v: Vec2) => {
 };
 
 -- Circular-orbit speed for a body at `radius` from the sun: v = sqrt(G / r).
-let orbitSpeed = (radius: Number) => {
+let orbitSpeed = (radius: Real64) => {
   sqrt(sunG / radius)
 };
 
 -- ---- per-entity stepping --------------------------------------------------
 
-let stepShip = (s: Ship, input: Input, dt: Number) => {
+let stepShip = (s: Ship, input: Input, dt: Real64) => {
   let canThrust = s.fuel > 0;
   let push =
     if (canThrust) {
@@ -105,13 +105,13 @@ let stepShip = (s: Ship, input: Input, dt: Number) => {
   .{ pos = pos, vel = vel, fuel = clamp(s.fuel - burned, 0, maxFuel), thrusting = burning }
 };
 
-let stepOrb = (o: Orb, dt: Number) => {
+let stepOrb = (o: Orb, dt: Real64) => {
   let vel = add(o.vel, scale(gravity(sun, o.pos, sunG), dt));
   let pos = add(o.pos, scale(vel, dt));
   .{ pos = pos, vel = vel, hue = o.hue }
 };
 
-let stepSpark = (s: Spark, dt: Number) => {
+let stepSpark = (s: Spark, dt: Real64) => {
   let vel = add(s.vel, scale(gravity(sun, s.pos, sunG), dt));
   let pos = add(s.pos, scale(vel, dt));
   .{ pos = pos, vel = vel, hue = s.hue, size = s.size }
@@ -119,7 +119,7 @@ let stepSpark = (s: Spark, dt: Number) => {
 
 -- ---- the frame step -------------------------------------------------------
 
-let stepGame = (g: Game, input: Input, dt: Number) => {
+let stepGame = (g: Game, input: Input, dt: Real64) => {
   let ship = stepShip(g.ship, input, dt);
 
   let movedOrbs = List.map(g.orbs, (o) => { stepOrb(o, dt) });
@@ -155,7 +155,7 @@ let stepGame = (g: Game, input: Input, dt: Number) => {
 
 -- ---- spawning a fresh run -------------------------------------------------
 
-let rec spawnOrbs = (n: Number, r: Rng) => {
+let rec spawnOrbs = (n: Real64, r: Rng) => {
   match(n) {
     0 => { ([], r) },
     _ => {
@@ -174,7 +174,7 @@ let rec spawnOrbs = (n: Number, r: Rng) => {
   }
 };
 
-let rec spawnSparks = (n: Number, r: Rng) => {
+let rec spawnSparks = (n: Real64, r: Rng) => {
   match(n) {
     0 => { ([], r) },
     _ => {

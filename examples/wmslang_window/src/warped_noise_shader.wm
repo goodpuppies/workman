@@ -13,14 +13,14 @@ from "./webgpu_present.wm" import {
 type AppError = NativeFailure<NativeError> | HostFailure<Js.Error>;
 
 record WarpedNoiseUniforms = {
-  resolution: (Number, Number),
-  time: Number
+  resolution: (Real64, Real64),
+  time: Real64
 };
 
 record NoiseFrame = {
   quit: Bool,
-  resolution: (Number, Number),
-  time: Number
+  resolution: (Real64, Real64),
+  time: Real64
 };
 
 type PollStep = PollAgain<NoiseFrame> | PollDone<NoiseFrame>;
@@ -115,7 +115,7 @@ let applyNativeEvent = (state: NoiseFrame, event) => {
   }
 };
 
-let rec drainEvents = (native: NativeRuntime, state: NoiseFrame, remaining: Number) => {
+let rec drainEvents = (native: NativeRuntime, state: NoiseFrame, remaining: Real64) => {
   if (remaining <= 0) {
     Ok(state)
   } else {

@@ -2,10 +2,10 @@ from "./basis.wm" import * as Basis;
 from "basis/order.wm" import { Less, Equal, Greater };
 from js.module("./js/vector.js") import unsafe {
   fromArray: Js.Array<a> -> Vector.Vector<a>,
-  length as primLength: Vector.Vector<a> -> Number,
-  uncheckedSub: (Vector.Vector<a>, Number) -> a,
-  uncheckedUpdate: (Vector.Vector<a>, Number, a) -> Vector.Vector<a>,
-  tabulate as primTabulate: (Number, Number -> a) -> Vector.Vector<a>,
+  length as primLength: Vector.Vector<a> -> Real64.Real,
+  uncheckedSub: (Vector.Vector<a>, Real64.Real) -> a,
+  uncheckedUpdate: (Vector.Vector<a>, Real64.Real, a) -> Vector.Vector<a>,
+  tabulate as primTabulate: (Real64.Real, Real64.Real -> a) -> Vector.Vector<a>,
   concatArray: Js.Array<Vector.Vector<a>> -> Vector.Vector<a>,
   newArray: Void -> Js.Array<a>,
   push: (Js.Array<a>, a) -> Void
@@ -35,7 +35,7 @@ let tabulate = (count, generate) => { primTabulate(count, generate) };
 
 let length = (vector) => { primLength(vector) };
 
-let sub = (vector, index: Number) => {
+let sub = (vector, index: Real64.Real) => {
   if (index >= 0 && index % 1 == 0 && index < primLength(vector)) {
     Ok(uncheckedSub(vector, index))
   } else {
@@ -43,7 +43,7 @@ let sub = (vector, index: Number) => {
   }
 };
 
-let update = (vector, index: Number, value) => {
+let update = (vector, index: Real64.Real, value) => {
   if (index >= 0 && index % 1 == 0 && index < primLength(vector)) {
     Ok(uncheckedUpdate(vector, index, value))
   } else {

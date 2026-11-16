@@ -17,7 +17,7 @@ The inferred types are:
 effect : Void -> Number!
 value  : Number!
 next   : Number!
-clean  : Number
+clean  : Real64
 ```
 
 ## Sequences and containers
@@ -55,13 +55,13 @@ let discard = () => { let pair = (effect(), 1); 1 };
 `discard` returns `Number!`. Discarding the tuple does not discard the effect. A `match` result
 carries its scrutinee's `!`, and `let` destructuring passes along a known `!`, so extraction cannot
 remove taint. A `match` arm's bindings keep their own positions, so mapping over
-`Result<Number, Js.Error>!` gives `Result<Number, Js.Error>!`, with no `!` added inside. Propagation
+`Result<Real64, Js.Error>!` gives `Result<Real64, Js.Error>!`, with no `!` added inside. Propagation
 stops at function bodies: storing `(() => { effect() }, 1)` does not execute `effect`. A function
 value's own outer `!` still counts.
 
 A concrete datatype or record field has no type argument to record `!` in, so a tainted value stored
-there marks the constructed value. With `type Box = | Box<Number>`, `Box(effect())` has type `Box!`,
-and with `type H = | H<Void -> Number>`, `H(effect)` has type `H!`. A generic field records it in
+there marks the constructed value. With `type Box = | Box<Real64>`, `Box(effect())` has type `Box!`,
+and with `type H = | H<Void -> Real64>`, `H(effect)` has type `H!`. A generic field records it in
 the type instead: `Some(effect())` has type `Option<Number!>`, and `Some(effect)` has type
 `Option<Void -> Number!>`. Record literals and constructor calls follow the same rule.
 
@@ -70,10 +70,10 @@ the type instead: `Some(effect())` has type `Option<Number!>`, and `Some(effect)
 Function argument taint is hidden in type displays. Callback return taint remains visible, for
 example `(Void -> Number!) -> Number!`.
 
-An annotation does not hide taint. `let value: Number = effect();` is `Number!`, and a callback's
+An annotation does not hide taint. `let value: Real64 = effect();` is `Number!`, and a callback's
 result stays open for each call even when the signature names a concrete type: with
-`let run = (f: Void -> Number): Number => { f() };`, `run(effect)` is `Number!` and `run(clean)` is
-`Number`.
+`let run = (f: Void -> Real64): Real64 => { f() };`, `run(effect)` is `Number!` and `run(clean)` is
+`Real64`.
 
 Creating a function does not execute its body. Calling an effectful function, including through a
 higher-order function, propagates its result taint. A discarded effectful result still taints its
@@ -82,7 +82,7 @@ enclosing sequence.
 ## Language server
 
 Hover, inlay hints, signature help and completion all show `!`. A long inlay label keeps a trailing
-`!` when it is shortened, for example `List<(Number, Stri...!`. An annotated binding has no inlay,
+`!` when it is shortened, for example `List<(Real64, Stri...!`. An annotated binding has no inlay,
 so its `!` appears on hover only.
 
 ## Prototype scope

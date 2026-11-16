@@ -25,12 +25,12 @@ type AppError =
 
 -- Records that mirror raylib's 3D structs field-for-field (matched structurally
 -- by the FFI).
-record Vec3 = { x: Number, y: Number, z: Number };
-record Camera3D = { position: Vec3, target: Vec3, up: Vec3, fovy: Number, projection: Number };
+record Vec3 = { x: Real64, y: Real64, z: Real64 };
+record Camera3D = { position: Vec3, target: Vec3, up: Vec3, fovy: Real64, projection: Real64 };
 
 -- The whole viewer state: the pure sim plus camera orbit + pause.
-record App = { sim: Sim, yaw: Number, pitch: Number, radius: Number, paused: Bool };
-record Input = { yawDelta: Number, pitchDelta: Number, wheel: Number, togglePause: Bool };
+record App = { sim: Sim, yaw: Real64, pitch: Real64, radius: Real64, paused: Bool };
+record Input = { yawDelta: Real64, pitchDelta: Real64, wheel: Real64, togglePause: Bool };
 
 let raylibpath = "./libraylib.so.5.5.0";
 
@@ -63,7 +63,7 @@ let bit = (b: Bool) => {
   if (b) { 1 } else { 0 }
 };
 
-let clamp = (v: Number, lo: Number, hi: Number) => {
+let clamp = (v: Real64, lo: Real64, hi: Real64) => {
   if (v < lo) { lo } else { if (v > hi) { hi } else { v } }
 };
 
@@ -92,7 +92,7 @@ let readInput = () => {
   }
 };
 
-let buildCamera = (yaw: Number, pitch: Number, radius: Number) => {
+let buildCamera = (yaw: Real64, pitch: Real64, radius: Real64) => {
   let mid = (gridN - 1) / 2;
   let target = .{ x = mid, y = 1.5, z = mid };
   let cp = cos(pitch);
@@ -104,7 +104,7 @@ let buildCamera = (yaw: Number, pitch: Number, radius: Number) => {
   .{ position = position, target = target, up = .{ x = 0, y = 1, z = 0 }, fovy = 50, projection = 0 }
 };
 
-let advance = (app: App, input: Input, dt: Number) => {
+let advance = (app: App, input: Input, dt: Real64) => {
   let yaw = app.yaw + input.yawDelta * 1.4 * dt + 0.12 * dt;
   let pitch = clamp(app.pitch + input.pitchDelta * 1.0 * dt, 0.18, 1.35);
   let radius = clamp(app.radius - input.wheel * 1.6, 9, 46);
@@ -127,7 +127,7 @@ let tileColor = (t: Tile) => {
   }
 };
 
-let drawTile = (i: Number, t: Tile) => {
+let drawTile = (i: Real64, t: Tile) => {
   let x = i % gridN;
   let z = floorReal(i / gridN);
   let pos = .{ x = x, y = t.h / 2, z = z };
@@ -145,7 +145,7 @@ let drawTile = (i: Number, t: Tile) => {
   }
 };
 
-let rec drawTiles = (tiles: List<Tile>, i: Number) => {
+let rec drawTiles = (tiles: List<Tile>, i: Real64) => {
   match(tiles) {
     [] => { Ok(void) },
     [t, ..rest] => {
@@ -184,7 +184,7 @@ let rec drawAgents = (agents: List<Agent>) => {
   }
 };
 
-let drawStockpile = (stock: Number) => {
+let drawStockpile = (stock: Real64) => {
   let baseY = terrainH(home.x, home.y);
   let h = clamp(stock * 0.02, 0.25, 7);
   let basePos = .{ x = home.x, y = baseY, z = home.y };

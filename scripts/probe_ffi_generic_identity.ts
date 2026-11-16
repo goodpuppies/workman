@@ -54,7 +54,7 @@ for (
     let boxed = ${call};
     let value = boxed :> .value;
   `,
-    { value: "Result<Number, Js.Error>" },
+    { value: "Result<Real64.Real, Js.Error>" },
   );
 }
 
@@ -67,7 +67,7 @@ await probe(
   let numberValue = Box.run(numberBox);
   let stringValue = Box.run(stringBox);
 `,
-  { numberValue: "Number", stringValue: "String" },
+  { numberValue: "Real64.Real", stringValue: "String" },
 );
 
 await probe(
@@ -78,7 +78,7 @@ await probe(
   });
   let value = Box.run(grouped);
 `,
-  { value: "(Number, String)" },
+  { value: "(Real64.Real, String)" },
 );
 
 console.log(`${failures} probe(s) differ from the intended types.`);

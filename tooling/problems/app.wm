@@ -9,9 +9,9 @@ from js.module("#problems-client") import { nextSnapshotData as nextSnapshot };
 
 record Problem = {
   path: String,
-  line: Number,
-  column: Number,
-  severity: Number,
+  line: Real64,
+  column: Real64,
+  severity: Real64,
   code: String,
   message: String,
 };
@@ -22,27 +22,27 @@ record Problem = {
 record Head = {
   kind: String,
   path: String,
-  moduleCount: Number,
+  moduleCount: Real64,
   recovered: Bool,
 };
 
 record Snapshot = {
-  revision: Number,
+  revision: Real64,
   head: Head,
   problems: Js.Array<Problem>,
 };
 
 record Model = {
   problems: List<Problem>,
-  selected: Number,
-  top: Number,
+  selected: Real64,
+  top: Real64,
   expanded: Bool,
-  listRows: Number,
+  listRows: Real64,
   errors: Bool,
   warnings: Bool,
   infos: Bool,
   hints: Bool,
-  revision: Number,
+  revision: Real64,
   head: Head,
 };
 

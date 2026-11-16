@@ -48,7 +48,7 @@ Deno.test("string-keyed TS dictionaries reflect as Js.Dict of their value type",
       vars: 0,
     });
     expectBinding(checked.env, "count", {
-      type: "String -> Result<Option<Number!>!, Js.Error>!",
+      type: "String -> Result<Option<Real64.Real!>!, Js.Error>!",
       vars: 0,
     });
   });
@@ -61,7 +61,7 @@ Deno.test("values TS declares as one of several Workman types read as Js.Value",
       let mixed = (u: Void) => makeOuter() :> Result.andThen((outer) => outer.mixed);
       -- Json.assert states the expected shape; on its own it would stay polymorphic.
       let number = (value: Js.Value) => {
-        let n: Result<Number, Js.Error> = value :> Json.assert;
+        let n: Result<Real64.Real, Js.Error> = value :> Json.assert;
         n
       };
       let topic = (props: Js.Dict<Js.Value>) =>
@@ -76,7 +76,7 @@ Deno.test("values TS declares as one of several Workman types read as Js.Value",
       vars: 0,
     });
     expectBinding(checked.env, "plus", {
-      type: "Void -> Result<Number, Js.Error>!",
+      type: "Void -> Result<Real64.Real, Js.Error>!",
       vars: 0,
     });
   });
@@ -100,9 +100,9 @@ Deno.test("members resolve on classes reached through properties and dictionary 
       {},
       `${directory}/main.wm`,
     );
-    expectBinding(checked.env, "chained", { type: "Void -> Result<Number, Js.Error>!", vars: 0 });
+    expectBinding(checked.env, "chained", { type: "Void -> Result<Real64.Real, Js.Error>!", vars: 0 });
     expectBinding(checked.env, "throughDict", {
-      type: "String -> Result<Number!, Js.Error>!",
+      type: "String -> Result<Real64.Real!, Js.Error>!",
       vars: 0,
     });
   });
@@ -193,7 +193,7 @@ Deno.test("installed packages resolve through node_modules, including default-ex
     `,
     );
     const checked = await checkSource(await Deno.readTextFile(path), {}, path);
-    expectBinding(checked.env, "x", { type: "Shape -> Result<Number, Js.Error>!", vars: 0 });
+    expectBinding(checked.env, "x", { type: "Shape -> Result<Real64.Real, Js.Error>!", vars: 0 });
     // The default export keeps its module identity rather than being taken for a global.
     const snapshot = await analyzeRecoveredFile(path);
     const point = prune(

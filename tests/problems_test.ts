@@ -89,7 +89,7 @@ Deno.test("problems TUI wraps diagnostic text to the terminal width", async () =
   assertEquals(result.code, 0);
   assertEquals(
     new TextDecoder().decode(result.stdout),
-    "type mismatch|between String|and Number\n" +
+    "type mismatch|between String|and Real64.Real\n" +
       "main.wm:1:1|error [type.mismatch]\n" +
       "supercal|ifragili|stic\n" +
       "[]\n",

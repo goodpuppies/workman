@@ -5,9 +5,9 @@
 -- ANSI palette indices throughout the renderer.
 
 record Color = {
-  red: Number,
-  green: Number,
-  blue: Number,
+  red: Real64,
+  green: Real64,
+  blue: Real64,
 };
 
 let libadwaitaDark = Color(28, 28, 31);

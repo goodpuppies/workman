@@ -18,11 +18,11 @@ from "./surface_builder_support.wm" import {
 };
 from "./surface_builder_dispatch.wm" import { buildRuleValue };
 
-let isPreambleWhitespace = (code: Number) => {
+let isPreambleWhitespace = (code: Real64) => {
   code == 9 || code == 10 || code == 13 || code == 32
 };
 
-let rec firstNonWhitespaceOffset = (source: String, offset: Number, length: Number) => {
+let rec firstNonWhitespaceOffset = (source: String, offset: Real64, length: Real64) => {
   if (offset >= length) {
     offset
   } else {
@@ -34,7 +34,7 @@ let rec firstNonWhitespaceOffset = (source: String, offset: Number, length: Numb
   }
 };
 
-let rec directiveTailIsWhitespace = (source: String, offset: Number, length: Number) => {
+let rec directiveTailIsWhitespace = (source: String, offset: Real64, length: Real64) => {
   if (offset >= length) {
     true
   } else {
@@ -67,7 +67,7 @@ let preservedPreamble = (source: String) => {
 };
 
 record SurfaceBuildState = {
-  nextRecoveryId: Number,
+  nextRecoveryId: Real64,
   marksReversed: List<RecoveryMark>,
 };
 

@@ -25,8 +25,8 @@
 -- Run from the wm-mini repository root:
 --   deno run -A src/main.ts run examples/wmslang_window/src/jelly_main.wm
 record JellyUniforms = {
-  resolution: (Number, Number),
-  time: Number
+  resolution: (Real64, Real64),
+  time: Real64
 };
 
 type Surface = Ground | Wall | Jelly;

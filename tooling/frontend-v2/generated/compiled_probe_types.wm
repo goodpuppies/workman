@@ -2,4 +2,4 @@
 -- Grammar: src/grammar.peggy
 -- Grammar IR SHA-256: 7bb7476d8f9e4934164c9a06f19f57d8b73c82198b672c2ecb7ee79938a28d18
 -- Directly compiled rules: shared character-class types
-type ClassPart = SingleCode<Number> | CodeRange<Number, Number>;
+type ClassPart = SingleCode<Real64.Real> | CodeRange<Real64.Real, Real64.Real>;

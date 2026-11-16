@@ -131,7 +131,7 @@ function failingGraph(): Map<string, string> {
       "/test/failing.wm",
       'from "./completed.wm" import * as Completed; ' +
       'let before = print("before failure"); ' +
-      'let broken: Number = Panic("boom");',
+      'let broken: Real64.Real = Panic("boom");',
     ],
     ["/test/later.wm", 'let later = print("must not run");'],
     [

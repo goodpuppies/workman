@@ -1,7 +1,7 @@
 -- Demo error: two deeply nested generic types that agree at every level except one.
 --
---   expected  X<Y<X<Y<X<Y<X<Y<X<Y<Number>>>>>>>>>>
---   actual    X<Y<Z<Y<X<Y<X<Y<X<Y<Number>>>>>>>>>>
+--   expected  X<Y<X<Y<X<Y<X<Y<X<Y<Real64>>>>>>>>>>
+--   actual    X<Y<Z<Y<X<Y<X<Y<X<Y<Real64>>>>>>>>>>
 --                 ^ the only difference, five levels down
 --
 -- Run `wm run examples/deep_generic_mismatch.wm`, then resize the terminal to watch the
@@ -14,7 +14,7 @@ type Z<T> = | MkZ<T>;
 
 let actual = MkX(MkY(MkZ(MkY(MkX(MkY(MkX(MkY(MkX(MkY(0))))))))));
 
-let expects = (value: X<Y<X<Y<X<Y<X<Y<X<Y<Number>>>>>>>>>>) => { value };
+let expects = (value: X<Y<X<Y<X<Y<X<Y<X<Y<Real64>>>>>>>>>>) => { value };
 
 let bad = expects(actual);
 

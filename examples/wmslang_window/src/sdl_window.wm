@@ -17,8 +17,8 @@ type NativeError =
 
 type NativeEvent =
   | QuitEvent
-  | MouseEvent<Number, Number>
-  | ResizeEvent<Number, Number>
+  | MouseEvent<Real64, Real64>
+  | ResizeEvent<Real64, Real64>
   | IgnoredEvent
   | NoEvent;
 type NativeSurface = UnsafeWindowSurface;
@@ -26,8 +26,8 @@ type NativeSurface = UnsafeWindowSurface;
 record NativeRuntime = {
   surface: NativeSurface,
   poll: Void -> Result<NativeEvent, NativeError>,
-  resize: (Number, Number) -> Result<Void, NativeError>,
-  delay: Number -> Result<Void, NativeError>,
+  resize: (Real64, Real64) -> Result<Void, NativeError>,
+  delay: Real64 -> Result<Void, NativeError>,
   close: Void -> Result<Void, NativeError>
 };
 
@@ -187,7 +187,7 @@ let pollEvent = (sdl, eventPtr, eventView) => {
   sdl :> .symbols.SDL_PollEvent(Some(eventPtr)) :> sdlResult :> status
 };
 
-let startNativeWithFlags = (width: Number, height: Number, windowFlags: Number) => {
+let startNativeWithFlags = (width: Real64, height: Real64, windowFlags: Real64) => {
   let initialize = via Result (sdl) => {
     sdl :> .symbols.SDL_Init(sdlInitVideo) :> sdlResult
       :> Result.andThen((code) => { expectZero("SDL_Init failed", code) })
@@ -236,19 +236,19 @@ let startNativeWithFlags = (width: Number, height: Number, windowFlags: Number) 
   loadSdl() :> initialize :> openWindow :> attachSurface :> attachEvents
 };
 
-let startNative = (width: Number, height: Number) => {
+let startNative = (width: Real64, height: Real64) => {
   startNativeWithFlags(width, height, sdlWindowShown)
 };
-let startResizableNative = (width: Number, height: Number) => {
+let startResizableNative = (width: Real64, height: Real64) => {
   startNativeWithFlags(width, height, sdlWindowShown + 32)
 };
 
 let nativeSurface = (runtime: NativeRuntime) => { runtime.surface };
 let pollNative = (runtime: NativeRuntime) => { runtime.poll(void) };
-let resizeNative = (runtime: NativeRuntime, width: Number, height: Number) => {
+let resizeNative = (runtime: NativeRuntime, width: Real64, height: Real64) => {
   runtime.resize(width, height)
 };
-let delayNative = (runtime: NativeRuntime, milliseconds: Number) => {
+let delayNative = (runtime: NativeRuntime, milliseconds: Real64) => {
   runtime.delay(milliseconds)
 };
 let presentNative = (runtime: NativeRuntime) => {

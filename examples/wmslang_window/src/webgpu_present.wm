@@ -185,8 +185,8 @@ let createSiblingFragmentRenderer = (
 
 let createFeedbackTexture2D = (
   renderer: FragmentRenderer,
-  width: Number,
-  height: Number
+  width: Real64,
+  height: Real64
 ) => {
   Gpu.texture2D(renderer.device, width, height)
 };

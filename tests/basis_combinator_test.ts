@@ -59,53 +59,53 @@ Deno.test("Result and Option combinators infer generically", async () => {
           :> Task.map(Js.Array.fromList)
       });
     let allResults = Js.Array.fromList([Ok(1), Ok(2)]) :> Result.all;
-    let debugged: Number = Err("domain failure") :> Result.debug;
+    let debugged: Real64.Real = Err("domain failure") :> Result.debug;
     let genericResults = Traverse.with Result ([1, 2], (n) => { Ok(n * 2) });
     let genericTasks = Traverse.with Task ([1, 2], (n) => { Task.succeed(n * 2) });
   `);
-  expectBinding(result.env, "doubled", { type: "Result<Number, String>", vars: 0 });
-  expectBinding(result.env, "chained", { type: "Result<Number, String>", vars: 0 });
-  expectBinding(result.env, "fallback", { type: "Number", vars: 0 });
-  expectBinding(result.env, "debugged", { type: "Number!", vars: 0 });
-  expectBinding(result.env, "opt", { type: "Option<Number>", vars: 0 });
-  expectBinding(result.env, "plain", { type: "Number", vars: 0 });
-  expectBinding(result.env, "listMapped", { type: "List<Number>", vars: 0 });
-  expectBinding(result.env, "listLength", { type: "Number", vars: 0 });
-  expectBinding(result.env, "listItem", { type: "Option<Number>", vars: 0 });
-  expectBinding(result.env, "missingListItem", { type: "Option<Number>", vars: 0 });
-  expectBinding(result.env, "filtered", { type: "List<Number>", vars: 0 });
-  expectBinding(result.env, "reversed", { type: "List<Number>", vars: 0 });
-  expectBinding(result.env, "traversed", { type: "Result<List<Number>, 'a!>!", vars: 0 });
-  expectBinding(result.env, "collectedResults", { type: "Result<List<Number>, 'a>", vars: 0 });
-  expectBinding(result.env, "collectedOptions", { type: "Option<List<Number>>", vars: 0 });
+  expectBinding(result.env, "doubled", { type: "Result<Real64.Real, String>", vars: 0 });
+  expectBinding(result.env, "chained", { type: "Result<Real64.Real, String>", vars: 0 });
+  expectBinding(result.env, "fallback", { type: "Real64.Real", vars: 0 });
+  expectBinding(result.env, "debugged", { type: "Real64.Real!", vars: 0 });
+  expectBinding(result.env, "opt", { type: "Option<Real64.Real>", vars: 0 });
+  expectBinding(result.env, "plain", { type: "Real64.Real", vars: 0 });
+  expectBinding(result.env, "listMapped", { type: "List<Real64.Real>", vars: 0 });
+  expectBinding(result.env, "listLength", { type: "Real64.Real", vars: 0 });
+  expectBinding(result.env, "listItem", { type: "Option<Real64.Real>", vars: 0 });
+  expectBinding(result.env, "missingListItem", { type: "Option<Real64.Real>", vars: 0 });
+  expectBinding(result.env, "filtered", { type: "List<Real64.Real>", vars: 0 });
+  expectBinding(result.env, "reversed", { type: "List<Real64.Real>", vars: 0 });
+  expectBinding(result.env, "traversed", { type: "Result<List<Real64.Real>, 'a!>!", vars: 0 });
+  expectBinding(result.env, "collectedResults", { type: "Result<List<Real64.Real>, 'a>", vars: 0 });
+  expectBinding(result.env, "collectedOptions", { type: "Option<List<Real64.Real>>", vars: 0 });
   expectBinding(result.env, "traversedArray", {
-    type: "Result<Js.Array<Number>, Js.Error!>!",
+    type: "Result<Js.Array<Real64.Real>, Js.Error!>!",
     vars: 0,
   });
-  expectBinding(result.env, "task", { type: "Task<Number, String>!", vars: 0 });
-  expectBinding(result.env, "constructed", { type: "Task<Number, 'a>!", vars: 0 });
-  expectBinding(result.env, "retriedTask", { type: "Task<Number, Number>!", vars: 0 });
-  expectBinding(result.env, "pairedTask", { type: "Task<Number, 'a>!", vars: 0 });
-  expectBinding(result.env, "racedTask", { type: "Task<Number, 'a>!", vars: 0 });
-  expectBinding(result.env, "collectedTasks", { type: "Task<List<Number>, 'a>!", vars: 0 });
+  expectBinding(result.env, "task", { type: "Task<Real64.Real, String>!", vars: 0 });
+  expectBinding(result.env, "constructed", { type: "Task<Real64.Real, 'a>!", vars: 0 });
+  expectBinding(result.env, "retriedTask", { type: "Task<Real64.Real, Real64.Real>!", vars: 0 });
+  expectBinding(result.env, "pairedTask", { type: "Task<Real64.Real, 'a>!", vars: 0 });
+  expectBinding(result.env, "racedTask", { type: "Task<Real64.Real, 'a>!", vars: 0 });
+  expectBinding(result.env, "collectedTasks", { type: "Task<List<Real64.Real>, 'a>!", vars: 0 });
   expectBinding(result.env, "taskItems", {
-    type: "Task<List<Number>, 'a>!",
+    type: "Task<List<Real64.Real>, 'a>!",
     vars: 0,
   });
   expectBinding(result.env, "taskArrayItems", {
-    type: "Task<Js.Array<Number>, String>!",
+    type: "Task<Js.Array<Real64.Real>, String>!",
     vars: 0,
   });
   expectBinding(result.env, "allResults", {
-    type: "Result<Js.Array<Number>, 'a>",
+    type: "Result<Js.Array<Real64.Real>, 'a>",
     vars: 0,
   });
   expectBinding(result.env, "genericResults", {
-    type: "Result<List<Number>, 'a>",
+    type: "Result<List<Real64.Real>, 'a>",
     vars: 0,
   });
   expectBinding(result.env, "genericTasks", {
-    type: "Task<List<Number>, 'a>!",
+    type: "Task<List<Real64.Real>, 'a>!",
     vars: 0,
   });
   assertEquals(result.structure.strEnv.get("Option")?.valEnv.get("map")?.imported, true);
@@ -216,11 +216,11 @@ Deno.test("type-growing carrier recursion has no finite rank-1 HM shape", async 
 
 Deno.test("Monad.via accepts a nominal record satisfying its via requirement", async () => {
   const result = await checkSource(`
-        record TaskLike = { via: (Void -> Number) -> Number };
+        record TaskLike = { via: (Void -> Real64.Real) -> Real64.Real };
         let task: TaskLike = .{ via = (f) => { f() } };
         let value = Monad.via task () => { 42 };
       `);
-  expectBinding(result.env, "value", { type: "Number", vars: 0 });
+  expectBinding(result.env, "value", { type: "Real64.Real", vars: 0 });
 });
 
 Deno.test("Monad.via composes over Task.via", async () => {
@@ -256,10 +256,10 @@ Deno.test("Monad.via composes over Result.via", async () => {
   `);
 
   expectBinding(result.env, "keepNumber", {
-    type: "Result<Number, 'a> -> Result<Number, 'a>",
+    type: "Result<Real64.Real, 'a> -> Result<Real64.Real, 'a>",
     vars: 0,
   });
-  expectBinding(result.env, "value", { type: "Result<Number, 'a>", vars: 0 });
+  expectBinding(result.env, "value", { type: "Result<Real64.Real, 'a>", vars: 0 });
 });
 
 Deno.test("carrier viaError injects native errors into one application error", async () => {
@@ -281,7 +281,7 @@ Deno.test("carrier viaError injects native errors into one application error", a
   `);
 
   expectBinding(result.env, "task", { type: "Task<String, AppError>!", vars: 0 });
-  expectBinding(result.env, "result", { type: "Result<Number, AppError>", vars: 0 });
+  expectBinding(result.env, "result", { type: "Result<Real64.Real, AppError>", vars: 0 });
 });
 
 Deno.test("Monad map adapters compose through explicit carrier namespaces", async () => {
@@ -290,19 +290,19 @@ Deno.test("Monad map adapters compose through explicit carrier namespaces", asyn
 
     let taskValue = Task.succeed(1)
       :> Monad.map Task (number) => { number + 1 };
-    let taskFailure: Task<Number, AppError> = Task.fail("bad")
+    let taskFailure: Task<Real64.Real, AppError> = Task.fail("bad")
       :> Monad.mapErr Task DomainFailure;
 
     let resultValue = Ok("hello")
       :> Monad.map Result (text) => { text ++ "!" };
-    let resultFailure: Result<Number, AppError> = Err("bad")
+    let resultFailure: Result<Real64.Real, AppError> = Err("bad")
       :> Monad.mapErr Result DomainFailure;
   `);
 
-  expectBinding(result.env, "taskValue", { type: "Task<Number, 'a>!", vars: 0 });
-  expectBinding(result.env, "taskFailure", { type: "Task<Number, AppError>!", vars: 0 });
+  expectBinding(result.env, "taskValue", { type: "Task<Real64.Real, 'a>!", vars: 0 });
+  expectBinding(result.env, "taskFailure", { type: "Task<Real64.Real, AppError>!", vars: 0 });
   expectBinding(result.env, "resultValue", { type: "Result<String, 'a>", vars: 0 });
-  expectBinding(result.env, "resultFailure", { type: "Result<Number, AppError>", vars: 0 });
+  expectBinding(result.env, "resultFailure", { type: "Result<Real64.Real, AppError>", vars: 0 });
 });
 
 Deno.test("carrier records instantiate independently across viaError uses", async () => {
@@ -384,12 +384,12 @@ Deno.test("Result carrier coercion infers over primitive operators", async () =>
     let viaCall = keepNumber((Ok(9) - 1) / 2);
   `);
 
-  expectBinding(result.env, "sum", { type: "Result<Number, 'a>", vars: 0 });
-  expectBinding(result.env, "product", { type: "Result<Number, 'a>", vars: 0 });
-  expectBinding(result.env, "quotient", { type: "Result<Number, 'a>", vars: 0 });
-  expectBinding(result.env, "negated", { type: "Result<Number, 'a>", vars: 0 });
+  expectBinding(result.env, "sum", { type: "Result<Real64.Real, 'a>", vars: 0 });
+  expectBinding(result.env, "product", { type: "Result<Real64.Real, 'a>", vars: 0 });
+  expectBinding(result.env, "quotient", { type: "Result<Real64.Real, 'a>", vars: 0 });
+  expectBinding(result.env, "negated", { type: "Result<Real64.Real, 'a>", vars: 0 });
   expectBinding(result.env, "inverted", { type: "Result<Bool, 'a>", vars: 0 });
-  expectBinding(result.env, "viaCall", { type: "Result<Number, 'a>", vars: 0 });
+  expectBinding(result.env, "viaCall", { type: "Result<Real64.Real, 'a>", vars: 0 });
 });
 
 Deno.test("explicit carrier tuple lift infers over Result", async () => {
@@ -398,9 +398,9 @@ Deno.test("explicit carrier tuple lift infers over Result", async () => {
     let triple = Result|Ok(1), Ok("a"), Ok(true)|;
   `);
 
-  expectBinding(result.env, "pair", { type: "Result<(Number, String), 'a>", vars: 0 });
+  expectBinding(result.env, "pair", { type: "Result<(Real64.Real, String), 'a>", vars: 0 });
   expectBinding(result.env, "triple", {
-    type: "Result<(Number, String, Bool), 'a>",
+    type: "Result<(Real64.Real, String, Bool), 'a>",
     vars: 0,
   });
 });
@@ -917,21 +917,21 @@ async function runCli(args: string[]) {
 
 Deno.test("List.findMap returns the first mapped value", async () => {
   const result = await checkSource(`
-    let halve = (n: Number) => { if (n % 2 == 0) { Some(n / 2) } else { None } };
+    let halve = (n: Real64.Real) => { if (n % 2 == 0) { Some(n / 2) } else { None } };
     let found = [1, 4, 6] :> List.findMap(halve);
     let missing = [1, 3] :> List.findMap(halve);
     let empty = List.findMap([], halve);
     let piped = [1, 4] :> List.findMap(halve) :> Option.getOr(0);
   `);
-  expectBinding(result.env, "found", { type: "Option<Number>", vars: 0 });
-  expectBinding(result.env, "missing", { type: "Option<Number>", vars: 0 });
-  expectBinding(result.env, "empty", { type: "Option<Number>", vars: 0 });
-  expectBinding(result.env, "piped", { type: "Number", vars: 0 });
+  expectBinding(result.env, "found", { type: "Option<Real64.Real>", vars: 0 });
+  expectBinding(result.env, "missing", { type: "Option<Real64.Real>", vars: 0 });
+  expectBinding(result.env, "empty", { type: "Option<Real64.Real>", vars: 0 });
+  expectBinding(result.env, "piped", { type: "Real64.Real", vars: 0 });
 });
 
 Deno.test("List.findMap doesn't call its function after the first match", async () => {
   const js = await compile(`
-    let check = (n: Number) => {
+    let check = (n: Real64.Real) => {
       print(n);
       if (n > 1) { Some(n * 10) } else { None }
     };

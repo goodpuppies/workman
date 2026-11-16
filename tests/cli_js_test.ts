@@ -9,7 +9,7 @@ Deno.test("cli run calls typed JS namespace imports", async () => {
   await Deno.writeTextFile(
     input,
     `
-      from js.global("console") import unsafe { log: (String, Number) -> Void } as console;
+      from js.global("console") import unsafe { log: (String, Real64.Real) -> Void } as console;
       let main = () => {
         console.log("answer", 42)
       };
@@ -446,7 +446,7 @@ Deno.test("cli run resolves package imports from the source project", async () =
   await Deno.writeTextFile(
     `${dir}/main.wm`,
     `
-      from js.module("fakepkg") import unsafe { answer: Number };
+      from js.module("fakepkg") import unsafe { answer: Real64.Real };
       let main = () => {
         print(answer)
       };

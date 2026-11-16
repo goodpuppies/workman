@@ -37,8 +37,8 @@ async function withModules(
 
 const modules = {
   "lib.wm": [
-    'from js.global("Math") import unsafe { max: (Number, Number) -> Number };',
-    "type Shape = Dot | Box<Number>;",
+    'from js.global("Math") import unsafe { max: (Real64.Real, Real64.Real) -> Real64.Real };',
+    "type Shape = Dot | Box<Real64.Real>;",
     "let size = (shape) => match(shape) { Dot => 0, Box(n) => max(n, 0) };",
   ].join("\n"),
   "a.wm": 'export from "./lib.wm" import *;\nlet a = size(Box(2));\n',
@@ -60,7 +60,7 @@ Deno.test("REPL snapshots are captured only for the entry and cannot reuse a sna
       cache.take();
       const repl = await coreFile(path("entry.wm"), { ...options, captureEntrySteps: true });
       assertEquals(cache.take(), ["entry.wm"]);
-      assertEquals(repl.results.get(repl.graph.entry)?.steps.at(-1)?.env.get("it")?.type, "Number");
+      assertEquals(repl.results.get(repl.graph.entry)?.steps.at(-1)?.env.get("it")?.type, "Real64.Real");
       const dependency = [...repl.results.entries()].find(([id]) => id !== repl.graph.entry);
       assertEquals(dependency?.[1].steps, []);
       await coreFile(path("entry.wm"), { ...options, captureEntrySteps: true });

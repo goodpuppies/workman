@@ -1,5 +1,9 @@
 # I32: signed 32-bit integers in WM
 
+> **Superseded naming (2026-11-16):** the type is now `Int32.Int`, written `Int32`, and SubsetML's
+> `Int` became `SubsetInt32`; see [numeric-names-plan.md](numeric-names-plan.md). The range,
+> operator and runtime decisions below still hold.
+
 Status: decided 2026-10-23; steps 1–5 in wm-mini, step 6 in SubsetML (`make test` passes). Background:
 [docs/integer-investigation.md](../docs/integer-investigation.md) and SubsetML's
 `docs/integers.md`, whose language contract WM matches.

@@ -1,6 +1,6 @@
 from "./scroll.wm" import * as Scroll;
 
-let expect = (actual: Number, wanted: Number, label) => {
+let expect = (actual: Real64, wanted: Real64, label) => {
   if (actual == wanted) {
     void
   } else {

@@ -23,9 +23,9 @@ Deno.test("an imported constructor used as a value constructs instances", async 
       path,
       `
       from js.module("./classes.ts") import { Box };
-      let direct = (n: Number) => Box.new(n) :> Result.andThen((box) => box.value);
-      let passed = (n: Number) => Ok(n) :> Result.andThen(Box.new) :> Result.andThen((box) => box.value);
-      let bound = (n: Number) => { let make = Box.new; make(n) :> Result.andThen((box) => box.value) };
+      let direct = (n: Real64.Real) => Box.new(n) :> Result.andThen((box) => box.value);
+      let passed = (n: Real64.Real) => Ok(n) :> Result.andThen(Box.new) :> Result.andThen((box) => box.value);
+      let bound = (n: Real64.Real) => { let make = Box.new; make(n) :> Result.andThen((box) => box.value) };
     `,
     );
     const output = `${directory}/main.mjs`;
@@ -45,7 +45,7 @@ Deno.test("a constructor with an open arity is rejected as a first-class value",
         checkSource(
           `
           from js.module("./classes.ts") import { Tile };
-          let make = (n: Number) => Ok(n) :> Result.andThen(Tile.new);
+          let make = (n: Real64.Real) => Ok(n) :> Result.andThen(Tile.new);
         `,
           {},
           `${directory}/main.wm`,

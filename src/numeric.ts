@@ -10,8 +10,8 @@ export type NumericType = Readonly<{
 }>;
 
 export const OPERATOR_NUMERIC_TYPES: readonly NumericType[] = [
-  { name: "Number" },
-  { name: "I32", bits: 32, signed: true },
+  { name: "Real64.Real" },
+  { name: "Int32.Int", bits: 32, signed: true },
 ];
 
 export const INTEGER_LITERAL_TYPES: readonly NumericType[] = [

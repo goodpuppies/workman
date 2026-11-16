@@ -11,19 +11,19 @@ from "./webgpu_present.wm" import {
 };
 
 type AppError = NativeFailure<NativeError> | HostFailure<Js.Error>;
-type MarchResult = Miss | Hit<Number>;
+type MarchResult = Miss | Hit<Real64>;
 
 record RaymarchUniforms = {
-  resolution: (Number, Number),
-  time: Number,
-  cameraRotation: (Number, Number)
+  resolution: (Real64, Real64),
+  time: Real64,
+  cameraRotation: (Real64, Real64)
 };
 
 record RaymarchFrame = {
   quit: Bool,
-  resolution: (Number, Number),
-  time: Number,
-  cameraRotation: (Number, Number)
+  resolution: (Real64, Real64),
+  time: Real64,
+  cameraRotation: (Real64, Real64)
 };
 
 type PollStep = PollAgain<RaymarchFrame> | PollDone<RaymarchFrame>;
@@ -143,7 +143,7 @@ let applyNativeEvent = (state: RaymarchFrame, event) => {
 let rec drainEvents = (
   native: NativeRuntime,
   state: RaymarchFrame,
-  remaining: Number
+  remaining: Real64
 ) => {
   if (remaining <= 0) {
     Ok(state)

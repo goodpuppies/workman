@@ -19,7 +19,7 @@ Deno.test("unsafe receivers retain raw properties methods and chained results", 
     let chained = value.add(2) :> .read();
   `);
   for (const name of ["property", "method", "nested", "chained"]) {
-    expectBinding(result.env, name, { type: "Number!", vars: 0 });
+    expectBinding(result.env, name, { type: "Real64.Real!", vars: 0 });
   }
 });
 
@@ -40,10 +40,10 @@ Deno.test("safe and unsafe receivers coexist in either acquisition order", async
       let rawProperty = raw.value;
     `);
     for (const name of ["safeRead", "safeProperty"]) {
-      expectBinding(result.env, name, { type: "Result<Number, Js.Error>!", vars: 0 });
+      expectBinding(result.env, name, { type: "Result<Real64.Real, Js.Error>!", vars: 0 });
     }
     for (const name of ["rawRead", "rawProperty"]) {
-      expectBinding(result.env, name, { type: "Number!", vars: 0 });
+      expectBinding(result.env, name, { type: "Real64.Real!", vars: 0 });
     }
   }
 });
@@ -53,7 +53,7 @@ Deno.test("unsafe callbacks infer raw receiver members without annotations", asy
     from js.module("${fixture}") import unsafe { withBox };
     let answer = withBox((value) => { value.read() + value.value });
   `);
-  expectBinding(result.env, "answer", { type: "Number!", vars: 0 });
+  expectBinding(result.env, "answer", { type: "Real64.Real!", vars: 0 });
 });
 
 Deno.test("safe callback receivers stay wrapped beside unsafe callbacks and extracted methods", async () => {
@@ -64,9 +64,9 @@ Deno.test("safe callback receivers stay wrapped beside unsafe callbacks and extr
     let raw = rawWithBox((value) => { value.read() });
     let instance = box(); let read = instance.read; let extracted = read();
   `);
-  expectBinding(result.env, "safe", { type: "Result<Number, Js.Error>!", vars: 0 });
-  expectBinding(result.env, "raw", { type: "Number!", vars: 0 });
-  expectBinding(result.env, "extracted", { type: "Number!", vars: 0 });
+  expectBinding(result.env, "safe", { type: "Result<Real64.Real, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "raw", { type: "Real64.Real!", vars: 0 });
+  expectBinding(result.env, "extracted", { type: "Real64.Real!", vars: 0 });
 });
 
 Deno.test("unsafe receivers still reject wrong members and arguments", async () => {
@@ -88,10 +88,10 @@ Deno.test("unsafe nominal receiver policy survives Option arrays and Task payloa
     let maybe = maybeBox() :> Option.map((value) => { value.read() });
     let many = boxList() :> Js.Array.toList :> List.map((value) => { value :> .read() });
   `);
-  expectBinding(result.env, "later", { type: "Task<Number!, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "later", { type: "Task<Real64.Real!, Js.Error>!", vars: 0 });
   expectBinding(result.env, "pending", { type: "Task<ReceiverBox, Js.Error>!", vars: 0 });
-  expectBinding(result.env, "maybe", { type: "Option<Number!>!", vars: 0 });
-  expectBinding(result.env, "many", { type: "List<Number!>!", vars: 0 });
+  expectBinding(result.env, "maybe", { type: "Option<Real64.Real!>!", vars: 0 });
+  expectBinding(result.env, "many", { type: "List<Real64.Real!>!", vars: 0 });
 });
 
 Deno.test("unsafe receiver policy survives aliases records tuples and identity calls", async () => {
@@ -109,7 +109,7 @@ Deno.test("unsafe receiver policy survives aliases records tuples and identity c
     let reflectedRead = identity(alias) :> .read();
   `);
   for (const name of ["recordRead", "firstRead", "secondRead", "nativeRead", "reflectedRead"]) {
-    expectBinding(result.env, name, { type: "Number!", vars: 0 });
+    expectBinding(result.env, name, { type: "Real64.Real!", vars: 0 });
   }
 });
 
@@ -127,7 +127,7 @@ Deno.test("unsafe receiver policy crosses WM module boundaries", async () => {
       ],
     ]),
   );
-  expectBinding(result.get("/main.wm")!.env, "answer", { type: "Number!", vars: 0 });
+  expectBinding(result.get("/main.wm")!.env, "answer", { type: "Real64.Real!", vars: 0 });
 });
 
 Deno.test("ordinary foreign annotations do not erase unsafe receiver policy", async () => {
@@ -140,7 +140,7 @@ Deno.test("ordinary foreign annotations do not erase unsafe receiver policy", as
     let through = id(box()) :> .read();
   `);
   for (const name of ["direct", "through"]) {
-    expectBinding(result.env, name, { type: "Number!", vars: 0 });
+    expectBinding(result.env, name, { type: "Real64.Real!", vars: 0 });
   }
 });
 
@@ -153,8 +153,8 @@ Deno.test("annotated identity helpers keep safe and unsafe uses independent", as
     let safeRead = id(safeBox() :> Result.debug) :> .read();
     let rawRead = id(rawBox()) :> .read();
   `);
-  expectBinding(result.env, "safeRead", { type: "Result<Number, Js.Error>!", vars: 0 });
-  expectBinding(result.env, "rawRead", { type: "Number!", vars: 0 });
+  expectBinding(result.env, "safeRead", { type: "Result<Real64.Real, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "rawRead", { type: "Real64.Real!", vars: 0 });
 });
 
 Deno.test("a concretely safe member adapter cannot silently consume an unsafe receiver", async () => {
@@ -178,8 +178,8 @@ Deno.test("constructors inherit unsafe policy and safe constructors remain wrapp
     let url = URL.new("https://example.test/path");
     let path = url.pathname;
   `);
-  expectBinding(result.env, "rawRead", { type: "Number!", vars: 0 });
-  expectBinding(result.env, "safeRead", { type: "Result<Number, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "rawRead", { type: "Real64.Real!", vars: 0 });
+  expectBinding(result.env, "safeRead", { type: "Result<Real64.Real, Js.Error>!", vars: 0 });
   expectBinding(result.env, "path", { type: "String!", vars: 0 });
 });
 
@@ -213,7 +213,7 @@ Deno.test("match snapshots preserve cyclic deferred FFI graphs without sharing m
   assertEquals(copy === result, false);
   assertEquals(copy.args[0] === callback, false);
   assertEquals(copy.args[0].params[0] === copy, true);
-  result.constraints.push(prim("Number"));
+  result.constraints.push(prim("Real64.Real"));
   assertEquals(copy.constraints?.length, 1);
 });
 
@@ -298,7 +298,7 @@ Deno.test("unsafe async receiver members and direct multiargument adapters prese
       path,
       await compile(`
       from js.module("${absoluteFixture}") import unsafe { box, pairLater };
-      from js.module("${absoluteFixture}") import unsafe { taskPrimitive as ready: Void -> Task<Number, Js.Error> };
+      from js.module("${absoluteFixture}") import unsafe { taskPrimitive as ready: Void -> Task<Real64.Real, Js.Error> };
       let higher = (f) => { f(4, 5) };
       let main = () => {
         let value = box();

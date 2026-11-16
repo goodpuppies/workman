@@ -4,14 +4,14 @@ from "./generated/surface_types.wm" import {
 from "./surface_parse_value.wm" import { ParseValue, EmptyParseValue, TokenParseValue, SequenceParseValue, ChoiceParseValue, OptionalParseValue, RepeatedParseValue, NodeParseValue, NodeListParseValue, TokenListParseValue, RuleParseValue };
 
 from js.global("String.prototype.slice") import unsafe {
-  call as sliceString: (String, Number, Number) -> String
+  call as sliceString: (String, Real64, Real64) -> String
 };
 
-let slice = (source: String, start: Number, end: Number) => {
+let slice = (source: String, start: Real64, end: Real64) => {
   sliceString(source, start, end)
 };
 
-let token = (source: String, start: Number, end: Number, kind: String) => {
+let token = (source: String, start: Real64, end: Real64, kind: String) => {
   let value: SurfaceToken = .{
     kind = kind,
     text = slice(source, start, end),
@@ -24,8 +24,8 @@ let token = (source: String, start: Number, end: Number, kind: String) => {
 
 let recoveryToken = (
   expectedText: String,
-  anchor: Number,
-  recoveryId: Number,
+  anchor: Real64,
+  recoveryId: Real64,
 ) => {
   let value: SurfaceToken = .{
     kind = "Missing",

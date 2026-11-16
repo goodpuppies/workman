@@ -51,18 +51,18 @@ Deno.test("documented via and pipe forms preserve their runtime behavior", async
   const source = `
     let via = Monad.via;
     let double = (n) => { Ok(n * 2) };
-    let direct: Result<Number, String> = via Result double(Ok(21));
-    let placeholder: Result<Number, String> = Ok(21) :> via Result double();
-    let computed: Result<Number, String> = Ok(21) :> via Result double;
-    let traversed: Result<List<Number>, String> = Traverse.with Result ([1, 2], double);
+    let direct: Result<Real64.Real, String> = via Result double(Ok(21));
+    let placeholder: Result<Real64.Real, String> = Ok(21) :> via Result double();
+    let computed: Result<Real64.Real, String> = Ok(21) :> via Result double;
+    let traversed: Result<List<Real64.Real>, String> = Traverse.with Result ([1, 2], double);
 
-    let nextTask: Task<Number, String> = Task.succeed(42);
+    let nextTask: Task<Real64.Real, String> = Task.succeed(42);
     let boundStage = via Task (_) => { nextTask };
-    let bound: Task<Number, String> = Task.succeed(void) :> boundStage;
-    let inline: Task<Number, String> = Task.succeed(void) :> via Task (_) => { nextTask };
-    let legacy: Task<Number, String> = Task.succeed(void) :> via Task (_) => { nextTask }();
-    let bare: Task<Number, String> = Task.succeed(void) :> via Task => { nextTask };
-    let parameter: Task<Number, String> = Task.succeed(41)
+    let bound: Task<Real64.Real, String> = Task.succeed(void) :> boundStage;
+    let inline: Task<Real64.Real, String> = Task.succeed(void) :> via Task (_) => { nextTask };
+    let legacy: Task<Real64.Real, String> = Task.succeed(void) :> via Task (_) => { nextTask }();
+    let bare: Task<Real64.Real, String> = Task.succeed(void) :> via Task => { nextTask };
+    let parameter: Task<Real64.Real, String> = Task.succeed(41)
       :> via Task (value) => { Task.succeed(value + 1) };
     let unwrap = (result) => { match(result) { Ok(value) => { value }, Err(_) => { -1 } } };
     let results = (unwrap(direct), unwrap(placeholder), unwrap(computed),

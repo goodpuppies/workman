@@ -11,9 +11,9 @@ Deno.test("shared Basis text helpers preserve Unicode and validate before matchi
       match(result) { R.Ok(value) => { value == expected }, R.Err(_) => { false } }
     };
     let checks =
-      same(T.fields("/café//東京/🦊/", (c) => { c == (47: I32) }), ["", "café", "", "東京", "🦊", ""])
-      && same(T.tokens("/café//東京/🦊/", (c) => { c == (47: I32) }), ["café", "東京", "🦊"])
-      && same(T.fields("a🦊b🦊", (c) => { c == (129418: I32) }), ["a", "b", ""])
+      same(T.fields("/café//東京/🦊/", (c) => { c == (47: Int32.Int) }), ["", "café", "", "東京", "🦊", ""])
+      && same(T.tokens("/café//東京/🦊/", (c) => { c == (47: Int32.Int) }), ["café", "東京", "🦊"])
+      && same(T.fields("a🦊b🦊", (c) => { c == (129418: Int32.Int) }), ["a", "b", ""])
       && same(T.isPrefix("café/東京/🦊", "café"), true)
       && same(T.isSuffix("café/東京/🦊", "🦊"), true)
       && same(T.isSubstring("café/東京/🦊", "東京"), true)
@@ -42,16 +42,16 @@ Deno.test("shared Basis text helpers preserve Unicode and validate before matchi
     let byteFieldsOkay = (value: String, predicate) => { R.isOk(S.fields(value, predicate)) };
     let byteTokensOkay = (value: String, predicate) => { R.isOk(S.tokens(value, predicate)) };
     let editChecks =
-      same(T.explode("a🦊é"), [(97: I32), (129418: I32), (233: I32)])
-      && same(T.implode([(97: I32), (129418: I32), (233: I32)]), "a🦊é")
-      && same(T.substring("a🦊é", (1: I32), (1: I32)), "🦊")
-      && same(T.extract("a🦊é", (1: I32), None), "🦊é")
-      && same(T.extract("a🦊é", (1: I32), Some((1: I32))), "🦊")
-      && same(T.extract("a🦊é", (3: I32), None), "")
-      && same(T.map("a🦊é", (c) => { if (c == (129418: I32)) { (47: I32) } else { c } }), "a/é")
-      && same(T.translate("a🦊é", (c) => { if (c == (129418: I32)) { "XY" } else { "" } }), "XY")
-      && same(S.substring("abc", (1: I32), (1: I32)), "b")
-      && same(S.extract("abc", (3: I32), None), "")
+      same(T.explode("a🦊é"), [(97: Int32.Int), (129418: Int32.Int), (233: Int32.Int)])
+      && same(T.implode([(97: Int32.Int), (129418: Int32.Int), (233: Int32.Int)]), "a🦊é")
+      && same(T.substring("a🦊é", (1: Int32.Int), (1: Int32.Int)), "🦊")
+      && same(T.extract("a🦊é", (1: Int32.Int), None), "🦊é")
+      && same(T.extract("a🦊é", (1: Int32.Int), Some((1: Int32.Int))), "🦊")
+      && same(T.extract("a🦊é", (3: Int32.Int), None), "")
+      && same(T.map("a🦊é", (c) => { if (c == (129418: Int32.Int)) { (47: Int32.Int) } else { c } }), "a/é")
+      && same(T.translate("a🦊é", (c) => { if (c == (129418: Int32.Int)) { "XY" } else { "" } }), "XY")
+      && same(S.substring("abc", (1: Int32.Int), (1: Int32.Int)), "b")
+      && same(S.extract("abc", (3: Int32.Int), None), "")
       && same(S.map("a|b", (c) => { if (c == '|') { '/' } else { c } }), "a/b")
       && same(S.translate("a|b||", (c) => { if (c == '|') { "::" } else { "" } }), "::::::");
     let textMapOkay = (value: String, f) => { R.isOk(T.map(value, f)) };
@@ -59,12 +59,12 @@ Deno.test("shared Basis text helpers preserve Unicode and validate before matchi
     let byteMapOkay = (value: String, f) => { R.isOk(S.map(value, f)) };
     let byteTranslateOkay = (value: String, f) => { R.isOk(S.translate(value, f)) };
     let rejectsSlices = (value: String) => {
-      !R.isOk(T.substring(value, (0: I32), (0: I32)))
-      && !R.isOk(T.extract(value, (0: I32), None))
+      !R.isOk(T.substring(value, (0: Int32.Int), (0: Int32.Int)))
+      && !R.isOk(T.extract(value, (0: Int32.Int), None))
     };
     let rejectsByteSlices = (value: String) => {
-      !R.isOk(S.substring(value, (0: I32), (0: I32)))
-      && !R.isOk(S.extract(value, (0: I32), None))
+      !R.isOk(S.substring(value, (0: Int32.Int), (0: Int32.Int)))
+      && !R.isOk(S.extract(value, (0: Int32.Int), None))
     };
   `;
   const compiled = await compileLibraryVirtual(filename, new Map([[filename, source]]));

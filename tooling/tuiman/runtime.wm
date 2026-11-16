@@ -10,7 +10,7 @@ from js.module("node:tty") import type { ReadStream, WriteStream };
 from js.module("node:events") import { once as onceEvent };
 -- Reflection doesn't find process's members (values on a namespace object), so
 -- they're declared, which makes the import unsafe.
-from js.global("process") import unsafe { stdin: ReadStream, stdout: WriteStream, exit: Number -> Void };
+from js.global("process") import unsafe { stdin: ReadStream, stdout: WriteStream, exit: Real64 -> Void };
 -- Declared to give the nullable result as an Option; only called on stream objects.
 from js.global("Reflect") import unsafe { get: (Js.Value, String) -> Option<Js.Value> } as Reflect;
 from js.global import { String as toString };
@@ -31,7 +31,7 @@ let propertyNumber = (target, name, fallback) => {
   match(Reflect.get(target, name)) {
     None => { fallback },
     Some(raw) => {
-      let decoded: Result<Number, Js.Error> = raw :> Json.assert;
+      let decoded: Result<Real64, Js.Error> = raw :> Json.assert;
       decoded :> Result.getOr(fallback)
     },
   }

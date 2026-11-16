@@ -25,7 +25,7 @@ record Installed = { name: String, version: String, path: String };
 record FileEntry = { path: String, source: String, link: String };
 
 record Generation = {
-  number: Number,
+  number: Real64,
   root: String,
   packages: List<Installed>,
   files: List<FileEntry>
@@ -134,9 +134,9 @@ let current = (paths: Paths, root) => {
 let generationNumber = (name) => {
   match(UnicodeText.size(name)) {
     Ok(length) => {
-      if (length <= (4: I32) || !(UnicodeText.isSuffix(name, ".won") :> Result.getOr(false))) { None }
+      if (length <= (4: Int32) || !(UnicodeText.isSuffix(name, ".won") :> Result.getOr(false))) { None }
       else {
-        let stem = UnicodeText.substring(name, (0: I32), length - (4: I32)) :> Result.getOr("");
+        let stem = UnicodeText.substring(name, (0: Int32), length - (4: Int32)) :> Result.getOr("");
         let number = parseIntOr(stem, 0 - 1);
         if (number > 0) { Some(number) } else { None }
       }
@@ -315,7 +315,7 @@ let applyPlan = (paths: Paths, plan: Plan) => {
   let planFile = paths.tmp ++ "/apply-" ++ Text.of(nowSeconds()) ++ ".won";
   let applier = paths.state ++ "/programs/_apply.js";
   let elevate = via Task (program) => {
-    let sudo = UnicodeText.fields(envOr("PAKMAN_SUDO", "sudo"), (scalar) => { scalar == (32: I32) }) :> Result.getOr(["sudo"]);
+    let sudo = UnicodeText.fields(envOr("PAKMAN_SUDO", "sudo"), (scalar) => { scalar == (32: Int32) }) :> Result.getOr(["sudo"]);
     match(sudo) {
       [cmd, ..flags] => {
         runInteractive(cmd, appendAll(flags, [denoPath(), "run", "-A", "--quiet", program, planFile]))

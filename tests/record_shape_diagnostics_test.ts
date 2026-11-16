@@ -11,9 +11,9 @@ import { pathToFileUri } from "../src/lsp/uri.ts";
 
 Deno.test("an unannotated incomplete literal identifies the unique containing record", async () => {
   const source = `record Point = {
-  x: Number,
-  y: Number,
-  z: Number,
+  x: Real64.Real,
+  y: Real64.Real,
+  z: Real64.Real,
 };
 let point = .{ x = 1 };`;
   const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
@@ -31,8 +31,8 @@ let point = .{ x = 1 };`;
 Deno.test("incomplete literals with several containing records do not pick a type", async () => {
   for (
     const declarations of [
-      "record Point = { x: Number, y: Number }; record Label = { x: Number, title: String };",
-      "record Label = { x: Number, title: String }; record Point = { x: Number, y: Number };",
+      "record Point = { x: Real64.Real, y: Real64.Real }; record Label = { x: Real64.Real, title: String };",
+      "record Label = { x: Real64.Real, title: String }; record Point = { x: Real64.Real, y: Real64.Real };",
     ]
   ) {
     const source = `${declarations}\nlet value = .{ x = 1 };`;
@@ -48,8 +48,8 @@ Deno.test("incomplete literals with several containing records do not pick a typ
 
 Deno.test("an exact literal match wins over incomplete containing records", async () => {
   const result = await checkSource(`
-record Point = { x: Number, y: Number };
-record Scalar = { x: Number };
+record Point = { x: Real64.Real, y: Real64.Real };
+record Scalar = { x: Real64.Real };
 let value = .{ x = 1 };`);
   expectBinding(result.env, "value", { type: "Scalar", vars: 0 });
   assertEquals(result.diagnostics, []);
@@ -57,7 +57,7 @@ let value = .{ x = 1 };`);
 
 Deno.test("explicit, annotated, and spread literals share field-set diagnostics", async () => {
   for (const literal of ["let p = Point{ x = 1 };", "let p: Point = .{ x = 1 };"]) {
-    const source = `record Point = { x: Number, y: Number };\n${literal}`;
+    const source = `record Point = { x: Real64.Real, y: Real64.Real };\n${literal}`;
     const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
     assertEquals(error.diagnostic.code, "record.missing-fields");
     assertStringIncludes(
@@ -72,14 +72,14 @@ Deno.test("explicit, annotated, and spread literals share field-set diagnostics"
       "let p = .{ ..Point(1, 2), other = true };",
     ]
   ) {
-    const source = `record Point = { x: Number, y: Number };\n${literal}`;
+    const source = `record Point = { x: Real64.Real, y: Real64.Real };\n${literal}`;
     const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
     assertEquals(error.diagnostic.code, "record.unknown-fields");
     const rendered = formatDiagnostic(error.diagnostic, "point.wm", source);
     assertStringIncludes(rendered, "unknown fields: other");
     assertEquals(rendered.includes("missing fields:"), false);
   }
-  const source = "record Point = { x: Number, y: Number }; let p = Point{ x = 1, other = 2 };";
+  const source = "record Point = { x: Real64.Real, y: Real64.Real }; let p = Point{ x = 1, other = 2 };";
   const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
   assertEquals(error.diagnostic.code, "record.field-set-mismatch");
   assertStringIncludes(
@@ -89,7 +89,7 @@ Deno.test("explicit, annotated, and spread literals share field-set diagnostics"
 });
 
 Deno.test("unmatched literals report their fields without suggesting unrelated records", async () => {
-  const source = "-- @no-prelude\nrecord Point = { x: Number }; let p = .{ absent = 1 };";
+  const source = "-- @no-prelude\nrecord Point = { x: Real64.Real }; let p = .{ absent = 1 };";
   const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
   assertEquals(error.diagnostic.code, "record.no-matching-type");
   const rendered = formatDiagnostic(error.diagnostic, "point.wm", source);
@@ -99,7 +99,7 @@ Deno.test("unmatched literals report their fields without suggesting unrelated r
 
 Deno.test("a literal sharing most fields with a record names it as the closest shape", async () => {
   const source = "-- @no-prelude\n" +
-    "record Pair = { first: Number, second: Number, label: String };\n" +
+    "record Pair = { first: Real64.Real, second: Real64.Real, label: String };\n" +
     "let p = .{ first = 1, secnd = 2, label = \"x\" };";
   const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
   assertEquals(error.diagnostic.code, "record.no-matching-type");
@@ -114,7 +114,7 @@ Deno.test("a literal sharing most fields with a record names it as the closest s
 Deno.test("empty literals retain exact matching and honest incomplete candidates", async () => {
   const result = await checkSource("-- @no-prelude\nrecord Empty = {}; let empty = .{};");
   expectBinding(result.env, "empty", { type: "Empty", vars: 0 });
-  const source = "-- @no-prelude\nrecord Point = { x: Number }; let p = .{};";
+  const source = "-- @no-prelude\nrecord Point = { x: Real64.Real }; let p = .{};";
   const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
   assertEquals(error.diagnostic.code, "record.missing-fields");
   assertStringIncludes(formatDiagnostic(error.diagnostic, "point.wm", source), "missing fields: x");
@@ -125,8 +125,8 @@ Deno.test("missing-field evidence keeps imported declaration locations at narrow
   const entry = `${root}/app/main.wm`;
   const recordPath = `${root}/proto/point.wm`;
   const recordSource = `record Point = {
-  x: Number,
-  y: Number,
+  x: Real64.Real,
+  y: Real64.Real,
 };`;
   const source = 'from "../proto/point.wm" import { Point };\nlet point = .{ x = 1 };';
   const error = await assertRejects(
@@ -144,7 +144,7 @@ Deno.test("missing-field evidence keeps imported declaration locations at narrow
       assertStringIncludes(rendered, "app/main.wm:2:13");
       assertStringIncludes(rendered, "proto/point.wm:3:3");
       assertStringIncludes(rendered, "Point requires field y");
-      assertStringIncludes(rendered, "y: Number");
+      assertStringIncludes(rendered, "y: Real64.Real");
       assertEquals(rendered.includes(root), false);
     }
     const inspection = formatDiagnosticInspection(diagnostic, entry, source);
@@ -161,7 +161,7 @@ Deno.test("LSP missing-field references point into the declaring module", async 
   try {
     const entry = `${directory}/main.wm`;
     const library = `${directory}/point.wm`;
-    const recordSource = "record Point = {\n  x: Number,\n  y: Number,\n};";
+    const recordSource = "record Point = {\n  x: Real64.Real,\n  y: Real64.Real,\n};";
     await Deno.writeTextFile(library, recordSource);
     await Deno.writeTextFile(entry, 'from "./point.wm" import { Point };\nlet p = .{ x = 1 };');
     const uri = pathToFileUri(entry);

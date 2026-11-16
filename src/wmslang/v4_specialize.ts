@@ -4,14 +4,14 @@ import type {
   GpuOperationRow,
   GpuOperationShape,
 } from "../infer/type_facts.ts";
-import { freshenTypeVars, NumberTy, prune, show, tuple, type Ty, unify } from "../types.ts";
+import { freshenTypeVars, Real64Ty, prune, show, tuple, type Ty, unify } from "../types.ts";
 
 /**
  * Syntactic representation seed for one call argument, used only in GPU
  * specialization keys. Integral and decimal literals seed `i32`/`f32`;
  * tuples seed positionally; everything else is unknown (`?`). This never
  * touches HM types: it merely lets `twice(2)` and `twice(2.0)` key
- * differently despite sharing one host `Number` type. Unknown seeds share
+ * differently despite sharing one host `Real64.Real` type. Unknown seeds share
  * optimistically; a genuine mixed-representation conflict triggers the
  * pin-to-per-site retry in materialization.
  */
@@ -518,12 +518,12 @@ function isConcreteGpuType(type: Ty): boolean {
 
 function gpuShape(type: Ty): GpuOperationShape | undefined {
   const target = prune(type);
-  if (target.tag === "prim" && target.name === "Number") return "f32";
+  if (target.tag === "prim" && target.name === "Real64.Real") return "f32";
   if (
     target.tag === "tuple" && target.items.length >= 2 && target.items.length <= 4 &&
     target.items.every((item) => {
       const component = prune(item);
-      return component.tag === "prim" && component.name === "Number";
+      return component.tag === "prim" && component.name === "Real64.Real";
     })
   ) {
     return `f32x${target.items.length}` as GpuOperationShape;
@@ -532,6 +532,6 @@ function gpuShape(type: Ty): GpuOperationShape | undefined {
 }
 
 function typeForShape(shape: GpuOperationShape): Ty {
-  if (shape === "f32") return NumberTy;
-  return tuple(Array.from({ length: Number(shape.at(-1)) }, () => NumberTy));
+  if (shape === "f32") return Real64Ty;
+  return tuple(Array.from({ length: Number(shape.at(-1)) }, () => Real64Ty));
 }

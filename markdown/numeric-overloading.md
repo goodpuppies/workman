@@ -1,5 +1,8 @@
 # Numeric overloading with one literal spelling
 
+> **Renamed (2026-11-16):** `Number` is now `Real64.Real` and `I32` is `Int32.Int`; see
+> [numeric-names-plan.md](numeric-names-plan.md), which also plans the literal default.
+
 Status: literal slice implemented 2026-10-30; operator slice remains next.
 
 ## User decision

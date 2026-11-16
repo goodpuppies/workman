@@ -12,8 +12,8 @@ from "./types.wm" import {
 };
 
 record NumericContext = {
-  expressionOffset: Number,
-  fieldOffset: Number,
+  expressionOffset: Real64,
+  fieldOffset: Real64,
   types: List<GpuSliceTypeDto>,
   expressions: List<GpuSliceExprDto>,
   patterns: List<GpuSlicePatternDto>,
@@ -22,18 +22,18 @@ record NumericContext = {
   blocks: List<GpuSliceBlockDto>,
   functions: List<GpuSliceFunctionDto>,
   environmentFields: List<GpuSliceEnvironmentFieldDto>,
-  exprNodes: Map.Map<Number, Number>,
-  patternNodes: Map.Map<Number, Number>,
-  patternByBinding: Map.Map<Number, Number>,
-  lanes: Map.Map<Number, List<Number>>,
+  exprNodes: Map.Map<Real64, Real64>,
+  patternNodes: Map.Map<Real64, Real64>,
+  patternByBinding: Map.Map<Real64, Real64>,
+  lanes: Map.Map<Real64, List<Real64>>,
 };
 
 record NumericEvidence = {
   representation: String,
-  spanId: Number,
+  spanId: Real64,
 };
 
-let numberEqual = (left: Number, right: Number) => {
+let numberEqual = (left: Real64, right: Real64) => {
   !(left < right) && !(left > right)
 };
 

@@ -266,15 +266,15 @@ Deno.test("Real follows REAL for the implemented subset", async () => {
   const nan = "(0 / 0)";
   assertEquals(
     await run([
-      `print((Real.rem(7, 3), Real.rem(0 - 7, 3), Real.min(1, ${nan}), Real.max(${nan}, 2)));`,
-      `print((Real.sign(0 - 3), Real.sign(0), Real.sign(${nan})));`,
-      "print((Real.signBit(-0), Real.signBit(0), Real.sameSign(0 - 1, 0 - 2), Real.copySign(3, -0)));",
-      `print((Real.compare(1, 2), Real.compare(2, 2), Real.compare(${nan}, 1), Real.unordered(1, ${nan})));`,
-      "print((Real.toManExp(8), Real.fromManExp(Real.toManExp(0 - 12.5)), Real.split(0 - 3.25), Real.realMod(2.75)));",
-      "print((Real.nextAfter(1, 2) - 1, Real.isNormal(Real.minPos), Real.isNormal(1), Real.isFinite(Real.posInf)));",
-      "print((Real.realRound(2.5), Real.realRound(3.5), Real.realRound(0 - 2.5), Real.realFloor(0 - 1.5)));",
-      `print((Real.round(0.5), Real.floor(0 - 1.5), Real.ceil(1.2), Real.trunc(${nan})));`,
-      "print((Real.checkFloat(1.5), Real.radix, Real.precision, Real.minNormalPos > 0));",
+      `print((Real64.rem(7, 3), Real64.rem(0 - 7, 3), Real64.min(1, ${nan}), Real64.max(${nan}, 2)));`,
+      `print((Real64.sign(0 - 3), Real64.sign(0), Real64.sign(${nan})));`,
+      "print((Real64.signBit(-0), Real64.signBit(0), Real64.sameSign(0 - 1, 0 - 2), Real64.copySign(3, -0)));",
+      `print((Real64.compare(1, 2), Real64.compare(2, 2), Real64.compare(${nan}, 1), Real64.unordered(1, ${nan})));`,
+      "print((Real64.toManExp(8), Real64.fromManExp(Real64.toManExp(0 - 12.5)), Real64.split(0 - 3.25), Real64.realMod(2.75)));",
+      "print((Real64.nextAfter(1, 2) - 1, Real64.isNormal(Real64.minPos), Real64.isNormal(1), Real64.isFinite(Real64.posInf)));",
+      "print((Real64.realRound(2.5), Real64.realRound(3.5), Real64.realRound(0 - 2.5), Real64.realFloor(0 - 1.5)));",
+      `print((Real64.round(0.5), Real64.floor(0 - 1.5), Real64.ceil(1.2), Real64.trunc(${nan})));`,
+      "print((Real64.checkFloat(1.5), Real64.radix, Real64.precision, Real64.minNormalPos > 0));",
     ]),
     [
       "(1, -1, 1, 2)",
@@ -290,12 +290,12 @@ Deno.test("Real follows REAL for the implemented subset", async () => {
   );
 });
 
-Deno.test("Number.div and Number.mod floor like SML's div and mod", async () => {
+Deno.test("Int32.div and Int32.mod floor like SML's div and mod", async () => {
   assertEquals(
     await run([
-      "print((Number.div(7, 2), Number.div(0 - 7, 2), Number.mod(0 - 7, 3), Number.mod(7, 0 - 3), (0 - 7) % 3));",
+      "print((Int32.div(7, 2), Int32.div(0 - 7, 2), Int32.mod(0 - 7, 3), Int32.mod(7, 0 - 3)));",
     ]),
-    ["(3, -4, 2, -2, -1)"],
+    ["(3, -4, 2, -2)"],
   );
 });
 

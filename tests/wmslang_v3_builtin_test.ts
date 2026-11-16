@@ -503,7 +503,7 @@ Deno.test("v4 GPU annotations check inference but do not provide overload eviden
   );
   const annotated = await analyzeVirtual(
     "/test/annotated.wm",
-    new Map([["/test/annotated.wm", helper("value: (Number, Number)")]]),
+    new Map([["/test/annotated.wm", helper("value: (Real64.Real, Real64.Real)")]]),
   );
   assertEquals(
     inferred.gpuInput.expressions.map((expression) => [expression.kind, expression.typeId]),
@@ -553,20 +553,20 @@ Deno.test("v4 annotations cannot rescue an unanchored reachable specialization",
   for (
     const [path, parameter] of [
       ["/test/unanchored-erased.wm", "x"],
-      ["/test/unanchored-annotated.wm", "x: Number"],
+      ["/test/unanchored-annotated.wm", "x: Real64.Real"],
     ] as const
   ) {
     const result = await validateUri(pathToFileUri(path), new Map([[path, program(parameter)]]));
     const diagnostic = result[0].diagnostics[0];
     assertEquals(diagnostic.code, "gpu.type.unsupported");
-    assertStringIncludes(diagnostic.message, "loop<Number> has unresolved result");
+    assertStringIncludes(diagnostic.message, "loop<Real64.Real> has unresolved result");
     assertEquals(diagnostic.message.toLowerCase().includes("annotation"), false);
   }
 });
 
 Deno.test("v4 shader factory environment comes from value flow, not its annotation", async () => {
   const program = (annotation: string) => `
-    record Uniforms = { resolution: (Number, Number), time: Number };
+    record Uniforms = { resolution: (Real64.Real, Real64.Real), time: Real64.Real };
     let shade = (uniforms${annotation}) => {
       (coord) => {
         @gpu;
@@ -612,8 +612,8 @@ Deno.test("v4 specializes one HM helper independently at two vector widths", asy
   const output = (await realSliceCompiler()).compileGpuSlice(analysis.gpuInput);
   assertEquals(output.irFunctions.map((fn) => fn.name), [
     "shade",
-    "twice__Number_Number",
-    "twice__Number_Number_Number",
+    "twice__Real64_Real_Real64_Real",
+    "twice__Real64_Real_Real64_Real_Real64_Real",
   ]);
   const addOperations = output.loweredOperations.filter((operation) =>
     operation.operatorId === "gpu.operator.add"
@@ -759,7 +759,7 @@ Deno.test("v4 rejects returned, stored, and dynamically selected functions befor
     },
     {
       path: "/test/stored-function.wm",
-      prefix: "record Holder = { function: Number -> Number };",
+      prefix: "record Holder = { function: Real64.Real -> Real64.Real };",
       body: `
         let double = (x) => { x * 2.0 };
         let held: Holder = .{ function = double };
@@ -789,7 +789,7 @@ Deno.test("v4 rejects returned, stored, and dynamically selected functions befor
 Deno.test("v4 failed specialization reports the generic operation and concrete call path", async () => {
   const path = "/test/invalid-specialization.wm";
   const source = `
-    record Box = { value: Number };
+    record Box = { value: Real64.Real };
     let shade = (coord) => {
       @gpu;
       let helper = (x) => { floor(x) };

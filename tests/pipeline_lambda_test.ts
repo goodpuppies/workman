@@ -25,11 +25,11 @@ Deno.test("pipeline lambdas execute with independent inputs, blocks and carrier 
     let discarded = => { :> add(1); };
     let unitFn = => { 42 };
     let safeAdd = (value, amount) => Ok(value + amount);
-    let success: Result<Number, String> = Ok(4)
+    let success: Result<Real64.Real, String> = Ok(4)
       :> Monad.via Result => :> safeAdd(2) :> Result.map(times(_, 3));
-    let failure: Result<Number, String> = Err("stop")
+    let failure: Result<Real64.Real, String> = Err("stop")
       :> Monad.via Result => { :> safeAdd(2) };
-    let task: Task<Number, String> = Task.succeed(4)
+    let task: Task<Real64.Real, String> = Task.succeed(4)
       :> Monad.via Task => :> add(2) :> Task.succeed;
     let unwrap = result => match(result) { Ok(value) => value, Err(_) => -1 };
     let checks = (
@@ -118,7 +118,7 @@ Deno.test("leading pipes are restricted to the start of bare lambda bodies", asy
   }
   await assertRejects(() =>
     checkSource(
-      'let add = (a: Number, b: Number) => a + b; let f = => :> add(2); let bad = f("text");',
+      'let add = (a: Real64.Real, b: Real64.Real) => a + b; let f = => :> add(2); let bad = f("text");',
     )
   );
 });

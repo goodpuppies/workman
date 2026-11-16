@@ -16,7 +16,7 @@ from js.global import {
   encodeURIComponent,
   fetch,
 };
-from js.global import unsafe { Number as numberOf: String -> Number };
+from js.global import unsafe { Number as numberOf: String -> Real64 };
 from js.global("Date") import { now as dateNow };
 from js.global("Deno") import unsafe {
   args: Js.Array<String>,
@@ -101,7 +101,7 @@ record WttrResponse = {
 };
 
 record CacheEntry = {
-  fetchedAt: Number,
+  fetchedAt: Real64,
   data: WttrResponse,
 };
 

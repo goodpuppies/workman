@@ -65,7 +65,7 @@ export type InferModuleOptions = {
   initialBasis?: InitialBasis;
   /**
    * Restore pre-products HM behavior: inferGpuTuple unifies unresolved tuple
-   * items to Number and claims the homogeneous vector type. The product
+   * items to Real64.Real and claims the homogeneous vector type. The product
    * pipeline (Gpu.fragment) leaves this off so heterogeneous multi-value
    * returns survive inference; only the H0 research-fixture entry opts in.
    */

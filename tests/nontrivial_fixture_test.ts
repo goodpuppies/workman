@@ -21,23 +21,23 @@ Deno.test("typechecks AoC-style depth analysis fixture", async () => {
     vars: 2,
   });
   expectBinding(result.env, "windowSums", {
-    type: "List<Number> -> List<Number>",
+    type: "List<Real64.Real> -> List<Real64.Real>",
     vars: 0,
   });
   expectBinding(result.env, "countIncreases", {
-    type: "List<Number> -> Number",
+    type: "List<Real64.Real> -> Real64.Real",
     vars: 0,
   });
   expectBinding(result.env, "countWindowIncreases", {
-    type: "List<Number> -> Number",
+    type: "List<Real64.Real> -> Real64.Real",
     vars: 0,
   });
   expectBinding(result.env, "sampleDepths", {
-    type: "List<Number>",
+    type: "List<Real64.Real>",
     vars: 0,
   });
   expectBinding(result.env, "largeDepthSum", {
-    type: "Number",
+    type: "Real64.Real",
     vars: 0,
   });
 });
@@ -49,7 +49,7 @@ Deno.test("typechecks AoC-style example program", async () => {
   const result = await checkSource(source);
 
   expectBinding(result.env, "sampleWindowIncreaseCount", {
-    type: "Number",
+    type: "Real64.Real",
     vars: 0,
   });
 });
@@ -61,7 +61,7 @@ Deno.test("typechecks explicit-cons AoC day 1 example", async () => {
   const result = await checkSource(source);
 
   expectBinding(result.env, "count_window_increases", {
-    type: "List<Number> -> Number",
+    type: "List<Real64.Real> -> Real64.Real",
     vars: 0,
   });
 });
@@ -99,7 +99,7 @@ Deno.test("typechecks wmsml overlap for polymorphic list helpers", async () => {
     vars: 2,
   });
   expectBinding(result.env, "windowSums", {
-    type: "list<Number> -> list<Number>",
+    type: "list<Real64.Real> -> list<Real64.Real>",
     vars: 0,
   });
 });

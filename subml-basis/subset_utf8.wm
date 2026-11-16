@@ -16,13 +16,20 @@ from "./subset_char.wm" import * as SubsetChar;
 
 let encodeOne = (code, index) => {
   if (SubsetUnicode.isScalar(code)) {
-    let (a, b) = SubsetUnicode.split(code, (64: I32));
-    let (c, d) = SubsetUnicode.split(a, (64: I32));
-    let (e, f) = SubsetUnicode.split(c, (64: I32));
-    let codes = if (code < (128: I32)) { [code] } else {
-      if (code < (2048: I32)) { [(192: I32) + a, (128: I32) + b] } else {
-        if (code < (65536: I32)) { [(224: I32) + c, (128: I32) + d, (128: I32) + b] } else {
-          [(240: I32) + e, (128: I32) + f, (128: I32) + d, (128: I32) + b]
+    let (a, b) = SubsetUnicode.split(code, (64: Int32.Int));
+    let (c, d) = SubsetUnicode.split(a, (64: Int32.Int));
+    let (e, f) = SubsetUnicode.split(c, (64: Int32.Int));
+    let codes = if (code < (128: Int32.Int)) { [code] } else {
+      if (code < (2048: Int32.Int)) { [(192: Int32.Int) + a, (128: Int32.Int) + b] } else {
+        if (code < (65536: Int32.Int)) {
+          [(224: Int32.Int) + c, (128: Int32.Int) + d, (128: Int32.Int) + b]
+        } else {
+          [
+            (240: Int32.Int) + e,
+            (128: Int32.Int) + f,
+            (128: Int32.Int) + d,
+            (128: Int32.Int) + b
+          ]
         }
       }
     };
@@ -39,12 +46,12 @@ let encode = (scalars) => {
       match(encodeOne(code, index)) {
         SubsetResult.Err(error) => { SubsetResult.Err(error) },
         SubsetResult.Ok(bytes) => {
-          go(rest, index + (1: I32), SubsetList.reverseAppend(bytes, acc))
+          go(rest, index + (1: Int32.Int), SubsetList.reverseAppend(bytes, acc))
         }
       }
     }
   };
-  go(scalars, (0: I32), [])
+  go(scalars, (0: Int32.Int), [])
 };
 
 let decodeOne = (bytes, offset) => {
@@ -60,7 +67,7 @@ let decodeOne = (bytes, offset) => {
         SubsetResult.Ok(first) => {
           let continuation = (count, initial, minimum) => {
             let rec go = (remaining, input, code, consumed) => {
-              if (remaining <= (0: I32)) {
+              if (remaining <= (0: Int32.Int)) {
                 if (code < minimum) {
                   SubsetResult.Err(SubsetUnicode.Error(SubsetUnicode.Overlong, offset))
                 } else {
@@ -79,12 +86,12 @@ let decodeOne = (bytes, offset) => {
                         SubsetResult.Err(SubsetUnicode.Error(SubsetUnicode.InvalidByte, offset + consumed))
                       },
                       SubsetResult.Ok(value) => {
-                        if (if (value >= (128: I32)) { value <= (191: I32) } else { false }) {
+                        if (if (value >= (128: Int32.Int)) { value <= (191: Int32.Int) } else { false }) {
                           go(
-                            remaining - (1: I32),
+                            remaining - (1: Int32.Int),
                             tail,
-                            code * (64: I32) + value - (128: I32),
-                            consumed + (1: I32)
+                            code * (64: Int32.Int) + value - (128: Int32.Int),
+                            consumed + (1: Int32.Int)
                           )
                         } else {
                           SubsetResult.Err(SubsetUnicode.Error(SubsetUnicode.InvalidContinuation, offset + consumed))
@@ -95,12 +102,18 @@ let decodeOne = (bytes, offset) => {
                 }
               }
             };
-            go(count, rest, initial, (1: I32))
+            go(count, rest, initial, (1: Int32.Int))
           };
-          if (first < (128: I32)) { SubsetResult.Ok(first, rest, (1: I32)) } else {
-            if (if (first >= (194: I32)) { first <= (223: I32) } else { false }) { continuation((1: I32), first - (192: I32), (128: I32)) } else {
-              if (if (first >= (224: I32)) { first <= (239: I32) } else { false }) { continuation((2: I32), first - (224: I32), (2048: I32)) } else {
-                if (if (first >= (240: I32)) { first <= (244: I32) } else { false }) { continuation((3: I32), first - (240: I32), (65536: I32)) } else {
+          if (first < (128: Int32.Int)) { SubsetResult.Ok(first, rest, (1: Int32.Int)) } else {
+            if (if (first >= (194: Int32.Int)) { first <= (223: Int32.Int) } else { false }) {
+              continuation((1: Int32.Int), first - (192: Int32.Int), (128: Int32.Int))
+            } else {
+              if (if (first >= (224: Int32.Int)) { first <= (239: Int32.Int) } else { false }) {
+                continuation((2: Int32.Int), first - (224: Int32.Int), (2048: Int32.Int))
+              } else {
+                if (if (first >= (240: Int32.Int)) { first <= (244: Int32.Int) } else { false }) {
+                  continuation((3: Int32.Int), first - (240: Int32.Int), (65536: Int32.Int))
+                } else {
                   SubsetResult.Err(SubsetUnicode.Error(SubsetUnicode.InvalidLeadingByte, offset))
                 }
               }
@@ -125,5 +138,5 @@ let decode = (bytes) => {
       }
     }
   };
-  go(bytes, (0: I32), [])
+  go(bytes, (0: Int32.Int), [])
 };

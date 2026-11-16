@@ -1,16 +1,16 @@
--- A monomorphic carrier: Vec2 always carries Number, in and out.
+-- A monomorphic carrier: Vec2 always carries Real64, in and out.
 --
 -- Exporting `carrier` alongside top-level `succeed`, `map`, and `map2`
 -- registers the type `succeed` returns. That is the whole registration; there
 -- is no declaration syntax and nothing the compiler knows about Vec2.
 
-record Vec2 = { x: Number, y: Number };
+record Vec2 = { x: Real64, y: Real64 };
 
 let zero = Vec2(0, 0);
 
 -- `succeed` injects a pure operand. For a vector that means broadcasting a
 -- scalar across the lanes, which is what makes `v * 3` work.
-let succeed = (s: Number) => {
+let succeed = (s: Real64) => {
   Vec2(s, s)
 };
 

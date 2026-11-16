@@ -151,7 +151,7 @@ export class Scanners {
 
   #define(name: string, body: string): void {
     this.#functions.push(
-      `and ${name} = (source: String, offset: Number): Number => {`,
+      `and ${name} = (source: String, offset: Real64.Real): Real64.Real => {`,
       indent(body, 1),
       "}",
     );

@@ -51,7 +51,7 @@ type Text =
 -- turn, for archives inside archives: ["gale.deb", "data.tar.gz"]. `members`
 -- selects paths inside the innermost archive ([] takes everything); `strip`
 -- drops leading path components, as tar's --strip-components does.
-record Unpack = { archive: List<String>, members: List<String>, dest: String, strip: Number };
+record Unpack = { archive: List<String>, members: List<String>, dest: String, strip: Real64.Real };
 
 -- A declarative command build, with no language-specific command knowledge.
 -- Run program + arguments in the extracted source directory. Output is a
@@ -61,7 +61,7 @@ record CommandBuild = {
   program: PathRef,
   arguments: List<String>,
   source: String,
-  strip: Number,
+  strip: Real64.Real,
   output: String,
   dest: String,
   mode: Mode
@@ -99,7 +99,7 @@ record Policy = {
   channel: String,
   -- Young candidates are skipped for channel selection; exact requests fail.
   -- install --force bypasses the gate for this command only.
-  minAgeDays: Number,
+  minAgeDays: Real64.Real,
   -- Upstream only ever offers its newest build, so the age gate has nothing
   -- older to fall back to. pakman then installs the newest build the first
   -- time, and afterwards holds the installed one until a newer build is

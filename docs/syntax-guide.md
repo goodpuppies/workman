@@ -187,7 +187,7 @@ An expression body extends through the following expression, including nested
 lambdas and whitespace application, until its enclosing delimiter or semicolon.
 For example, `apply x => x + 1` means `apply(x => x + 1)`. Use parentheses when a
 lambda must be grouped as an operand. Bare `x: Number => ...` annotates the
-parameter; `(x): Number => ...` annotates the function's return.
+parameter; `(x): Real64 => ...` annotates the function's return.
 
 Use `_` as a whole argument in a parenthesized call to create a function:
 
@@ -357,7 +357,7 @@ OCaml-style leading pipe is also supported (useful for multiline):
 
 ```workman
 type Expr =
-  | Literal<Number>
+  | Literal<Real64>
   | Add<Expr, Expr>
   | Mul<Expr, Expr>
   | Neg<Expr>;
@@ -365,7 +365,7 @@ type Expr =
 type Token =
   | LParen
   | RParen
-  | Number<Number>
+  | Number<Real64>
   | Ident<String>;
 ```
 
@@ -393,8 +393,8 @@ let list = Link(1, Link(2, Empty));
 ### Record Types
 
 ```workman
-record Point = { x: Number, y: Number };
-record Person = { name: String, age: Number };
+record Point = { x: Real64, y: Real64 };
+record Person = { name: String, age: Real64 };
 
 -- Records with type parameters
 record Pair<A, B> = { first: A, second: B };
@@ -408,20 +408,20 @@ Declare a nominal record directly in a type annotation by writing its name follo
 its fields:
 
 ```wm
-let add = (r: AddI{ a: I32, b: I32 }): AddRes{ result: I32 } => {
+let add = (r: AddI{ a: Int32, b: Int32 }): AddRes{ result: Int32 } => {
   .{ result = r.a + r.b }
 };
 let sum: AddRes = add(AddI{ a = 2, b = 3 });
 ```
 
-This is shorthand for ordinary `record AddI = { a: I32, b: I32 };` and
-`record AddRes = { result: I32 };` declarations immediately before `let add`.
+This is shorthand for ordinary `record AddI = { a: Int32, b: Int32 };` and
+`record AddRes = { result: Int32 };` declarations immediately before `let add`.
 The types and their ordered constructors are available throughout that statement and
 to later statements in the containing module or block. New module-level definitions are
 exported; block-local types follow the usual restrictions on escaping their scope.
 
 An inline annotation creates a nominal type only if its name is not already visible.
-Repeated `Point{x:I32}` annotations refer to the same `Point` and check that the field
+Repeated `Point{x:Int32}` annotations refer to the same `Point` and check that the field
 names and types match. Field order may differ in a repeated annotation; the ordered
 constructor retains the order established by the original declaration. Differently
 named records remain distinct even when their fields match.
@@ -436,7 +436,7 @@ types. Empty records use `Empty{}`. Explicit type parameters define generic reco
 
 ```wm
 let unwrap = (box: Box<t>{ value: t }) => { box.value };
-let number: Box<I32> = Box(42);
+let number: Box<Int32> = Box(42);
 let text: Box<String> = Box("hello");
 ```
 
@@ -448,7 +448,7 @@ Records are **nominal** (not structural). Declare a record type separately or in
 
 ```workman
 -- First, declare the record type
-record Point = { x: Number, y: Number };
+record Point = { x: Real64, y: Real64 };
 
 -- Then create instances (note the leading dot)
 let p = .{ x = 10, y = 20 };
@@ -466,7 +466,7 @@ Every record declaration also introduces an ordinary constructor function. Its a
 field declaration order:
 
 ```workman
-record Point = { x: Number, y: Number };
+record Point = { x: Real64, y: Real64 };
 
 let p = Point(10, 20);
 ```
@@ -614,7 +614,7 @@ let getFirst = match(nested) => {
 
 ### Literal Patterns
 
-Number, string, boolean, and `void` patterns are supported. Character literals like `'a'` are shown
+Real64, string, boolean, and `void` patterns are supported. Character literals like `'a'` are shown
 as intended syntax below, but they are **not supported yet** in current `wm`.
 
 ```workman
@@ -949,7 +949,7 @@ from js.global("Math") import { max as jsmax, floor };
 from js.global("Math") import * as Math;
 
 -- Manual types are trusted claims, so they need `unsafe`
-from js.global("console") import unsafe { log: (String, Number) -> Void } as console;
+from js.global("console") import unsafe { log: (String, Real64) -> Void } as console;
 
 -- Import types
 from "./option.wm" import { Option, Some, None };
@@ -962,7 +962,7 @@ Top-level values, types, records, and datatype constructors are visible to impor
 ```workman
 let myFunction = (x) => { x * 2 };
 
-type MyType = A | B<Number>;
+type MyType = A | B<Real64>;
 
 ```
 
@@ -1008,7 +1008,7 @@ match(n) { 0 => { 1 }, _ => { n } };
 
 ```workman
 -- Type declaration uses colon
-record Point = { x: Number, y: Number };
+record Point = { x: Real64, y: Real64 };
 
 -- Construction uses zig style
 let p1 = .{ x = 10, y = 20 };
@@ -1048,14 +1048,14 @@ can help with readability and error messages:
 
 ```workman
 -- Types are inferred
-let double = (x) => { x * 2 };  -- Inferred: Number -> Number
+let double = (x) => { x * 2 };  -- Inferred: Real64 -> Real64
 let identity = (x) => { x };    -- Inferred: forall a. a -> a
 
 -- Annotations help with complex cases or documentation
-let process = (items: List<Number>) => { ... };
+let process = (items: List<Real64>) => { ... };
 
 -- Annotate lambda parameters
-let makePoint = (x: Number, y: Number) => { .{ x, y } };
+let makePoint = (x: Real64, y: Real64) => { .{ x, y } };
 
 -- Annotate record parameters for clarity
 let pointX = (p: Point) => { p.x };
@@ -1075,11 +1075,11 @@ A lambda may declare the complete set of enclosing lexical bindings that it capt
 appears after the parameters and optional result annotation, immediately before `=>`:
 
 ```workman
-let makeAdder = (x: Number) => {
-  (y: Number): Number |x| => { x + y }
+let makeAdder = (x: Real64) => {
+  (y: Real64): Real64 |x| => { x + y }
 };
 
-let constant = (): Number || => { 1 };
+let constant = (): Real64 || => { 1 };
 ```
 
 An authored capture clause is a contract. Using an unlisted lexical binding is an error, `||`
@@ -1115,7 +1115,7 @@ type Allocator;
 
 -- Zig primitive types are opaque
 type U8;
-type I32;
+type Int32;
 type Usize;
 ```
 
@@ -1138,7 +1138,7 @@ let zig_gpa_alloc: (Ptr<GpaHandle, s>, t, Usize) -> Slice<t, s> = ?;
 
 #### Lowercase vs Uppercase in Types
 
-- **Uppercase** (`T`, `Number`, `Option`) — Concrete types or type constructors
+- **Uppercase** (`T`, `Real64`, `Option`) — Concrete types or type constructors
 - **lowercase** (`t`, `s`, `a`) — Type variables (generics)
 
 ```workman
@@ -1162,10 +1162,10 @@ let zig_gpa_init: Void -> GpaHandle = ?;
 let zig_free: Ptr<t, s> -> Void = ?;
 
 -- Useful during development
-let todoFunction: Number -> String = ?;
+let todoFunction: Real64 -> String = ?;
 
 -- The typechecker infers what type the hole must be
-let calculate = (x: Number): Number => {
+let calculate = (x: Real64): Real64 => {
   let intermediate = x * 2;
   ?  -- Hole must be Number (inferred from return type)
 };
@@ -1235,7 +1235,7 @@ let clearer = `Hello ${name}, welcome to ${place}`;
 Use `:` to require an expression or pattern to have a specific type:
 
 ```workman
-let x = (someValue : Number);
+let x = (someValue : Real64);
 let result = compute() : Option<String>;
 
 match(result) {
@@ -1319,7 +1319,7 @@ See [WON literals](./won-literals.md) for tags, nesting, and portable data seman
 | Function              | `let f = (a, b) => { body };`         |
 | Recursive             | `let rec f = ...;`                    |
 | Mutual recursion      | `let rec f = ... and g = ...;`        |
-| Type union            | `type T = A \| B<Number>;`            |
+| Type union            | `type T = A \| B<Real64>;`            |
 | Record type           | `record R = { field: Type };`         |
 | Record value          | `.{ field = value }` or `.{ field }`  |
 | Record spread         | `.{ ..source, field = value }`        |

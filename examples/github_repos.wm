@@ -6,9 +6,9 @@ let via = Monad.via;
 record Repo = {
   name: String, 
   full_name: String, 
-  stargazers_count: Number, 
-  forks_count: Number,
-  open_issues_count: Number, 
+  stargazers_count: Real64, 
+  forks_count: Real64,
+  open_issues_count: Real64, 
   html_url: String,
 };
 

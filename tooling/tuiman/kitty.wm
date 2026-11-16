@@ -15,7 +15,7 @@ from js.global("Math") import { ceil, floor };
 -- own errors at the call site.
 type ImageError =
   | ImageJsFailure<Js.Error>
-  | ImageHttpFailure<Number, String>;
+  | ImageHttpFailure<Real64, String>;
 
 let describeImageError = match(error) => {
   ImageJsFailure(jsError) => {
@@ -34,16 +34,16 @@ type Scale = Fit | Fill;
 record Image = {
   base64: String,
   alt: String,
-  width: Number,
-  height: Number,
+  width: Real64,
+  height: Real64,
   pixels: Option<Png.Pixels>,
 };
 
 record Placement = {
-  offsetX: Number,
-  offsetY: Number,
-  columns: Number,
-  rows: Number,
+  offsetX: Real64,
+  offsetY: Real64,
+  columns: Real64,
+  rows: Real64,
   control: String,
 };
 

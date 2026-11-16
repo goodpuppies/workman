@@ -1,7 +1,7 @@
 from "./math.wm" import *;
 from "./tree.wm" import *;
 
-type Expr = Lit<Number> | Add<Expr, Expr> | Mul<Expr, Expr>;
+type Expr = Lit<Real64> | Add<Expr, Expr> | Mul<Expr, Expr>;
 
 let rec eval = match(expr) => {
   Lit(i) => {i},

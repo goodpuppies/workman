@@ -35,7 +35,7 @@ record PackageInfo = {
   target: Target,
   scope: Scope,      -- System installs under /, User under the home directory
   channel: String,   -- the channel followed by default
-  minAgeDays: Number,
+  minAgeDays: Real64,
   onlyLatest: Bool,  -- upstream offers only its newest build
   hosts: List<String>,
   program: String -- the compiled package program

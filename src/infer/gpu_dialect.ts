@@ -4,7 +4,7 @@ import {
   fresh,
   instantiate,
   named,
-  NumberTy,
+  Real64Ty,
   prune,
   tuple,
   type Ty,
@@ -85,13 +85,13 @@ function inferGpuTuple(
     : items.every((item) => isNumber(prune(item)));
   if (!numeric) return undefined;
   items.forEach((item, index) => {
-    constrainAt(item, NumberTy, expr.items[index], undefined, [], context.provenance, {
+    constrainAt(item, Real64Ty, expr.items[index], undefined, [], context.provenance, {
       message: `GPU vector tuple component ${index}`,
       node: expr.items[index].node,
       span: expr.items[index].node?.span,
     });
   });
-  return tuple(Array.from({ length: items.length }, () => NumberTy));
+  return tuple(Array.from({ length: items.length }, () => Real64Ty));
 }
 
 function inferGpuProjection(
@@ -125,25 +125,25 @@ function inferGpuProjection(
       identity: `gpu.projection.${path.id}`,
       occurrence: expr,
       args: [receiver],
-      result: NumberTy,
+      result: Real64Ty,
       rows: Array.from({ length: 5 - minimumWidth }, (_item, offset) => {
         const width = minimumWidth + offset;
         return { id: width, args: [`f32x${width}` as GpuOperationShape], result: "f32" };
       }),
       determiningArgs: [0],
     });
-    return NumberTy;
+    return Real64Ty;
   }
   const items = vectorItems(receiver);
   if (!items || index >= items.length) return undefined;
   items.forEach((item, lane) => {
-    constrainAt(item, NumberTy, expr, undefined, [], context.provenance, {
+    constrainAt(item, Real64Ty, expr, undefined, [], context.provenance, {
       message: `GPU vector projection component ${lane}`,
       node: expr.node,
       span: expr.node?.span,
     });
   });
-  return NumberTy;
+  return Real64Ty;
 }
 
 function inferGpuBinary(
@@ -270,7 +270,7 @@ function inferGpuResourceCall(
   const receiverName = longIdSpelling(receiverPath);
   const receiver = inferGpuDottedValue(receiverPath, context);
   if (!receiver || !isNamed(receiver, "Gpu.SampledTexture2D")) return undefined;
-  const rgba = tuple([NumberTy, NumberTy, NumberTy, NumberTy]);
+  const rgba = tuple([Real64Ty, Real64Ty, Real64Ty, Real64Ty]);
   if (method === "Sample") {
     if (expr.args.length !== 2) {
       throw diagnosticError(
@@ -290,7 +290,7 @@ function inferGpuResourceCall(
     const coordinate = inferExpr(expr.args[1], context);
     constrainAt(
       coordinate,
-      tuple([NumberTy, NumberTy]),
+      tuple([Real64Ty, Real64Ty]),
       expr.args[1],
       undefined,
       [],
@@ -318,7 +318,7 @@ function inferGpuResourceCall(
   const coordinate = inferExpr(expr.args[0], context);
   constrainAt(
     coordinate,
-    tuple([NumberTy, NumberTy, NumberTy]),
+    tuple([Real64Ty, Real64Ty, Real64Ty]),
     expr.args[0],
     undefined,
     [],
@@ -452,9 +452,9 @@ function compatibleBuiltinShape(type: Ty, expected: WmslangBuiltinValueType): bo
 }
 
 function semanticBuiltinType(type: WmslangBuiltinValueType): Ty {
-  if (!type.includes("x")) return NumberTy;
+  if (!type.includes("x")) return Real64Ty;
   const width = Number(type.at(-1));
-  return tuple(Array.from({ length: width }, () => NumberTy));
+  return tuple(Array.from({ length: width }, () => Real64Ty));
 }
 
 function hmBuiltinShape(type: WmslangBuiltinValueType): GpuOperationShape {
@@ -513,7 +513,7 @@ function editDistance(left: string, right: string): number {
 
 function isNumber(type: Ty): boolean {
   const target = prune(type);
-  return target.tag === "prim" && target.name === "Number";
+  return target.tag === "prim" && target.name === "Real64.Real";
 }
 
 function vectorItems(type: Ty): Ty[] | undefined {

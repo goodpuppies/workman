@@ -13,7 +13,7 @@ Deno.test("program analysis assigns shared type, record, constructor, and basis 
       "/test/main.wm",
       `
       type Choice<T> = EmptyChoice | Choice<T>;
-      record Point = { x: Number, y: Number };
+      record Point = { x: Real64.Real, y: Real64.Real };
       let value = Choice(1);
     `,
     ]]),

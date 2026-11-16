@@ -24,7 +24,7 @@ from "host/c/pointer.wm" import * as Pointer;
 from c.header("sys/uio.h") import unsafe { writev };
 from c.header("string.h") import unsafe { memcpy };
 -- `errno` is a macro that headers can't reflect, so its function is declared by hand.
-from c.lib("c") import unsafe { __errno_location: Void -> Option<Ptr<I32>> };
+from c.lib("c") import unsafe { __errno_location: Void -> Option<Ptr<Int32>> };
 from js.global import { TextEncoder, Uint8Array };
 from js.global("BigUint64Array") import { from as bigUint64ArrayFrom };
 from js.global import type { Uint8Array };
@@ -34,8 +34,8 @@ from js.global("Deno.UnsafePointer") import unsafe {
   value: PointerObject -> Js.Value,
 } as Unsafe;
 from js.global import unsafe {
-  BigInt: Number -> Js.Value,
-  String as textOf: Number -> String,
+  BigInt: Real64 -> Js.Value,
+  String as textOf: Real64 -> String,
 };
 
 let via = Monad.via;
@@ -43,13 +43,13 @@ let via = Monad.via;
 type IoError =
   | JsError<Js.Error>
   | NullPointer
-  | Errno<Number>
+  | Errno<Real64>
   | NoProgress;
 
 -- What one writev call accomplished.
 type WriteStep =
   | Retry
-  | Wrote<Number>;
+  | Wrote<Real64>;
 
 let describe = match(error) => {
   JsError(js) => { "javascript call failed: " ++ Error.message(js) },
@@ -60,9 +60,9 @@ let describe = match(error) => {
 
 -- One iovec's worth of data: the bytes plus their length, resolved once so
 -- the drain loop stays arithmetic instead of re-crossing the JS boundary.
-record Chunk = { bytes: Uint8Array, len: Number };
+record Chunk = { bytes: Uint8Array, len: Real64 };
 
-record Writer = { fd: Number, buf: Uint8Array, cap: Number, end: Number };
+record Writer = { fd: Real64, buf: Uint8Array, cap: Real64, end: Real64 };
 
 let viaJs = (f) => { Monad.viaError Result JsError f };
 let jsResult = (value) => { value :> Result.mapErr(JsError) };
@@ -157,9 +157,9 @@ let rec drain = (chunks, fd) => {
       let count = List.length(pending);
 
       let submit = via Result (iov) => {
-        match((I32.fromNumber(fd), I32.fromNumber(count))) {
+        match((Int32.fromReal64(fd), Int32.fromReal64(count))) {
           (Some(descriptor), Some(vectors)) => {
-            Ok(Int64.toNumber(writev(descriptor, Some(Pointer.fromBytes(iov)), vectors)))
+            Ok(Int64.toReal64(writev(descriptor, Some(Pointer.fromBytes(iov)), vectors)))
           },
           _ => { Err(NullPointer) },
         }
@@ -249,7 +249,7 @@ let writeChunk = (writer: Writer, chunk) => {
     memcpy(
       Some(Pointer.offset(Pointer.fromBytes(raw), writer.end)),
       Some(Pointer.fromBytes(chunk.bytes)),
-      Word64.fromNumber(chunk.len),
+      Word64.fromReal64(chunk.len),
     );
     Ok(.{ ..writer, end = writer.end + chunk.len })
   } else {

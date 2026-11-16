@@ -101,7 +101,7 @@ are optional. Numeric identifier suffixes and missing prefix/exponent digits are
 Line comments end at CR, LF, or CRLF. Unclosed block comments are rejected; v3's localized
 lexer marks for damaged comments have not been ported.
 
-These numeric spellings still elaborate to the compiler's existing `Number` type.
+These numeric spellings still elaborate to the compiler's existing `Real64` type.
 Quoted strings and backticks also accept the shared SML escapes (`\a`, `\b`, `\v`,
 `\f`, `\r`, `\^A`, `\065`, `\u0041`), braced Unicode scalar escapes (`\u{1F600}`),
 and string gaps. Both quote characters can be escaped; backticks additionally allow

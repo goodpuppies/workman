@@ -53,7 +53,7 @@ export function emitCompiledProbe(
     "compiled_probe_types.wm",
     [
       header(grammar, grammarHash, ["shared character-class types"]),
-      "type ClassPart = SingleCode<Number> | CodeRange<Number, Number>;",
+      "type ClassPart = SingleCode<Real64.Real> | CodeRange<Real64.Real, Real64.Real>;",
       "",
     ].join("\n"),
   );
@@ -79,13 +79,13 @@ function emitRules(
   moduleConstants = new Map();
   const ruleCount = grammar.rules.length;
   const group = grammar.rules.flatMap((rule, index) => [
-    `${index === 0 ? "let rec" : "and"} rule_${rule.name} = (source: String, offset: Number, recover: Bool, diagnose: Bool, parser: CompiledParser): CompiledProbeMatch => {`,
+    `${index === 0 ? "let rec" : "and"} rule_${rule.name} = (source: String, offset: Real64.Real, recover: Bool, diagnose: Bool, parser: CompiledParser): CompiledProbeMatch => {`,
     indent(emitGuardedRule(rule.name, emitRuleExpression(rule.expression, rule.name, recoveryIndex)), 1),
     "}",
     ...emitRuleEntry(rule.name, index),
   ]);
   const byName = [
-    "and parseRuleByName = (parser: CompiledParser, name: String, source: String, offset: Number, diagnose: Bool, recover: Bool): CompiledProbeMatch => {",
+    "and parseRuleByName = (parser: CompiledParser, name: String, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {",
     "  match(name) {",
     ...grammar.rules.map((rule) =>
       `    ${JSON.stringify(rule.name)} => { enter_${rule.name}(parser, source, offset, diagnose, recover) },`
@@ -112,7 +112,7 @@ function emitRules(
     "};",
     "",
     "-- One number per rule, offset and mode: a single table lookup per rule call.",
-    "let compiledRuleSlot = (rule: Number, offset: Number, diagnose: Bool, recover: Bool) => {",
+    "let compiledRuleSlot = (rule: Real64.Real, offset: Real64.Real, diagnose: Bool, recover: Bool) => {",
     `  (offset * 4 + (if (diagnose) { 2 } else { 0 }) + (if (recover) { 1 } else { 0 })) * ${ruleCount} + rule`,
     "};",
     "",
@@ -138,13 +138,13 @@ function emitGuardedRule(name: string, body: string): string {
 }
 
 const lambdaGuardFunctions = [
-  "and identifierPartsEnd = (source: String, offset: Number): Number => {",
+  "and identifierPartsEnd = (source: String, offset: Real64.Real): Real64.Real => {",
   "  let code = codeAt(source, offset);",
   "  if ((code >= 97 && code <= 122) || (code >= 65 && code <= 90) || (code >= 48 && code <= 57) || code == 95 || code == 39) {",
   "    identifierPartsEnd(source, offset + 1)",
   "  } else { offset }",
   "}",
-  "and lambdaCanStart = (source: String, offset: Number): Bool => {",
+  "and lambdaCanStart = (source: String, offset: Real64.Real): Bool => {",
   "  let first = codeAt(source, offset);",
   "  if ((first >= 97 && first <= 122) || first == 95) {",
   "    let after = scan__(source, identifierPartsEnd(source, offset + 1));",
@@ -172,7 +172,7 @@ function emitRuleEntry(name: string, index: number): string[] {
     "}",
   ].join("\n");
   const signature =
-    `and enter_${name} = (parser: CompiledParser, source: String, offset: Number, diagnose: Bool, recover: Bool): CompiledProbeMatch => {`;
+    `and enter_${name} = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {`;
   if (!scanners!.scansWholeRule(name)) return [signature, indent(memoized, 1), "}"];
   const inner = surfaceRuleGroups.trivia.includes(name)
     ? "EmptyCompiledCapture"

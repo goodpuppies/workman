@@ -3,29 +3,29 @@ from "./generated/compiled_probe_types.wm" import {
 };
 
 from js.global("String.prototype.charCodeAt") import unsafe {
-  call as charCodeAt: (String, Number) -> Number
+  call as charCodeAt: (String, Real64) -> Real64
 };
 from js.host("table") import * as Table;
 
 type CompiledCapture =
   | EmptyCompiledCapture
-  | TokenCompiledCapture<String, Number, Number>
-  | MissingCompiledCapture<String, Number, String>
+  | TokenCompiledCapture<String, Real64, Real64>
+  | MissingCompiledCapture<String, Real64, String>
   | SequenceCompiledCapture<List<CompiledCapture>>
-  | ChoiceCompiledCapture<Number, CompiledCapture>
+  | ChoiceCompiledCapture<Real64, CompiledCapture>
   | OptionalCompiledCapture<Option<CompiledCapture>>
   | RepeatedCompiledCapture<List<CompiledCapture>>
-  | RuleCompiledCapture<String, CompiledCapture, Number, Number>;
+  | RuleCompiledCapture<String, CompiledCapture, Real64, Real64>;
 
 record CompiledParseFailure = {
-  offset: Number,
+  offset: Real64,
   expected: String,
   rule: String,
 };
 
 type CompiledProbeMatch =
-  | CompiledProbeMatched<Number, CompiledCapture, Option<CompiledParseFailure>>
-  | CompiledProbeNoMatch<Number, String, String>;
+  | CompiledProbeMatched<Real64, CompiledCapture, Option<CompiledParseFailure>>
+  | CompiledProbeNoMatch<Real64, String, String>;
 
 let textLength = (text: String) => {
   text :> .length :> Result.getOr(0)
@@ -34,7 +34,7 @@ let textLength = (text: String) => {
 -- JavaScript's charCodeAt gives NaN past the end, which compares false against everything, so a negated
 -- character class would keep matching forever. NaN also fails `>= 0`, which maps it to -1 without
 -- reading the length on every character.
-let codeAt = (source: String, offset: Number) => {
+let codeAt = (source: String, offset: Real64) => {
   let code = charCodeAt(source, offset);
   if (code >= 0) { code } else { -1 }
 };
@@ -109,7 +109,7 @@ let bestFailure = match(left, right) => {
   },
 };
 
-let failureOption = (offset: Number, expected: String, rule: String) => {
+let failureOption = (offset: Real64, expected: String, rule: String) => {
   let failure: CompiledParseFailure = .{
     offset = offset,
     expected = expected,
@@ -120,14 +120,14 @@ let failureOption = (offset: Number, expected: String, rule: String) => {
 
 let trackedFailure = (
   diagnose: Bool,
-  offset: Number,
+  offset: Real64,
   expected: String,
   rule: String,
 ) => {
   if (diagnose) { failureOption(offset, expected, rule) } else { None }
 };
 
-let failureWithBest = (best, offset: Number, expected: String, rule: String) => {
+let failureWithBest = (best, offset: Real64, expected: String, rule: String) => {
   match(bestFailure(best, failureOption(offset, expected, rule))) {
     Some(bestFailure) => {
       CompiledProbeNoMatch(
@@ -185,12 +185,12 @@ let rec classContains = match(parts, code) => {
 };
 
 let matchLiteral = (
-  codes: List<Number>,
+  codes: List<Real64>,
   expectedText: String,
   rule: String,
   diagnose: Bool,
   source: String,
-  offset: Number,
+  offset: Real64,
 ) => {
   let end = literalEnd(source, codes, offset);
   if (end >= 0) {
@@ -201,13 +201,13 @@ let matchLiteral = (
 };
 
 let matchRecoverableLiteral = (
-  codes: List<Number>,
+  codes: List<Real64>,
   expectedText: String,
   site: String,
   recover: Bool,
   diagnose: Bool,
   source: String,
-  offset: Number,
+  offset: Real64,
 ) => {
   let result = matchLiteral(codes, expectedText, site, diagnose, source, offset);
   match(result) {
@@ -236,7 +236,7 @@ let matchRecoverableOpeningBrace = (
   recover: Bool,
   diagnose: Bool,
   source: String,
-  offset: Number,
+  offset: Real64,
 ) => {
   let result = matchLiteral(openBraceCodes, "{", site, diagnose, source, offset);
   match(result) {
@@ -273,7 +273,7 @@ let matchCommittedRule = (parser, recover: Bool) => {
   }
 };
 
-let isIdentifierPartCode = (code: Number) => {
+let isIdentifierPartCode = (code: Real64) => {
   (code >= 65 && code <= 90) ||
   (code >= 97 && code <= 122) ||
   (code >= 48 && code <= 57) ||
@@ -283,12 +283,12 @@ let isIdentifierPartCode = (code: Number) => {
 
 -- `JSON` is also a legal constructor name, so a damaged `JSON { ... }`
 -- production needs this explicit keyword-boundary commitment annotation.
-let commitsJsonPrimaryRecovery = (source: String, offset: Number) => {
+let commitsJsonPrimaryRecovery = (source: String, offset: Real64) => {
   let end = literalEnd(source, jsonCodes, offset);
   end >= 0 && !isIdentifierPartCode(codeAt(source, end))
 };
 
-let skipOptionalRule = (name: String, source: String, offset: Number, parseRule) => {
+let skipOptionalRule = (name: String, source: String, offset: Real64, parseRule) => {
   match(parseRule(name, source, offset, false, false)) {
     CompiledProbeMatched(next, ignoredCapture, ignoredLatent) => { next },
     CompiledProbeNoMatch(ignoredAt, ignoredExpected, ignoredRule) => { offset },
@@ -298,7 +298,7 @@ let skipOptionalRule = (name: String, source: String, offset: Number, parseRule)
 -- Parameters followed by a written `=>` are a lambda, even if its body is unfinished. Without this
 -- commitment the strict probe of `(x) => { x` fails at the lambda and then succeeds on the group `(x)`,
 -- so recovery would never reach the lambda. `=>` itself is never recovered, so this can't invent one.
-let commitsLambdaPrimaryRecovery = (source: String, offset: Number, parseRule) => {
+let commitsLambdaPrimaryRecovery = (source: String, offset: Real64, parseRule) => {
   match(parseRule("ParamList", source, offset, false, false)) {
     CompiledProbeMatched(afterParams, ignoredCapture, ignoredLatent) => {
       let afterAnnotation = skipOptionalRule("LambdaReturnAnnotation", source, afterParams, parseRule);
@@ -317,7 +317,7 @@ let matchCharacterClass = (
   rule: String,
   diagnose: Bool,
   source: String,
-  offset: Number,
+  offset: Real64,
 ) => {
   let code = codeAt(source, offset);
   if (code >= 0 && classContains(parts, code) != inverted) {
@@ -331,7 +331,7 @@ let matchCharacterClass = (
   }
 };
 
-let matchAnyCharacter = (rule: String, diagnose: Bool, source: String, offset: Number) => {
+let matchAnyCharacter = (rule: String, diagnose: Bool, source: String, offset: Real64) => {
   if (codeAt(source, offset) >= 0) {
     CompiledProbeMatched(
       offset + 1,
@@ -343,7 +343,7 @@ let matchAnyCharacter = (rule: String, diagnose: Bool, source: String, offset: N
   }
 };
 
-let ensureProgress = (before: Number, after: Number) => {
+let ensureProgress = (before: Real64, after: Real64) => {
   after > before
 };
 
@@ -386,14 +386,14 @@ let rec matchSequenceInto = match(parsers, diagnose, source, offset, reversed, b
   },
 };
 
-let matchSequence = (parsers, diagnose: Bool, source: String, offset: Number) => {
+let matchSequence = (parsers, diagnose: Bool, source: String, offset: Real64) => {
   matchSequenceInto(parsers, diagnose, source, offset, [], None)
 };
 
 -- Called only after `match (identifiers) =>` has matched. A complete first
 -- arm header or an authored brace means the error is inside an intended match
 -- body; preserve its ordinary diagnostic rather than suggesting another form.
-let matchNamedMatchArms = (source: String, offset: Number, result: CompiledProbeMatch, parseRule) => {
+let matchNamedMatchArms = (source: String, offset: Real64, result: CompiledProbeMatch, parseRule) => {
   match(result) {
     CompiledProbeNoMatch(failedAt, expected, rule) => {
       if (codeAt(source, offset) == 123) { result } else {
@@ -441,14 +441,14 @@ let rec matchChoiceAt = match(parsers, diagnose, source, offset, index, best) =>
   },
 };
 
-let matchChoice = (parsers, diagnose: Bool, source: String, offset: Number) => {
+let matchChoice = (parsers, diagnose: Bool, source: String, offset: Real64) => {
   matchChoiceAt(parsers, diagnose, source, offset, 0, None)
 };
 
 let matchOptional = (
   result: CompiledProbeMatch,
   diagnose: Bool,
-  offset: Number,
+  offset: Real64,
 ) => {
   match(result) {
     CompiledProbeMatched(next, capture, latent) => {
@@ -497,11 +497,11 @@ let rec matchRepeatedInto = match(parser, diagnose, source, offset, reversed, be
   },
 };
 
-let matchRepeated = (parser, diagnose: Bool, source: String, offset: Number) => {
+let matchRepeated = (parser, diagnose: Bool, source: String, offset: Real64) => {
   matchRepeatedInto(parser, diagnose, source, offset, [], None)
 };
 
-let matchOneOrMore = (parser, diagnose: Bool, source: String, offset: Number) => {
+let matchOneOrMore = (parser, diagnose: Bool, source: String, offset: Real64) => {
   let first = parser(source, offset);
   match(first) {
     CompiledProbeMatched(next, capture, latent) => {
@@ -515,7 +515,7 @@ let matchOneOrMore = (parser, diagnose: Bool, source: String, offset: Number) =>
   }
 };
 
-let matchNegativeLookahead = (result: CompiledProbeMatch, offset: Number) => {
+let matchNegativeLookahead = (result: CompiledProbeMatch, offset: Real64) => {
   match(result) {
     CompiledProbeMatched(next, capture, latent) => {
       CompiledProbeNoMatch(offset, "negative lookahead", "<lookahead>")
@@ -526,7 +526,7 @@ let matchNegativeLookahead = (result: CompiledProbeMatch, offset: Number) => {
   }
 };
 
-let matchText = (result: CompiledProbeMatch, offset: Number) => {
+let matchText = (result: CompiledProbeMatch, offset: Real64) => {
   match(result) {
     CompiledProbeMatched(next, capture, latent) => {
       CompiledProbeMatched(next, TokenCompiledCapture("text", offset, next), latent)
@@ -535,7 +535,7 @@ let matchText = (result: CompiledProbeMatch, offset: Number) => {
   }
 };
 
-let matchSemanticPredicate = (actionId: String, rule: String, offset: Number) => {
+let matchSemanticPredicate = (actionId: String, rule: String, offset: Real64) => {
   if (actionId == "Start:root.expression.elements.0") {
     CompiledProbeMatched(offset, EmptyCompiledCapture, None)
   } else {
@@ -545,7 +545,7 @@ let matchSemanticPredicate = (actionId: String, rule: String, offset: Number) =>
 
 let wrapCompiledRule = (
   name: String,
-  start: Number,
+  start: Real64,
   diagnose: Bool,
   result: CompiledProbeMatch,
 ) => {

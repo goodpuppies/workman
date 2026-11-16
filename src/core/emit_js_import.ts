@@ -872,8 +872,8 @@ function cDenoTypeFromAuthored(
       converter: mapped?.converter === "string-to-cstr" ? "option-string-to-cstr" : "option-unwrap",
     };
   }
-  if (type.name === "Number") return { denoType: "i32", converter: "id" };
-  if (type.name === "I32") return { denoType: "i32", converter: "id" };
+  if (type.name === "Real64.Real") return { denoType: "i32", converter: "id" };
+  if (type.name === "Int32.Int") return { denoType: "i32", converter: "id" };
   if (type.name === "Word8.Word") return { denoType: "u8", converter: "id" };
   if (type.name === "Word16.Word") return { denoType: "u16", converter: "id" };
   if (type.name === "Word32.Word") return { denoType: "u32", converter: "id" };
@@ -882,7 +882,7 @@ function cDenoTypeFromAuthored(
   if (type.name === "Bool") return { denoType: "bool", converter: "id" };
   if (type.name === "String") return { denoType: "pointer", converter: "string-to-cstr" };
   throw new Error(
-    `c.lib parameter type '${type.name}' is not representable (use fixed-width integers, Ptr<T>, Option<Ptr<T>>, Number, Bool, String, Void)`,
+    `c.lib parameter type '${type.name}' is not representable (use fixed-width integers, Ptr<T>, Option<Ptr<T>>, Real64.Real, Bool, String, Void)`,
   );
 }
 

@@ -255,7 +255,7 @@ again whenever it is saved; unlike `wm run`, it does not require a `main` functi
 let answer = 1 + 1;
 ```
 
-Running `wm repl answer.wm` displays `answer = 2 : Number`. A bare top-level expression is bound to
+Running `wm repl answer.wm` displays `answer = 2 : Real64.Real`. A bare top-level expression is bound to
 `it`, following the SML top-level convention.
 
 To run a normal program on every save, use `wm watch <file.wm>`. Workman watches the complete

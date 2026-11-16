@@ -58,7 +58,7 @@ try {
   const env = { ...process.env, PATH: bin, WORKMAN_DENO_PATH: join(bin, "missing-deno") };
   const launcher = join(directory, "node_modules", ...metadata.name.split("/"), "bin/wm.cjs");
   assert(run(process.execPath, [launcher, "--version"], { env }).includes(metadata.version));
-  await writeFile(join(directory, "math.wm"), "let add = (a: Number, b: Number) => a + b;");
+  await writeFile(join(directory, "math.wm"), "let add = (a: Real64.Real, b: Real64.Real) => a + b;");
   const unsupported = spawnSync(process.execPath, [launcher, "run", join(directory, "math.wm")], {
     cwd: directory,
     encoding: "utf8",
@@ -98,7 +98,7 @@ try {
     [3, "transform", {
       projectHandle: "smoke",
       fileName: join(directory, "math.wm"),
-      content: "let add = (left: Number, right: Number) => left + right;",
+      content: "let add = (left: Real64.Real, right: Real64.Real) => left + right;",
     }],
   ].map(([id, method, params]) => {
     const body = JSON.stringify({ jsonrpc: "2.0", id, method, params });

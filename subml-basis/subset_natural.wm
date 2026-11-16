@@ -18,11 +18,11 @@ type Error = InvalidNatural | InvalidDivisor;
 let isValid = SubsetList.validCount;
 
 // Internal: nonnegative integer operands and a positive divisor.
-let split = (value: I32, base: I32) => { (I32.div(value, base), I32.mod(value, base)) };
+let split = (value: Int32.Int, base: Int32.Int) => { (Int32.div(value, base), Int32.mod(value, base)) };
 
 let divide = (value, base) => {
   if (SubsetBool.not(isValid(value))) { SubsetResult.Err(InvalidNatural) } else {
-    if (if (SubsetBool.not(isValid(base))) { true } else { base <= (0: I32) }) { SubsetResult.Err(InvalidDivisor) } else { SubsetResult.Ok(split(value, base)) }
+    if (if (SubsetBool.not(isValid(base))) { true } else { base <= (0: Int32.Int) }) { SubsetResult.Err(InvalidDivisor) } else { SubsetResult.Ok(split(value, base)) }
   }
 };
 
@@ -31,14 +31,14 @@ let toString = (value) => {
     match(entries) {
       [] => { "" },
       [first, ..rest] => {
-        if (index <= (0: I32)) { first } else { digit(index - (1: I32), rest) }
+        if (index <= (0: Int32.Int)) { first } else { digit(index - (1: Int32.Int), rest) }
       }
     }
   };
   let rec go = (remaining, acc) => {
-    let (whole, residue) = split(remaining, (10: I32));
+    let (whole, residue) = split(remaining, (10: Int32.Int));
     let text = digit(residue, ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]);
-    if (whole <= (0: I32)) { SubsetString.concat([text, ..acc]) } else { go(whole, [text, ..acc]) }
+    if (whole <= (0: Int32.Int)) { SubsetString.concat([text, ..acc]) } else { go(whole, [text, ..acc]) }
   };
   if (isValid(value)) { SubsetResult.Ok(go(value, [])) } else { SubsetResult.Err(InvalidNatural) }
 };

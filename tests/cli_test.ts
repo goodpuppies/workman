@@ -17,7 +17,7 @@ Deno.test("cli starts an interactive session with no arguments", async () => {
   assertEquals(result.code, 0);
   assertEquals(result.stderr, "");
   assertStringIncludes(result.stdout, `🗿 Workman ${denoConfig.version}\n`);
-  assertStringIncludes(result.stdout, "it = 2 : Number");
+  assertStringIncludes(result.stdout, "it = 2 : Real64.Real");
 });
 
 Deno.test("cli prints help with command and flag variants", async () => {
@@ -61,7 +61,7 @@ Deno.test("cli todo and what list typed holes across the module graph", async ()
     await Deno.writeTextFile(
       `${directory}/lib.wm`,
       `-- TODO implement renderer
-let render: Number -> String = ?;
+let render: Real64.Real -> String = ?;
 let label = "TODO is not a comment";
 let template = \`// TODO is also not a comment\`;`,
     );
@@ -69,7 +69,7 @@ let template = \`// TODO is also not a comment\`;`,
       `${directory}/main.wm`,
       `from "./lib.wm" import { render };
 // TODO choose an algorithm
-let calculate = (): Number => {
+let calculate = (): Real64.Real => {
   ?
 };
 let main = () => { Ok(render(calculate())) :> Result.debug :> print };`,
@@ -85,9 +85,9 @@ let main = () => { Ok(render(calculate())) :> Result.debug :> print };`,
       todo.stdout,
       `--- lib.wm ---
 
-lib.wm:2:32: ? expected Number -> String
-2 | let render: Number -> String = ?;
-                                   ^
+lib.wm:2:37: ? expected Real64.Real -> String
+2 | let render: Real64.Real -> String = ?;
+                                        ^
 
 lib.wm:1:4: TODO comment
 1 | -- TODO implement renderer
@@ -99,7 +99,7 @@ main.wm:6:54: warning[lint.result-debug]: Result.debug aborts on Err; handle the
 6 | let main = () => { Ok(render(calculate())) :> Result.debug :> print };
                                                          ^^^^^
 
-main.wm:4:3: ? expected Number
+main.wm:4:3: ? expected Real64.Real
 4 |   ?
       ^
 
@@ -136,14 +136,14 @@ Deno.test("cli todo keeps errors and comments visible in a broken project", asyn
     await Deno.writeTextFile(
       `${directory}/main.wm`,
       `// TODO repair the value
-let bad: Number = true;`,
+let bad: Real64.Real = true;`,
     );
 
     const result = await runCli(["todo", "main.wm"], directory);
 
     assertEquals(result.code, 0);
     assertEquals(result.stderr, "");
-    assertStringIncludes(result.stdout, "main.wm:2:19: error[type.mismatch]");
+    assertStringIncludes(result.stdout, "main.wm:2:24: error[type.mismatch]");
     assertStringIncludes(result.stdout, "main.wm:1:4: TODO comment");
     assertEquals(
       result.stdout.indexOf("error[type.mismatch]") < result.stdout.indexOf("TODO comment"),
@@ -344,7 +344,7 @@ Deno.test("repl evaluates top-level bindings without a main function", async () 
   const result = await evaluateReplFile(input);
 
   assertEquals(result.code, 0);
-  assertEquals(new TextDecoder().decode(result.stdout), "x = 2 : Number\n");
+  assertEquals(new TextDecoder().decode(result.stdout), "x = 2 : Real64.Real\n");
   assertEquals(new TextDecoder().decode(result.stderr), "");
 });
 
@@ -358,7 +358,7 @@ Deno.test("v2 repl evaluates source with recovered terminators and delimiters", 
   assertEquals(result.code, 0);
   assertEquals(
     new TextDecoder().decode(result.stdout),
-    "answer = 42 : Number\nid = <function> : 'a -> 'a\n",
+    "answer = 42 : Real64.Real\nid = <function> : 'a -> 'a\n",
   );
   assertEquals(new TextDecoder().decode(result.stderr), "");
   assertEquals(result.staticErrors, undefined);
@@ -377,7 +377,7 @@ Deno.test("v2 repl evaluates basic arithmetic with precedence", async () => {
   assertEquals(result.code, 0);
   assertEquals(
     new TextDecoder().decode(result.stdout),
-    "sum = 2 : Number\nprecedence = 7 : Number\ngrouped = 9 : Number\n",
+    "sum = 2 : Real64.Real\nprecedence = 7 : Real64.Real\ngrouped = 9 : Real64.Real\n",
   );
   assertEquals(new TextDecoder().decode(result.stderr), "");
 });
@@ -395,7 +395,7 @@ Deno.test("repl prints each final top-level binding using Workman value syntax",
   assertEquals(result.code, 0);
   assertEquals(
     new TextDecoder().decode(result.stdout),
-    'tuple = (1, "two") : (Number, String)\nanswer = Some(42) : Option<Number>\n',
+    'tuple = (1, "two") : (Real64.Real, String)\nanswer = Some(42) : Option<Real64.Real>\n',
   );
   assertEquals(new TextDecoder().decode(result.stderr), "");
 });
@@ -408,7 +408,7 @@ Deno.test("repl binds a top-level expression to it", async () => {
   const result = await evaluateReplFile(input);
 
   assertEquals(result.code, 0);
-  assertEquals(new TextDecoder().decode(result.stdout), "it = 2 : Number\n");
+  assertEquals(new TextDecoder().decode(result.stdout), "it = 2 : Real64.Real\n");
   assertEquals(new TextDecoder().decode(result.stderr), "");
 });
 
@@ -427,7 +427,7 @@ Deno.test("interactive repl applies named and anonymous match functions as one e
   assertEquals(
     result.stdout,
     `🗿 Workman ${denoConfig.version}\nPress Ctrl-C or Ctrl-D to exit.\n` +
-      "- it = 1 : Number\n- it = 1 : Number\n- it = false : Bool\n- it = 1 : Number\n- ",
+      "- it = 1 : Real64.Real\n- it = 1 : Real64.Real\n- it = false : Bool\n- it = 1 : Real64.Real\n- ",
   );
 });
 
@@ -447,20 +447,20 @@ Deno.test("repl shows lists in list syntax, at any depth", async () => {
   assertEquals(result.stderr, "");
   for (
     const line of [
-      "a = [1, 2] : List<Number>",
-      "it = Some([1]) : Option<List<Number>>",
+      "a = [1, 2] : List<Real64.Real>",
+      "it = Some([1]) : Option<List<Real64.Real>>",
       "it = [] : List<'a>",
-      "it = [[1], []] : List<List<Number>>",
+      "it = [[1], []] : List<List<Real64.Real>>",
       'it = ["a"] : List<String>',
-      'p = (["x"], 1) : (List<String>, Number)',
-      "it = [1] : List<Number>",
+      'p = (["x"], 1) : (List<String>, Real64.Real)',
+      "it = [1] : List<Real64.Real>",
     ]
   ) assertStringIncludes(result.stdout, line);
   assertEquals(result.stdout.includes("Cons"), false);
 });
 
 Deno.test("repl keeps constructors for a user's own Cons type and for print", async () => {
-  const own = await runCliWithStdin(["repl"], "type Mine = Cons<Number, Mine> | Nil;\nCons(1, Nil);\n");
+  const own = await runCliWithStdin(["repl"], "type Mine = Cons<Real64.Real, Mine> | Nil;\nCons(1, Nil);\n");
   assertStringIncludes(own.stdout, "it = Cons(1, Nil) : Mine");
   const printed = await runCliWithStdin(["repl"], "print([1, 2]);\n");
   assertStringIncludes(printed.stdout, "Cons(1, Cons(2, Nil))");
@@ -474,7 +474,7 @@ Deno.test("repl shows a long list without exhausting the stack", async () => {
   );
   assertEquals(result.stderr, "");
   assertStringIncludes(result.stdout, "it = [1, 2, 3, ");
-  assertStringIncludes(result.stdout, "49999, 50000] : List<Number>");
+  assertStringIncludes(result.stdout, "49999, 50000] : List<Real64.Real>");
 });
 
 Deno.test("repl :type shows a type without running the expression or changing the session", async () => {
@@ -498,11 +498,11 @@ Deno.test("repl :type shows a type without running the expression or changing th
   assertEquals(result.stdout.includes("must not run"), false);
   assertStringIncludes(
     result.stdout,
-    "x = 5 : Number\n- Number\n- Void!\n- 'a -> 'a\n- = Number\n- Number\n",
+    "x = 5 : Real64.Real\n- Real64.Real\n- Void!\n- 'a -> 'a\n- = Real64.Real\n- Real64.Real\n",
   );
   assertStringIncludes(result.stdout, "usage: :type <expression>;");
   assertStringIncludes(result.stderr, "unknown name y");
-  assertStringIncludes(result.stdout, "it = 6 : Number");
+  assertStringIncludes(result.stdout, "it = 6 : Real64.Real");
   assertEquals(result.stdout.includes("it = void"), false);
 });
 
@@ -513,7 +513,7 @@ Deno.test("repl :type reports a bad expression and the session carries on", asyn
   );
   assertEquals(result.code, 0);
   assertStringIncludes(result.stderr, "unknown name nope");
-  assertStringIncludes(result.stdout, "it = 6 : Number");
+  assertStringIncludes(result.stdout, "it = 6 : Real64.Real");
 });
 
 Deno.test("repl :help and unknown commands print without touching the session", async () => {
@@ -526,7 +526,7 @@ Deno.test("repl :help and unknown commands print without touching the session", 
   assertStringIncludes(result.stdout, ":type <expression>;  show an expression's type");
   assertStringIncludes(result.stdout, "Nothing runs and no binding changes");
   assertStringIncludes(result.stdout, "unknown command :nope; try :help");
-  assertStringIncludes(result.stdout, "it = 5 : Number");
+  assertStringIncludes(result.stdout, "it = 5 : Real64.Real");
 });
 
 Deno.test("interactive repl quit prints the phrase's output and ends the session", async () => {
@@ -551,7 +551,7 @@ Deno.test("interactive repl quit fires only when called and can be shadowed", as
   assertEquals(deferred.stdout.includes("never"), false);
   const shadowed = await runCliWithStdin(["repl"], "let quit = 5;\nquit + 1;\n");
   assertEquals(shadowed.stderr, "");
-  assertStringIncludes(shadowed.stdout, "it = 6 : Number");
+  assertStringIncludes(shadowed.stdout, "it = 6 : Real64.Real");
 });
 
 Deno.test("quit is not defined outside interactive sessions", async () => {
@@ -578,7 +578,7 @@ Deno.test("interactive repl explains the named-match collision and continues wit
   assertStringIncludes(result.stderr, "put braces around the arms");
   assertStringIncludes(result.stderr, "match { (a, b) => expression, _ => fallback }");
   assertEquals(result.stdout.includes("meow"), false);
-  assertStringIncludes(result.stdout, "it = 3 : Number");
+  assertStringIncludes(result.stdout, "it = 3 : Real64.Real");
 });
 
 Deno.test("repl reports every binder introduced by a top-level pattern", async () => {
@@ -591,7 +591,7 @@ Deno.test("repl reports every binder introduced by a top-level pattern", async (
   assertEquals(result.code, 0);
   assertEquals(
     new TextDecoder().decode(result.stdout),
-    'number = 1 : Number\ntext = "two" : String\n',
+    'number = 1 : Real64.Real\ntext = "two" : String\n',
   );
   assertEquals(new TextDecoder().decode(result.stderr), "");
 });
@@ -601,7 +601,7 @@ Deno.test("repl reports top-level datatype and record declarations", async () =>
   const input = `${dir}/types.wm`;
   await Deno.writeTextFile(
     input,
-    "type Box<T> = Empty | Box<T>; record Point = { x: Number, y: Number }; let value = Box(2);",
+    "type Box<T> = Empty | Box<T>; record Point = { x: Real64.Real, y: Real64.Real }; let value = Box(2);",
   );
 
   const result = await evaluateReplFile(input);
@@ -609,7 +609,7 @@ Deno.test("repl reports top-level datatype and record declarations", async () =>
   assertEquals(result.code, 0);
   assertEquals(
     new TextDecoder().decode(result.stdout),
-    "type Box<T> = Empty | Box<T>\nrecord Point = { x: Number, y: Number }\nvalue = Box(2) : Box<Number>\n",
+    "type Box<T> = Empty | Box<T>\nrecord Point = { x: Real64.Real, y: Real64.Real }\nvalue = Box(2) : Box<Real64.Real>\n",
   );
   assertEquals(new TextDecoder().decode(result.stderr), "");
 });
@@ -624,7 +624,7 @@ Deno.test("repl reports shadowed phrases with the type in force at each phrase",
   assertEquals(result.code, 0);
   assertEquals(
     new TextDecoder().decode(result.stdout),
-    'value = 1 : Number\nvalue = "two" : String\n',
+    'value = 1 : Real64.Real\nvalue = "two" : String\n',
   );
 });
 
@@ -641,7 +641,7 @@ Deno.test("repl keeps the basis and continues after static phrase failure", asyn
   assertEquals(result.code, 1);
   assertEquals(
     new TextDecoder().decode(result.stdout),
-    "first = 1 : Number\nafter = 3 : Number\n",
+    "first = 1 : Real64.Real\nafter = 3 : Real64.Real\n",
   );
   assertEquals(result.staticErrors?.length, 1);
 });
@@ -657,7 +657,7 @@ Deno.test("repl rejects later phrases that depend on a failed phrase", async () 
   const result = await evaluateReplFile(input);
 
   assertEquals(result.code, 1);
-  assertEquals(new TextDecoder().decode(result.stdout), "first = 1 : Number\n");
+  assertEquals(new TextDecoder().decode(result.stdout), "first = 1 : Real64.Real\n");
   assertEquals(result.staticErrors?.length, 2);
 });
 
@@ -671,7 +671,7 @@ Deno.test("repl continues after a parse failure at a semicolon phrase boundary",
   assertEquals(result.code, 1);
   assertEquals(
     new TextDecoder().decode(result.stdout),
-    "first = 1 : Number\nafter = 3 : Number\n",
+    "first = 1 : Real64.Real\nafter = 3 : Real64.Real\n",
   );
   assertEquals(result.staticErrors?.length, 1);
 });
@@ -708,7 +708,7 @@ Deno.test("repl preserves successful phrase output before runtime failure", asyn
   const result = await evaluateReplFile(input);
 
   assertEquals(result.code, 1);
-  assertEquals(new TextDecoder().decode(result.stdout), "first = 1 : Number\n");
+  assertEquals(new TextDecoder().decode(result.stdout), "first = 1 : Real64.Real\n");
   assertEquals(new TextDecoder().decode(result.stderr), "runtime[Panic]: boom\n");
 });
 
@@ -892,7 +892,7 @@ Deno.test("cli run compares records by labels, not JS insertion order", async ()
   await Deno.writeTextFile(
     input,
     `
-      record Point = { x: Number, y: Number };
+      record Point = { x: Real64.Real, y: Real64.Real };
       let a: Point = .{ x = 1, y = 2 };
       let b: Point = .{ y = 2, x = 1 };
       let main = () => {
@@ -1128,7 +1128,7 @@ Deno.test("cli run supports star import without alias", async () => {
   const main = `${dir}/main.wm`;
   await Deno.writeTextFile(
     lib,
-    "type Int_list = Empty | Cons<Number, Int_list>; let rec sumList = (list) => { let rec inner = (list, acc) => { match(list) { Empty => {acc}, Cons(i, rest) => {inner(rest, acc+i)} } }; inner(list, 0) };",
+    "type Int_list = Empty | Cons<Real64.Real, Int_list>; let rec sumList = (list) => { let rec inner = (list, acc) => { match(list) { Empty => {acc}, Cons(i, rest) => {inner(rest, acc+i)} } }; inner(list, 0) };",
   );
   await Deno.writeTextFile(
     main,
@@ -1146,7 +1146,7 @@ Deno.test("cli run prints nested ADT values by constructor shape", async () => {
   await Deno.writeTextFile(
     input,
     `
-      type Int_list = Empty | Cons<Number, Int_list>;
+      type Int_list = Empty | Cons<Real64.Real, Int_list>;
       type Box<T> = | Box<T>;
       let main = () => {
         print(Cons(1, Cons(2, Empty)));
@@ -1274,14 +1274,14 @@ Deno.test("interactive repl evaluates phrases, prints prompts, and keeps the bas
     [
       `🗿 Workman ${denoConfig.version}\nPress Ctrl-C or Ctrl-D to exit.\n`,
       "- ",
-      "it = 3 : Number\n",
+      "it = 3 : Real64.Real\n",
       "- ",
-      "x = 40 : Number\n",
+      "x = 40 : Real64.Real\n",
       "- ",
-      "it = 42 : Number\n",
+      "it = 42 : Real64.Real\n",
       "- ",
       "- ",
-      "it = 43 : Number\n",
+      "it = 43 : Real64.Real\n",
       "- ",
     ].join(""),
   );
@@ -1314,8 +1314,8 @@ Deno.test("interactive repl carries partial phrases across reads and supports mu
     Deno.stdout.write = originalStdout;
   }
   const stdout = stdoutChunks.map((chunk) => new TextDecoder().decode(chunk)).join("");
-  assertStringIncludes(stdout, "first = 7 : Number");
-  assertStringIncludes(stdout, "second = 8 : Number");
+  assertStringIncludes(stdout, "first = 7 : Real64.Real");
+  assertStringIncludes(stdout, "second = 8 : Real64.Real");
   assertStringIncludes(stdout, 'text = "café" : String');
   assertStringIncludes(stdout, 'it = "café" : String');
 });
@@ -1366,7 +1366,7 @@ Deno.test("interactive repl phrases see only the phrases that succeeded", async 
   assertStringIncludes(String(errors.at(-1)), "unknown name bad");
   const decode = (chunks: Uint8Array[]) =>
     chunks.map((chunk) => new TextDecoder().decode(chunk)).join("");
-  assertStringIncludes(decode(stdoutChunks), "it = 42 : Number\n");
+  assertStringIncludes(decode(stdoutChunks), "it = 42 : Real64.Real\n");
   assertEquals(decode(stderrChunks), "runtime[Panic]: boom\n");
   // Phrases live in memory; only emitted code is written, and only to the OS temporary directory.
   const probe = await Deno.makeTempDir();
@@ -1384,14 +1384,14 @@ Deno.test("interactive repl keeps a js import visible to later phrases", async (
   }).spawn();
   const writer = child.stdin.getWriter();
   await writer.write(new TextEncoder().encode([
-    'from js.global("Math") import unsafe { max: (Number, Number) -> Number };',
+    'from js.global("Math") import unsafe { max: (Real64.Real, Real64.Real) -> Real64.Real };',
     "let x = 1;",
     "max(x, 2);",
   ].join("\n")));
   await writer.close();
   const result = await child.output();
   assertEquals(new TextDecoder().decode(result.stderr), "");
-  assertStringIncludes(new TextDecoder().decode(result.stdout), "it = 2 : Number");
+  assertStringIncludes(new TextDecoder().decode(result.stdout), "it = 2 : Real64.Real");
 });
 
 Deno.test("interactive repl evaluates each phrase once", async () => {
@@ -1413,8 +1413,8 @@ Deno.test("interactive repl evaluates each phrase once", async () => {
   const result = await child.output();
   const stdout = new TextDecoder().decode(result.stdout);
   assertEquals(stdout.split("once").length - 1, 1, stdout);
-  assertStringIncludes(stdout, "it = 42 : Number");
-  assertStringIncludes(stdout, "it = 41 : Number");
+  assertStringIncludes(stdout, "it = 42 : Real64.Real");
+  assertStringIncludes(stdout, "it = 41 : Real64.Real");
   assertEquals(new TextDecoder().decode(result.stderr), "runtime[Panic]: boom\n");
 });
 
@@ -1422,7 +1422,7 @@ Deno.test("repl session has SML's top-level structures without imports", async (
   const phrases = [
     "Bool.not(true);",
     "Char.isDigit;",
-    "Int.fromString;",
+    "Int32.fromString;",
     "Io.readFile;",
     "OS.Process.isSuccess(OS.Process.success);",
     'OS.Path.dir("a/b");',
@@ -1501,7 +1501,7 @@ Deno.test("interactive repl compiles every phrase through the session parse cach
     Deno.stdout.write = originalStdout;
     await Deno.remove(dir, { recursive: true });
   }
-  assertStringIncludes(stdout.join(""), "it = 42 : Number");
+  assertStringIncludes(stdout.join(""), "it = 42 : Real64.Real");
   const dependencyParses = parsed.filter((path) => path.endsWith("numbers.wm")).length;
   assertEquals(dependencyParses >= 3, true, parsed.join("\n"));
 });

@@ -14,14 +14,14 @@ function runtime() {
         match(J.read(source)) { Ok(_) => { "" }, Err(problem) => { J.problemText(problem) } }
       };
       let spelling = (source) => { R.getOr(J.number(J.read(source)), "FAILED") };
-      let integer = (source) => { R.getOr(R.map(J.integer(J.read(source)), I32.toNumber), -999) };
+      let integer = (source) => { R.getOr(R.map(J.integer(J.read(source)), Int32.toReal64), -999) };
       let text = (source) => { R.getOr(J.text(J.read(source)), "FAILED") };
       let field = (source, key) => { R.getOr(J.text(J.get(J.read(source), key)), "FAILED") };
-      let atError = (index: I32) => {
+      let atError = (index: Int32.Int) => {
         match(J.at(J.read("[]"), index)) { Ok(_) => { "" }, Err(problem) => { J.problemText(problem) } }
       };
       let nestedError = (source) => {
-        let found = J.text(J.get(J.at(J.get(J.read(source), "releases"), (0: I32)), "name"));
+        let found = J.text(J.get(J.at(J.get(J.read(source), "releases"), (0: Int32.Int)), "name"));
         match(found) { Ok(_) => { "" }, Err(problem) => { J.problemText(problem) } }
       };
       let optional = (source, key) => {
@@ -43,7 +43,7 @@ function runtime() {
       let badBytes = !R.isOk(J.decodeBytes(['\\u00ff']));
       let legacy: Result<String, Js.Error> = Json.assert("legacy");
       let legacyOkay = match(legacy) { Ok(text) => { text == "legacy" }, _ => { false } };
-      let limited = (source, limit: I32) => { R.isOk(J.decodeWithLimit(source, limit)) };
+      let limited = (source, limit: Int32.Int) => { R.isOk(J.decodeWithLimit(source, limit)) };
     `;
     const code = await compileLibraryVirtual(filename, new Map([[filename, source]]));
     return await import(`data:text/javascript,${encodeURIComponent(code)}`);

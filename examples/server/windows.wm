@@ -13,15 +13,15 @@ from c.header("winsock2.h", lib: "ws2_32") import unsafe {
 from c.header("winsock2.h") import type { sockaddr_in };
 
 let cstr = str => Some(str :> Pointer.fromString);
-let size = Word64.fromNumber;
-let i32 = number => { let Some(value) = I32.fromNumber(number); value };
+let size = Word64.fromReal64;
+let i32 = number => { let Some(value) = Int32.fromReal64(number); value };
 let withMemory = (allocation, action) => {
   match(allocation) {
     None => { Panic("malloc/calloc failed") },
     Some(raw) => { withCleanup(() => { action(raw) }, () => { free(Some(raw)); }) },
   }
 };
-let check = (operation, code: I32) => {
+let check = (operation, code: Int32) => {
   if (code == -1) { Panic(operation ++ ": " ++ Text.of(WSAGetLastError())) } else { void }
 };
 let checkSocket = (operation, handle) => {
@@ -34,7 +34,7 @@ let rec readHeaders = (client, buffer, used) => {
     let count = recv(client, Some(Pointer.offset(buffer, used)), i32(4096 - used), 0);
     check("recv", count);
     if (count == 0) { Panic("client closed before completing HTTP headers") } else {
-      let total = used + I32.toNumber(count);
+      let total = used + Int32.toReal64(count);
       Pointer.setU8(buffer, total, 0);
       match(strstr(Some(buffer), headerEnd)) {
         Some(_) => { void },
@@ -47,7 +47,7 @@ let rec sendAll = (client, buffer, length, sent) => {
   if (sent >= length) { void } else {
     let count = send(client, Some(Pointer.offset(buffer, sent)), i32(length - sent), 0);
     check("send", count);
-    if (count == 0) { Panic("send made no progress") } else { sendAll(client, buffer, length, sent + I32.toNumber(count)) }
+    if (count == 0) { Panic("send made no progress") } else { sendAll(client, buffer, length, sent + Int32.toReal64(count)) }
   }
 };
 

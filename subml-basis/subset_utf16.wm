@@ -17,7 +17,7 @@ from "./subset_char.wm" import * as SubsetChar;
 type Endian = LittleEndian | BigEndian;
 
 let unitCodes = (unitCode, order) => {
-  let (high, low) = SubsetUnicode.split(unitCode, (256: I32));
+  let (high, low) = SubsetUnicode.split(unitCode, (256: Int32.Int));
   match(order) {
     LittleEndian => { [low, high] },
     BigEndian => { [high, low] }
@@ -25,9 +25,12 @@ let unitCodes = (unitCode, order) => {
 };
 let encodeOne = (code, order, index) => {
   if (SubsetUnicode.isScalar(code)) {
-    let codes = if (code < (65536: I32)) { unitCodes(code, order) } else {
-      let (high, low) = SubsetUnicode.split(code - (65536: I32), (1024: I32));
-      SubsetList.append(unitCodes((55296: I32) + high, order), unitCodes((56320: I32) + low, order))
+    let codes = if (code < (65536: Int32.Int)) { unitCodes(code, order) } else {
+      let (high, low) = SubsetUnicode.split(code - (65536: Int32.Int), (1024: Int32.Int));
+      SubsetList.append(
+        unitCodes((55296: Int32.Int) + high, order),
+        unitCodes((56320: Int32.Int) + low, order)
+      )
     };
     SubsetUnicode.encodeCodes(codes, index)
   } else {
@@ -42,12 +45,12 @@ let encode = (scalars, order) => {
       match(encodeOne(code, order, index)) {
         SubsetResult.Err(error) => { SubsetResult.Err(error) },
         SubsetResult.Ok(bytes) => {
-          go(rest, index + (1: I32), SubsetList.reverseAppend(bytes, acc))
+          go(rest, index + (1: Int32.Int), SubsetList.reverseAppend(bytes, acc))
         }
       }
     }
   };
-  go(scalars, (0: I32), [])
+  go(scalars, (0: Int32.Int), [])
 };
 
 let readUnit = (bytes, order, offset) => {
@@ -66,13 +69,13 @@ let readUnit = (bytes, order, offset) => {
         SubsetResult.Ok(first) => {
           match(SubsetChar.toCode(b)) {
             SubsetResult.Err(error) => {
-              SubsetResult.Err(SubsetUnicode.Error(SubsetUnicode.InvalidByte, offset + (1: I32)))
+              SubsetResult.Err(SubsetUnicode.Error(SubsetUnicode.InvalidByte, offset + (1: Int32.Int)))
             },
             SubsetResult.Ok(second) => {
               SubsetResult.Ok(
                 match(order) {
-                  LittleEndian => { first + second * (256: I32) },
-                  BigEndian => { first * (256: I32) + second }
+                  LittleEndian => { first + second * (256: Int32.Int) },
+                  BigEndian => { first * (256: Int32.Int) + second }
                 },
                 rest
               )
@@ -88,25 +91,25 @@ let decodeOne = (bytes, order, offset) => {
   SubsetResult.andThen(
     readUnit(bytes, order, offset),
     (first, rest) => {
-      if (if (first >= (55296: I32)) { first <= (56319: I32) } else { false }) {
+      if (if (first >= (55296: Int32.Int)) { first <= (56319: Int32.Int) } else { false }) {
         SubsetResult.andThen(
-          readUnit(rest, order, offset + (2: I32)),
+          readUnit(rest, order, offset + (2: Int32.Int)),
           (second, tail) => {
-            if (if (second >= (56320: I32)) { second <= (57343: I32) } else { false }) {
+            if (if (second >= (56320: Int32.Int)) { second <= (57343: Int32.Int) } else { false }) {
               SubsetResult.Ok(
-                (65536: I32) + (first - (55296: I32)) * (1024: I32) + second - (56320: I32),
+                (65536: Int32.Int) + (first - (55296: Int32.Int)) * (1024: Int32.Int) + second - (56320: Int32.Int),
                 tail,
-                (4: I32)
+                (4: Int32.Int)
               )
             } else {
-              SubsetResult.Err(SubsetUnicode.Error(SubsetUnicode.UnpairedSurrogate, offset + (2: I32)))
+              SubsetResult.Err(SubsetUnicode.Error(SubsetUnicode.UnpairedSurrogate, offset + (2: Int32.Int)))
             }
           }
         )
       } else {
-        if (if (first >= (56320: I32)) { first <= (57343: I32) } else { false }) {
+        if (if (first >= (56320: Int32.Int)) { first <= (57343: Int32.Int) } else { false }) {
           SubsetResult.Err(SubsetUnicode.Error(SubsetUnicode.UnpairedSurrogate, offset))
-        } else { SubsetResult.Ok(first, rest, (2: I32)) }
+        } else { SubsetResult.Ok(first, rest, (2: Int32.Int)) }
       }
     }
   )
@@ -125,5 +128,5 @@ let decode = (bytes, order) => {
       }
     }
   };
-  go(bytes, (0: I32), [])
+  go(bytes, (0: Int32.Int), [])
 };

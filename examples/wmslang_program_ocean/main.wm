@@ -15,20 +15,20 @@ from "../wmslang_window/src/webgpu_present.wm" import {
 type AppError = NativeFailure<NativeError> | HostFailure<Js.Error>;
 
 record SignalInputs = {
-  frame: Number,
-  signalResolution: (Number, Number),
-  interventionFrames: Number,
-  interventionX: Number,
-  interventionY: Number,
+  frame: Real64,
+  signalResolution: (Real64, Real64),
+  interventionFrames: Real64,
+  interventionX: Real64,
+  interventionY: Real64,
   signalPrevious: Gpu.SampledTexture2D,
   signalGenome: Gpu.SampledTexture2D,
   signalLinearSampler: Gpu.Sampler
 };
 
 record ProgramInputs = {
-  programFrame: Number,
-  programResolution: (Number, Number),
-  programInterventionFrames: Number,
+  programFrame: Real64,
+  programResolution: (Real64, Real64),
+  programInterventionFrames: Real64,
   programPreviousSignal: Gpu.SampledTexture2D,
   programNextSignal: Gpu.SampledTexture2D,
   programPrevious: Gpu.SampledTexture2D,
@@ -37,7 +37,7 @@ record ProgramInputs = {
 };
 
 record DisplayInputs = {
-  displayResolution: (Number, Number),
+  displayResolution: (Real64, Real64),
   displayImage: Gpu.SampledTexture2D,
   displayGenome: Gpu.SampledTexture2D,
   displayNearestSampler: Gpu.Sampler,
@@ -57,15 +57,15 @@ record FeedbackPair = {
 
 record FrameState = {
   quit: Bool,
-  frame: Number,
-  width: Number,
-  height: Number,
-  simulationWidth: Number,
-  simulationHeight: Number,
-  interventionFrames: Number,
-  interventionX: Number,
-  interventionY: Number,
-  pendingResize: Option<(Number, Number)>,
+  frame: Real64,
+  width: Real64,
+  height: Real64,
+  simulationWidth: Real64,
+  simulationHeight: Real64,
+  interventionFrames: Real64,
+  interventionX: Real64,
+  interventionY: Real64,
+  pendingResize: Option<(Real64, Real64)>,
   signalPair: FeedbackPair,
   programPair: FeedbackPair
 };
@@ -88,9 +88,9 @@ let signalShade = (inputs: SignalInputs) => {
   (coord) => {
     @gpu;
     let uv = coord / inputs.signalResolution;
-    let old: (Number, Number, Number, Number) =
+    let old: (Real64, Real64, Real64, Real64) =
       inputs.signalPrevious.Load((Gpu.i32(coord.x), Gpu.i32(coord.y), 0));
-    let program: (Number, Number, Number, Number) =
+    let program: (Real64, Real64, Real64, Real64) =
       inputs.signalGenome.Load((Gpu.i32(coord.x), Gpu.i32(coord.y), 0));
     let angle = program.y * 6.2831853;
     let radius = 1.0 + program.w * 11.0;
@@ -284,7 +284,7 @@ let signalFragmentFor = (inputs: SignalInputs) => { Gpu.fragment(signalShade(inp
 let programFragmentFor = (inputs: ProgramInputs) => { Gpu.fragment(programShade(inputs)) };
 let displayFragmentFor = (inputs: DisplayInputs) => { Gpu.fragment(displayShade(inputs)) };
 
-let makeFeedbackTexture = (renderer: FragmentRenderer, textureWidth: Number, textureHeight: Number) => {
+let makeFeedbackTexture = (renderer: FragmentRenderer, textureWidth: Real64, textureHeight: Real64) => {
   createFeedbackTexture2D(renderer, textureWidth, textureHeight)
     :> Result.andThen((physical) => {
     let assemble = Monad.via Result (sampled, target) => {
@@ -295,7 +295,7 @@ let makeFeedbackTexture = (renderer: FragmentRenderer, textureWidth: Number, tex
   })
 };
 
-let makeFeedbackPair = (renderer: FragmentRenderer, textureWidth: Number, textureHeight: Number) => {
+let makeFeedbackPair = (renderer: FragmentRenderer, textureWidth: Real64, textureHeight: Real64) => {
   let assemble = Monad.via Result (read, write) => {
     let pair: FeedbackPair = .{ read = read, write = write };
     Ok(pair)
@@ -350,7 +350,7 @@ let displayFragment = (state: FrameState, nearestSampler: Gpu.Sampler, linearSam
   displayFragmentFor(inputs)
 };
 
-let clampMouse = (delta: Number) => {
+let clampMouse = (delta: Real64) => {
   if (delta < -12) { -12 } else { if (delta > 12) { 12 } else { delta } }
 };
 
@@ -383,7 +383,7 @@ let applyNativeEvent = (state: FrameState, event) => {
   }
 };
 
-let rec drainEvents = (native: NativeRuntime, state: FrameState, remaining: Number) => {
+let rec drainEvents = (native: NativeRuntime, state: FrameState, remaining: Real64) => {
   if (remaining <= 0) { Ok(state) } else {
     match(pollNative(native)) {
       Err(error) => { Err(NativeFailure(error)) },
@@ -404,7 +404,7 @@ let destroyPair = (pair: FeedbackPair) => {
   | :> Result.map((_) => { void })
 };
 
-let resizeFrame = (native: NativeRuntime, state: FrameState, nextWidth: Number, nextHeight: Number) => {
+let resizeFrame = (native: NativeRuntime, state: FrameState, nextWidth: Real64, nextHeight: Real64) => {
   resizeNative(native, nextWidth, nextHeight)
     :> Result.mapErr(NativeFailure)
     :> Result.map((_) => {

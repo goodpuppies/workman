@@ -2,7 +2,7 @@
 
 type List<T> = Nil | Cons<T, List<T>>;
 type Option<T> = None | Some<T>;
-type CountState = | CountState<Option<Number>, Number>;
+type CountState = | CountState<Option<Real64>, Real64>;
 
 let rec map = (f, xs) => {
   match(xs) {

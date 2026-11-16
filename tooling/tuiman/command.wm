@@ -10,14 +10,14 @@ type Step<State, Error> =
   | Quit;
 
 type Pending<State, Error> =
-  | Pending<Number, Task<State -> State, Error>>;
+  | Pending<Real64, Task<State -> State, Error>>;
 
 type Wake<State> =
   | InputWake<List<Event.Key>>
-  | TaskWake<Number, State -> State>;
+  | TaskWake<Real64, State -> State>;
 
 type Applied<State, Error> =
-  | Applied<(State, Number, Number), List<Task<State -> State, Error>>>
+  | Applied<(State, Real64, Real64), List<Task<State -> State, Error>>>
   | AppliedQuit;
 
 type Settled<State, Error> =

@@ -1,6 +1,6 @@
 from js.module("./js/word.js") import unsafe {
-  word32FromNumber: Number -> Word32.Word,
-  smallWordToNumber as primToNumber: Word32.Word -> Number,
+  word32FromNumber: Real64.Real -> Word32.Word,
+  smallWordToNumber as primToReal64: Word32.Word -> Real64.Real,
   word32Notb: Word32.Word -> Word32.Word,
   word32Andb: (Word32.Word, Word32.Word) -> Word32.Word,
   word32Orb: (Word32.Word, Word32.Word) -> Word32.Word,
@@ -10,14 +10,17 @@ from js.module("./js/word.js") import unsafe {
   word32Mul: (Word32.Word, Word32.Word) -> Word32.Word,
   word32Div: (Word32.Word, Word32.Word) -> Word32.Word,
   word32Mod: (Word32.Word, Word32.Word) -> Word32.Word,
-  word32ShiftLeft: (Word32.Word, Number) -> Word32.Word,
-  word32ShiftRight: (Word32.Word, Number) -> Word32.Word,
-  word32ShiftRightArithmetic: (Word32.Word, Number) -> Word32.Word
+  word32ShiftLeft: (Word32.Word, Real64.Real) -> Word32.Word,
+  word32ShiftRight: (Word32.Word, Real64.Real) -> Word32.Word,
+  word32ShiftRightArithmetic: (Word32.Word, Real64.Real) -> Word32.Word
 };
 
+/** The type a bare `Word32` names in annotations (docs/modules.md). */
+type Self = Word32.Word;
+
 let wordSize = 32;
-let fromNumber = word32FromNumber;
-let toNumber = primToNumber;
+let fromReal64 = word32FromNumber;
+let toReal64 = primToReal64;
 let andb = word32Andb;
 let orb = word32Orb;
 let xorb = word32Xorb;

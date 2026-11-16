@@ -1,4 +1,5 @@
 import type { Binding, CtorDecl, Decl, Expr, Pattern, TypeExpr } from "../ast.ts";
+import { canonicalNumericTypeName } from "../ffi/numeric_names.ts";
 import type { BindingFacts } from "../binding_facts.ts";
 import { GPU_SEMANTIC_IDS } from "../compiler_semantics.ts";
 import type { CoreDecl, CoreExpr } from "../core/ast.ts";
@@ -1209,7 +1210,7 @@ class SliceNormalizer {
       lane >= receiver.items.length || receiver.items.length < 2 || receiver.items.length > 4 ||
       receiver.items.some((item) => {
         const type = prune(item);
-        return type.tag !== "prim" || type.name !== "Number";
+        return type.tag !== "prim" || type.name !== "Real64.Real";
       })
     ) {
       throw this.coreError(
@@ -1814,7 +1815,7 @@ class SliceNormalizer {
       index >= receiver.items.length ||
       receiver.items.some((item) => {
         const type = prune(item);
-        return type.tag !== "prim" || type.name !== "Number";
+        return type.tag !== "prim" || type.name !== "Real64.Real";
       })
     ) return undefined;
     const childId = this.expressions.length;
@@ -2217,7 +2218,7 @@ class SliceNormalizer {
       return this.internType("number", () => baseType("number"));
     }
     if (target.tag === "prim") {
-      if (target.name === "Number") return this.internType("number", () => baseType("number"));
+      if (target.name === "Real64.Real") return this.internType("number", () => baseType("number"));
       if (target.name === "Bool") return this.internType("bool", () => baseType("bool"));
       if (target.name === "Void") return this.internType("void", () => baseType("void"));
       throw this.typeError(`primitive ${target.name} is outside the v1 shader slice`);
@@ -2310,7 +2311,7 @@ class SliceNormalizer {
     const existing = this.#constructorsById.get(fact.id);
     if (existing) return existing;
     // Mirror host inference (expandCallArg): one tuple argument expands to its
-    // items, so `Hit<Number, Bool>` and `Hit<(Number, Bool)>` share one arity.
+    // items, so `Hit<Real64.Real, Bool>` and `Hit<(Real64.Real, Bool)>` share one arity.
     const expanded = fact.declaration.args.length === 1 &&
         fact.declaration.args[0].kind === "TTuple"
       ? fact.declaration.args[0].items
@@ -2340,7 +2341,9 @@ class SliceNormalizer {
 
   payloadType(syntax: TypeExpr, owner: Decl | CtorDecl): number {
     if (syntax.kind === "TName" && syntax.args.length === 0) {
-      if (syntax.name === "Number") return this.internType("number", () => baseType("number"));
+      if (canonicalNumericTypeName(syntax.name) === "Real64.Real") {
+        return this.internType("number", () => baseType("number"));
+      }
       if (syntax.name === "Bool") return this.internType("bool", () => baseType("bool"));
     }
     if (syntax.kind === "TTuple" && syntax.items.length >= 1) {
@@ -2353,7 +2356,7 @@ class SliceNormalizer {
     }
     throw this.adtError(
       owner,
-      "wmslang constructor payloads must be Number, Bool, or tuples of payload types",
+      "wmslang constructor payloads must be Real64, Bool, or tuples of payload types",
     );
   }
 

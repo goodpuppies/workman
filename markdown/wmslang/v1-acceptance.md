@@ -39,7 +39,7 @@ image dimensions, immutable locals, a private option-like ADT, exhaustive matchi
 self-tail recursion.
 
 ```workman
-type Escape = Inside | Escaped<Number>;
+type Escape = Inside | Escaped<Real64>;
 
 let mandelbrotShade = (coord) => {
   @gpu;

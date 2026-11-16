@@ -1,12 +1,12 @@
 from js.module("./js/table.js") import unsafe {
   empty as primEmpty: Void -> Js.Table<v>,
   lookup as primGet: (Js.Table<v>, String) -> v,
-  lookup as primGetAt: (Js.Table<v>, Number) -> v,
+  lookup as primGetAt: (Js.Table<v>, Real64.Real) -> v,
   present: v -> Bool,
   remove as primRemove: (Js.Table<v>, String) -> Void,
-  remove as primRemoveAt: (Js.Table<v>, Number) -> Void,
+  remove as primRemoveAt: (Js.Table<v>, Real64.Real) -> Void,
   set as primSet: (Js.Table<v>, String, v) -> Void,
-  set as primSetAt: (Js.Table<v>, Number, v) -> Void
+  set as primSetAt: (Js.Table<v>, Real64.Real, v) -> Void
 };
 
 // A mutable, `Map`-backed table for large, hot, string-keyed caches. Import it with
@@ -25,14 +25,14 @@ let get: (Js.Table<v>, String) -> Option<v> = (table, key) => {
 
 let set: (Js.Table<v>, String, v) -> Void = (table, key, value) => { primSet(table, key, value) };
 
-let getAt: (Js.Table<v>, Number) -> Option<v> = (table, key) => {
+let getAt: (Js.Table<v>, Real64.Real) -> Option<v> = (table, key) => {
   let value = primGetAt(table, key);
   if (present(value)) { Some(value) } else { None }
 };
 
-let setAt: (Js.Table<v>, Number, v) -> Void = (table, key, value) => {
+let setAt: (Js.Table<v>, Real64.Real, v) -> Void = (table, key, value) => {
   primSetAt(table, key, value)
 };
 
 let remove: (Js.Table<v>, String) -> Void = (table, key) => { primRemove(table, key) };
-let removeAt: (Js.Table<v>, Number) -> Void = (table, key) => { primRemoveAt(table, key) };
+let removeAt: (Js.Table<v>, Real64.Real) -> Void = (table, key) => { primRemoveAt(table, key) };

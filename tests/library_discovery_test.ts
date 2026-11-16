@@ -96,7 +96,7 @@ Deno.test("library discovery reports missing imports, cycles, and duplicate name
   await assertRejects(
     () =>
       discoverStandardModules(
-        { "std/a.wm": 'from js.module("./js/a.js") import unsafe { f: Number -> Number };\n' },
+        { "std/a.wm": 'from js.module("./js/a.js") import unsafe { f: Real64.Real -> Real64.Real };\n' },
         {},
       ),
     Error,
@@ -167,7 +167,7 @@ async function runProgram(
   };
 }
 
-const shortSlice = "Word8VectorSlice.full(Word8Vector.fromList([Word8.fromNumber(1)]))";
+const shortSlice = "Word8VectorSlice.full(Word8Vector.fromList([Word8.fromReal64(1)]))";
 
 Deno.test("qualified std datatype constructors work in patterns", async () => {
   const result = await runProgram(`
@@ -200,7 +200,7 @@ Deno.test("qualified std datatype constructors work in expressions", async () =>
 Deno.test("basis structures are library modules over inlined JavaScript primitive files", async () => {
   const source = `
     let main = () => {
-      let bytes = Word8Vector.fromList([Word8.fromNumber(1), Word8.fromNumber(2)]);
+      let bytes = Word8Vector.fromList([Word8.fromReal64(1), Word8.fromReal64(2)]);
       print((Result.debug(Word8Vector.sub(bytes, 1)), Word8Vector.length(bytes)))
     };
   `;
@@ -240,8 +240,8 @@ Deno.test("bindings over declared unsafe imports generalize like ordinary bindin
 let wrap = (x) => { ident(x) };
 let main = () => {
   print((wrap(1), wrap("one")));
-  print(Word8Vector.unfoldN(1, 0, (s) => { (Word8.fromNumber(s), s + 1) }));
-  print(Word8Vector.unfoldN(1, "a", (s) => { (Word8.fromNumber(7), s ++ "b") }))
+  print(Word8Vector.unfoldN(1, 0, (s) => { (Word8.fromReal64(s), s + 1) }));
+  print(Word8Vector.unfoldN(1, "a", (s) => { (Word8.fromReal64(7), s ++ "b") }))
 };
 `,
   );
@@ -284,7 +284,7 @@ Deno.test("tooling analysis resolves std constructors in patterns", async () => 
   const input = `${dir}/main.wm`;
   await Deno.writeTextFile(
     input,
-    `let s = Word8VectorSlice.full(Word8Vector.fromList([Word8.fromNumber(1)]));
+    `let s = Word8VectorSlice.full(Word8Vector.fromList([Word8.fromReal64(1)]));
 let main = () => {
   match(Binary.u32le(s, 1)) {
     Err(Binary.Bounds(offset, width, available)) => { print((offset, width, available)) },

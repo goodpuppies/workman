@@ -9,7 +9,7 @@ import {
   instantiateRecordFields,
   JsBoundaryError,
   named,
-  NumberTy,
+  Real64Ty,
   prune,
   quoteType,
   show,
@@ -404,7 +404,7 @@ function jsImportActualArg(
   // An undecided numeric literal or operator at a Js.Value position is a JS number, so it is
   // Number here, as it was before numeric literals could also be I32.
   if (actualType.tag === "var" && actualType.numeric && isJsValueType(expectedType, typeEnv)) {
-    unify(actualType, NumberTy);
+    unify(actualType, Real64Ty);
     actualType = prune(actualType);
   }
   if (isJsArrayType(expectedType, typeEnv) && isJsArrayType(actualType, typeEnv)) {
@@ -532,7 +532,7 @@ function isRecordType(type: Ty, typeEnv: TypeEnv): boolean {
 function isJsPrimitiveType(type: Ty): boolean {
   const t = prune(type);
   return t.tag === "prim" &&
-    (t.name === "String" || t.name === "Number" || t.name === "Bool" || t.name === "Void");
+    (t.name === "String" || t.name === "Real64.Real" || t.name === "Bool" || t.name === "Void");
 }
 
 function assertPrintable(type: Ty) {

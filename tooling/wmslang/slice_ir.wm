@@ -57,8 +57,8 @@ record SliceContext = {
 };
 
 record SliceIrState = {
-  nextExpressionId: Number,
-  nextArmId: Number,
+  nextExpressionId: Real64,
+  nextArmId: Real64,
   functions: List<GpuSliceIrFunctionDto>,
   expressions: List<GpuSliceIrExprDto>,
   matchArms: List<GpuSliceIrMatchArmDto>,
@@ -66,8 +66,8 @@ record SliceIrState = {
 };
 
 record BuiltBlockItem = {
-  itemId: Number,
-  valueExprId: Number,
+  itemId: Real64,
+  valueExprId: Real64,
 };
 
 let rec reverseInto = match(items, reversed) => {
@@ -85,11 +85,11 @@ let rec listLength = match(items, length) => {
   ([_, ..rest], Var(length)) => { listLength(rest, length + 1) }
 };
 
-let numberEqual = (left: Number, right: Number) => {
+let numberEqual = (left: Real64, right: Real64) => {
   !(left < right) && !(left > right)
 };
 
-let rec contains = (items: List<Number>, expected: Number) => {
+let rec contains = (items: List<Real64>, expected: Real64) => {
   match(items) {
     [] => { false },
     [head, ..rest] => {
@@ -98,7 +98,7 @@ let rec contains = (items: List<Number>, expected: Number) => {
   }
 };
 
-let rec unique = (items: List<Number>, seen: List<Number>) => {
+let rec unique = (items: List<Real64>, seen: List<Real64>) => {
   match(items) {
     [] => { true },
     [head, ..rest] => {
@@ -567,7 +567,7 @@ let initialState = () => {
 let baseIrExpression = (
   state: SliceIrState,
   source: GpuSliceExprDto,
-  functionId: Number,
+  functionId: Real64,
   kind: String
 ) => {
   let expression: GpuSliceIrExprDto = .{
@@ -682,8 +682,8 @@ and constructorSetContains = match(expected, actual) => {
 };
 
 let rec buildExpression = (
-  sourceId: Number,
-  functionId: Number,
+  sourceId: Real64,
+  functionId: Real64,
   tailPosition: Bool,
   context: SliceContext,
   state: SliceIrState
@@ -749,7 +749,7 @@ and buildChildren = match(
 
 and buildIf = (
   source: GpuSliceExprDto,
-  functionId: Number,
+  functionId: Real64,
   tailPosition: Bool,
   context: SliceContext,
   state: SliceIrState
@@ -789,7 +789,7 @@ and buildIf = (
 
 and buildMatch = (
   source: GpuSliceExprDto,
-  functionId: Number,
+  functionId: Real64,
   tailPosition: Bool,
   context: SliceContext,
   state: SliceIrState
@@ -876,7 +876,7 @@ and buildMatchArms = match(
 
 and buildBlock = (
   source: GpuSliceExprDto,
-  functionId: Number,
+  functionId: Real64,
   tailPosition: Bool,
   context: SliceContext,
   state: SliceIrState

@@ -396,12 +396,12 @@ const __wm_c_struct_to_buffer = (name, value) => {
   }
   return __wm_basis_Js_Unknown;
 };`,
-    // I32 values are JS integers kept in range. A sum or difference is exact, and a rounded
+    // Int32 values are JS integers kept in range. A sum or difference is exact, and a rounded
     // product cannot land back in range, so one check after the operation detects overflow.
     // `| 0` also turns the -0 from `0 * -1` into 0.
     `const __wm_i32_check = (value) => value >= -2147483648 && value <= 2147483647
   ? value | 0
-  : __wm_fail("Panic", "I32 overflow");`,
+  : __wm_fail("Panic", "Int32 overflow");`,
     "const __wm_i32_add = ([a, b]) => __wm_i32_check(a + b);",
     "const __wm_i32_sub = ([a, b]) => __wm_i32_check(a - b);",
     "const __wm_i32_mul = ([a, b]) => __wm_i32_check(a * b);",
@@ -410,25 +410,24 @@ const __wm_c_struct_to_buffer = (name, value) => {
     `const __wm_i32_option = (value) => __wm_i32_in_range(value)
   ? __wm_basis_Some(value | 0)
   : __wm_basis_None;`,
-    `const I32 = {
+    `const __wm_basis_Int32 = {
   minimum: -2147483648,
   maximum: 2147483647,
   // SML semantics: div rounds toward negative infinity and a nonzero mod has the divisor's sign.
   div: ([a, b]) => b === 0
-    ? __wm_fail("Panic", "I32 division by zero")
+    ? __wm_fail("Panic", "Int32 division by zero")
     : __wm_i32_check(Math.floor(a / b)),
   mod: ([a, b]) => {
-    if (b === 0) return __wm_fail("Panic", "I32 division by zero");
+    if (b === 0) return __wm_fail("Panic", "Int32 division by zero");
     const r = a % b;
     return (r !== 0 && (r < 0) !== (b < 0) ? r + b : r) | 0;
   },
   checkedAdd: ([a, b]) => __wm_i32_option(a + b),
   checkedSub: ([a, b]) => __wm_i32_option(a - b),
   checkedMul: ([a, b]) => __wm_i32_option(a * b),
-  toNumber: (a) => a,
-  fromNumber: (x) => Number.isInteger(x) ? __wm_i32_option(x) : __wm_basis_None,
+  toReal64: (a) => a,
+  fromReal64: (x) => Number.isInteger(x) ? __wm_i32_option(x) : __wm_basis_None,
   toString: (a) => String(a),
-  fromString: (text) => /^-?[0-9]+$/.test(text) ? __wm_i32_option(Number(text)) : __wm_basis_None,
 };`,
     // Keep the host assertion runtime separate from the source std Json namespace.
     `const __wm_basis_Json = {

@@ -1,40 +1,43 @@
 from "./basis.wm" import * as Basis;
 from "basis/order.wm" import { Less, Equal, Greater };
 from js.global("Math") import unsafe {
-  abs as primAbs: Number -> Number,
-  floor as primFloor: Number -> Number,
-  ceil as primCeil: Number -> Number,
-  trunc as primTrunc: Number -> Number,
-  pow as primPow: (Number, Number) -> Number
+  abs as primAbs: Real64.Real -> Real64.Real,
+  floor as primFloor: Real64.Real -> Real64.Real,
+  ceil as primCeil: Real64.Real -> Real64.Real,
+  trunc as primTrunc: Real64.Real -> Real64.Real,
+  pow as primPow: (Real64.Real, Real64.Real) -> Real64.Real
 };
 from js.global("Number") import unsafe {
-  MAX_VALUE: Number,
-  MIN_VALUE: Number,
-  isFinite as primIsFinite: Number -> Bool,
-  isNaN as primIsNaN: Number -> Bool
+  MAX_VALUE: Real64.Real,
+  MIN_VALUE: Real64.Real,
+  isFinite as primIsFinite: Real64.Real -> Bool,
+  isNaN as primIsNaN: Real64.Real -> Bool
 };
 from js.module("./js/real.js") import unsafe {
-  signBit as primSignBit: Number -> Bool,
-  copySign as primCopySign: (Number, Number) -> Number,
-  toManExp as primToManExp: Number -> (Number, Number),
-  fromManExp as primFromManExp: (Number, Number) -> Number,
-  nextAfter as primNextAfter: (Number, Number) -> Number,
-  isNormal as primIsNormal: Number -> Bool,
-  roundHalfEven: Number -> Number
+  signBit as primSignBit: Real64.Real -> Bool,
+  copySign as primCopySign: (Real64.Real, Real64.Real) -> Real64.Real,
+  toManExp as primToManExp: Real64.Real -> (Real64.Real, Real64.Real),
+  fromManExp as primFromManExp: (Real64.Real, Real64.Real) -> Real64.Real,
+  nextAfter as primNextAfter: (Real64.Real, Real64.Real) -> Real64.Real,
+  isNormal as primIsNormal: Real64.Real -> Bool,
+  roundHalfEven: Real64.Real -> Real64.Real
 };
 
-// Basis `REAL` over `Number`, the JavaScript double, so `Real.real` is `Number`. Left out until
+// Basis `REAL` over `Real64.Real`, the JavaScript double. Left out until
 // their dependencies exist: the conversions through `StringCvt` and `IEEEReal` (`fmt`, `toString`,
 // `scan`, `fromString`, `toDecimal`, `fromDecimal`, `toInt`, `class`, `compareReal`), the
-// `LargeInt`/`LargeReal` conversions, the operators, which are `Number`'s own, and `fromInt`, which
-// would be the identity since `int` is also `Number`. `floor`,
+// `LargeInt`/`LargeReal` conversions, the operators, which are `Real64.Real`'s own, and `fromInt`,
+// which is `Int32.toReal64`. `floor`,
 // `ceil`, `trunc` and `round` return `Err(Basis.Domain)` on NaN and panic with `Overflow` on an
 // infinity. Arguments come data-first.
 
+/** The type a bare `Real64` names in annotations (docs/modules.md). */
+type Self = Real64.Real;
+
 // The spec's anonymous records `{man, exp}` and `{whole, frac}`, named because Workman records are
 // nominal.
-record ManExp = { man: Number, exp: Number };
-record Split = { whole: Number, frac: Number };
+record ManExp = { man: Real64.Real, exp: Real64.Real };
+record Split = { whole: Real64.Real, frac: Real64.Real };
 
 let radix = 2;
 let precision = 53;
@@ -44,7 +47,7 @@ let minNormalPos = primPow(2, -1022);
 let posInf = 1 / 0;
 let negInf = -1 / 0;
 
-let rem = (x: Number, y: Number) => { x % y };
+let rem = (x: Real64.Real, y: Real64.Real) => { x % y };
 
 let abs = primAbs;
 
@@ -54,15 +57,15 @@ let isFinite = primIsFinite;
 
 let isNormal = primIsNormal;
 
-let min = (x: Number, y: Number) => {
+let min = (x: Real64.Real, y: Real64.Real) => {
   if (primIsNaN(x)) { y } else { if (primIsNaN(y)) { x } else { if (y < x) { y } else { x } } }
 };
 
-let max = (x: Number, y: Number) => {
+let max = (x: Real64.Real, y: Real64.Real) => {
   if (primIsNaN(x)) { y } else { if (primIsNaN(y)) { x } else { if (y > x) { y } else { x } } }
 };
 
-let sign = (x: Number) => {
+let sign = (x: Real64.Real) => {
   if (primIsNaN(x)) {
     Err(Basis.Domain)
   } else {
@@ -72,11 +75,11 @@ let sign = (x: Number) => {
 
 let signBit = primSignBit;
 
-let sameSign = (x: Number, y: Number) => { primSignBit(x) == primSignBit(y) };
+let sameSign = (x: Real64.Real, y: Real64.Real) => { primSignBit(x) == primSignBit(y) };
 
 let copySign = primCopySign;
 
-let compare = (x: Number, y: Number) => {
+let compare = (x: Real64.Real, y: Real64.Real) => {
   if (primIsNaN(x) || primIsNaN(y)) {
     Err(Basis.Unordered)
   } else {
@@ -84,29 +87,29 @@ let compare = (x: Number, y: Number) => {
   }
 };
 
-let unordered = (x: Number, y: Number) => { primIsNaN(x) || primIsNaN(y) };
+let unordered = (x: Real64.Real, y: Real64.Real) => { primIsNaN(x) || primIsNaN(y) };
 
-let toManExp = (x: Number) => {
+let toManExp = (x: Real64.Real) => {
   let (man, exp) = primToManExp(x);
   .{ man = man, exp = exp }
 };
 
 let fromManExp = (parts: ManExp) => { primFromManExp(parts.man, parts.exp) };
 
-let split = (x: Number) => {
+let split = (x: Real64.Real) => {
   let whole = if (primIsFinite(x)) { primTrunc(x) } else { x };
   let frac = if (primIsFinite(x)) { x - whole } else { if (primIsNaN(x)) { x } else { primCopySign(0, x) } };
   .{ whole = whole, frac = primCopySign(frac, x) }
 };
 
-let realMod = (x: Number) => {
+let realMod = (x: Real64.Real) => {
   let parts: Split = split(x);
   parts.frac
 };
 
 let nextAfter = primNextAfter;
 
-let checkFloat = (x: Number) => {
+let checkFloat = (x: Real64.Real) => {
   if (primIsNaN(x)) {
     Panic("Div: Real.checkFloat of NaN")
   } else {
@@ -119,25 +122,25 @@ let realCeil = primCeil;
 let realTrunc = primTrunc;
 let realRound = roundHalfEven;
 
-let floor = (x: Number) => {
+let floor = (x: Real64.Real) => {
   if (primIsNaN(x)) { Err(Basis.Domain) } else {
     if (primIsFinite(x)) { Ok(primFloor(x)) } else { Panic("Overflow: Real.floor of an infinity") }
   }
 };
 
-let ceil = (x: Number) => {
+let ceil = (x: Real64.Real) => {
   if (primIsNaN(x)) { Err(Basis.Domain) } else {
     if (primIsFinite(x)) { Ok(primCeil(x)) } else { Panic("Overflow: Real.ceil of an infinity") }
   }
 };
 
-let trunc = (x: Number) => {
+let trunc = (x: Real64.Real) => {
   if (primIsNaN(x)) { Err(Basis.Domain) } else {
     if (primIsFinite(x)) { Ok(primTrunc(x)) } else { Panic("Overflow: Real.trunc of an infinity") }
   }
 };
 
-let round = (x: Number) => {
+let round = (x: Real64.Real) => {
   if (primIsNaN(x)) { Err(Basis.Domain) } else {
     if (primIsFinite(x)) { Ok(roundHalfEven(x)) } else { Panic("Overflow: Real.round of an infinity") }
   }

@@ -13,7 +13,7 @@ Deno.test("frontend-v2 treats record contextually while retaining rec, prefixes 
       "let record = 1;",
       "let value: record = 1;",
       "let read = (record) => { record };",
-      "record Point = {x: Number}; let p = Point(1);",
+      "record Point = {x: Real64.Real}; let p = Point(1);",
       "let rec loop = (x) => {loop(x)};",
       "let recorder = 1; let record' = 2; let rec' = 3;",
     ]

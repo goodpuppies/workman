@@ -13,7 +13,7 @@ import { importProgram } from "./import_program.ts";
 
 Deno.test("record remains usable as a field, variable and parameter name", async () => {
   const result = await checkSource(`
-    record PostViewWire = { record: Js.Value, count: Number, active: Bool };
+    record PostViewWire = { record: Js.Value, count: Real64.Real, active: Bool };
     let post = PostViewWire{ record = JSON{ record: "text" }, count = 42, active = true };
     let copy: PostViewWire = .{ ..post, record = JSON{ record: "copy" } };
     let object = copy.record;
@@ -30,19 +30,19 @@ Deno.test("record remains usable as a field, variable and parameter name", async
   for (const name of ["object", "bound", "matched", "selected", "retained"]) {
     expectBinding(result.env, name, { type: "Js.Value", vars: 0 });
   }
-  expectBinding(result.env, "number", { type: "Number", vars: 0 });
+  expectBinding(result.env, "number", { type: "Real64.Real", vars: 0 });
   expectBinding(result.env, "flag", { type: "Bool", vars: 0 });
 });
 
 Deno.test("nominal records infer construction and field access", async () => {
   const result = await checkSource(`
-    record Point = { x: Number, y: Number };
+    record Point = { x: Real64.Real, y: Real64.Real };
     let p = .{ x = 10, y = 20 };
     let xVal = p.x;
   `);
 
   expectBinding(result.env, "p", { type: "Point", vars: 0 });
-  expectBinding(result.env, "xVal", { type: "Number", vars: 0 });
+  expectBinding(result.env, "xVal", { type: "Real64.Real", vars: 0 });
 });
 
 Deno.test("explicit nominal record expressions select their record and infer type arguments", async () => {
@@ -56,7 +56,7 @@ Deno.test("explicit nominal record expressions select their record and infer typ
   `);
 
   expectBinding(result.env, "user", { type: "User", vars: 0 });
-  expectBinding(result.env, "box", { type: "Box<Number>", vars: 0 });
+  expectBinding(result.env, "box", { type: "Box<Real64.Real>", vars: 0 });
   expectBinding(result.env, "empty", { type: "Empty", vars: 0 });
 });
 
@@ -76,7 +76,7 @@ Deno.test("qualified explicit nominal record expressions resolve imported record
   await checkVirtual(
     "/test/main.wm",
     new Map([
-      ["/test/records.wm", "record Point = { x: Number, y: Number };"],
+      ["/test/records.wm", "record Point = { x: Real64.Real, y: Real64.Real };"],
       [
         "/test/main.wm",
         'from "./records.wm" import * as Geometry; let point = Geometry.Point{ x = 1, y = 2 };',
@@ -101,8 +101,8 @@ Deno.test("polymorphic record fields preserve type parameters", async () => {
     let second = pair.second;
   `);
 
-  expectBinding(result.env, "pair", { type: "Pair<Number, Bool>", vars: 0 });
-  expectBinding(result.env, "first", { type: "Number", vars: 0 });
+  expectBinding(result.env, "pair", { type: "Pair<Real64.Real, Bool>", vars: 0 });
+  expectBinding(result.env, "first", { type: "Real64.Real", vars: 0 });
   expectBinding(result.env, "second", { type: "Bool", vars: 0 });
 });
 
@@ -118,11 +118,11 @@ Deno.test("record declarations expose ordered polymorphic constructors", async (
     vars: 2,
   });
   expectBinding(result.env, "numberText", {
-    type: "Pair<Number, String>",
+    type: "Pair<Real64.Real, String>",
     vars: 0,
   });
   expectBinding(result.env, "boolNumber", {
-    type: "Pair<Bool, Number>",
+    type: "Pair<Bool, Real64.Real>",
     vars: 0,
   });
 });
@@ -139,7 +139,7 @@ Deno.test("record constructor applications retain non-expansive generalization",
     type: "Identity<'a>",
     vars: 1,
   });
-  expectBinding(result.env, "number", { type: "Number", vars: 0 });
+  expectBinding(result.env, "number", { type: "Real64.Real", vars: 0 });
   expectBinding(result.env, "text", { type: "String", vars: 0 });
 });
 
@@ -204,15 +204,15 @@ Deno.test("record constructors preserve declaration order at runtime and across 
 
 Deno.test("record patterns bind fields through nominal record types", async () => {
   const result = await checkSource(`
-    record Point = { x: Number, y: Number };
+    record Point = { x: Real64.Real, y: Real64.Real };
     let p = .{ x = 10, y = 20 };
     let .{ x, y } = p;
     let sum = x + y;
   `);
 
-  expectBinding(result.env, "x", { type: "Number", vars: 0 });
-  expectBinding(result.env, "y", { type: "Number", vars: 0 });
-  expectBinding(result.env, "sum", { type: "Number", vars: 0 });
+  expectBinding(result.env, "x", { type: "Real64.Real", vars: 0 });
+  expectBinding(result.env, "y", { type: "Real64.Real", vars: 0 });
+  expectBinding(result.env, "sum", { type: "Real64.Real", vars: 0 });
 });
 
 Deno.test("records support JavaScript-style mixed-case field names", async () => {
@@ -232,24 +232,24 @@ Deno.test("records support JavaScript-style mixed-case field names", async () =>
 
 Deno.test("record elaboration snapshots expose record values after declaration order", async () => {
   const steps = await checkSourceSteps(`
-    record Point = { x: Number, y: Number };
+    record Point = { x: Real64.Real, y: Real64.Real };
     let p = .{ x = 10, y = 20 };
     let getX = (point: Point) => { point.x };
   `);
 
   expectStepBinding(steps, 0, "Point", {
-    type: "(Number, Number) -> Point",
+    type: "(Real64.Real, Real64.Real) -> Point",
     vars: 0,
   });
   expectStepMissing(steps, 0, "p");
   expectStepBinding(steps, 1, "p", { type: "Point", vars: 0 });
-  expectStepBinding(steps, 2, "getX", { type: "Point -> Number", vars: 0 });
+  expectStepBinding(steps, 2, "getX", { type: "Point -> Real64.Real", vars: 0 });
 });
 
 Deno.test("records warn and choose first nominal type on shape-only ambiguity", async () => {
   const result = await checkSource(`
-    record Point = { x: Number, y: Number };
-    record Vector = { x: Number, y: Number };
+    record Point = { x: Real64.Real, y: Real64.Real };
+    record Vector = { x: Real64.Real, y: Real64.Real };
     let p = .{ x = 10, y = 20 };
   `);
 
@@ -265,8 +265,8 @@ Deno.test("records warn and choose first nominal type on shape-only ambiguity", 
 
 Deno.test("record annotations disambiguate same-shaped nominal records", async () => {
   const result = await checkSource(`
-    record Point = { x: Number, y: Number };
-    record Vector = { x: Number, y: Number };
+    record Point = { x: Real64.Real, y: Real64.Real };
+    record Vector = { x: Real64.Real, y: Real64.Real };
     let p: Point = .{ x = 10, y = 20 };
     let v: Vector = .{ x = 1, y = 2 };
   `);
@@ -277,7 +277,7 @@ Deno.test("record annotations disambiguate same-shaped nominal records", async (
 
 Deno.test("record literals support spread update and field punning", async () => {
   const source = `
-    record Point = { x: Number, y: Number };
+    record Point = { x: Real64.Real, y: Real64.Real };
     let p1: Point = .{ x = 10, y = 20 };
     let x = 100;
     let p2 = .{ ..p1, x };
@@ -293,8 +293,8 @@ Deno.test("record literals support spread update and field punning", async () =>
 
 Deno.test("record spread uses annotated nominal target for nested literals", async () => {
   const result = await checkSource(`
-    record Point = { x: Number, y: Number };
-    record Vector = { x: Number, y: Number };
+    record Point = { x: Real64.Real, y: Real64.Real };
+    record Vector = { x: Real64.Real, y: Real64.Real };
     let v: Vector = .{ .. .{ x = 1, y = 2 }, x = 3 };
   `);
 
@@ -305,10 +305,10 @@ Deno.test("record updates infer an unannotated spread parameter from overridden 
   const result = await checkSource(`
     record PetState = {
       name: String,
-      hunger: Number,
-      happiness: Number,
-      energy: Number,
-      age: Number
+      hunger: Real64.Real,
+      happiness: Real64.Real,
+      energy: Real64.Real,
+      age: Real64.Real
     };
     let feed = (state) => {
       .{
@@ -326,11 +326,11 @@ Deno.test("imported records remain nominal across file boundaries", async () => 
   const virtualFs = new Map<string, string>([
     [
       "/test/a.wm",
-      "record Point = { x: Number, y: Number }; let make = () => { .{ x = 1, y = 2 } };",
+      "record Point = { x: Real64.Real, y: Real64.Real }; let make = () => { .{ x = 1, y = 2 } };",
     ],
     [
       "/test/b.wm",
-      "record Point = { x: Number, y: Number }; let make = () => { .{ x = 1, y = 2 } };",
+      "record Point = { x: Real64.Real, y: Real64.Real }; let make = () => { .{ x = 1, y = 2 } };",
     ],
     [
       "/test/main.wm",
@@ -343,7 +343,7 @@ Deno.test("imported records remain nominal across file boundaries", async () => 
 
 Deno.test("imported record annotations guide record literals", async () => {
   const virtualFs = new Map<string, string>([
-    ["/test/point.wm", "record Point = { x: Number, y: Number };"],
+    ["/test/point.wm", "record Point = { x: Real64.Real, y: Real64.Real };"],
     [
       "/test/main.wm",
       'from "./point.wm" import * as Geometry; let p: Geometry.Point = .{ x = 1, y = 2 }; let x = p.x;',
@@ -355,7 +355,7 @@ Deno.test("imported record annotations guide record literals", async () => {
 
 Deno.test("named imports expose exported record types", async () => {
   const virtualFs = new Map<string, string>([
-    ["/test/point.wm", "record Point = { x: Number, y: Number };"],
+    ["/test/point.wm", "record Point = { x: Real64.Real, y: Real64.Real };"],
     [
       "/test/main.wm",
       'from "./point.wm" import { Point }; let p: Point = .{ x = 1, y = 2 }; let x = p.x;',
@@ -370,7 +370,7 @@ Deno.test("block-local record names do not escape", async () => {
     () =>
       checkSource(`
         let p = {
-          record Point = { x: Number, y: Number };
+          record Point = { x: Real64.Real, y: Real64.Real };
           .{ x = 1, y = 2 }
         };
       `),
@@ -381,7 +381,7 @@ Deno.test("block-local record names do not escape", async () => {
 
 Deno.test("record declarations reject duplicate fields", async () => {
   await assertRejects(
-    () => checkSource("record Bad = { x: Number, x: Bool };"),
+    () => checkSource("record Bad = { x: Real64.Real, x: Bool };"),
     Error,
     "duplicate record field x",
   );
@@ -391,7 +391,7 @@ Deno.test("record patterns reject duplicate fields", async () => {
   await assertRejects(
     () =>
       checkSource(`
-        record Point = { x: Number };
+        record Point = { x: Real64.Real };
         let p = .{ x = 1 };
         let .{ x = a, x = b } = p;
       `),
@@ -404,7 +404,7 @@ Deno.test("record literals reject missing and extra fields against the nominal t
   await assertRejects(
     () =>
       checkSource(`
-        record Point = { x: Number, y: Number };
+        record Point = { x: Real64.Real, y: Real64.Real };
         let missing: Point = .{ x = 1 };
       `),
     Error,
@@ -413,7 +413,7 @@ Deno.test("record literals reject missing and extra fields against the nominal t
   await assertRejects(
     () =>
       checkSource(`
-        record Point = { x: Number };
+        record Point = { x: Real64.Real };
         let extra: Point = .{ x = 1, y = 2 };
       `),
     Error,
@@ -423,22 +423,22 @@ Deno.test("record literals reject missing and extra fields against the nominal t
 
 Deno.test("field requirements specialize independently for different nominal records", async () => {
   const result = await checkSource(`
-    record Point = { x: Number };
+    record Point = { x: Real64.Real };
     record Offset = { x: String };
     let getX = (value) => { value.x };
     let px = getX(Point(1));
     let ox = getX(Offset("text"));
   `);
   expectBinding(result.env, "getX", { type: "'a -> 'b where 'a.x: 'b", vars: 2 });
-  expectBinding(result.env, "px", { type: "Number", vars: 0 });
+  expectBinding(result.env, "px", { type: "Real64.Real", vars: 0 });
   expectBinding(result.env, "ox", { type: "String", vars: 0 });
   assertEquals(result.diagnostics, []);
 });
 
 Deno.test("multiple field requirements retain the same receiver", async () => {
   const result = await checkSource(`
-    record Point = { x: Number };
-    record Offset = { x: Number, y: Number };
+    record Point = { x: Real64.Real };
+    record Offset = { x: Real64.Real, y: Real64.Real };
     let getOffsetX = (value) => {
       let y = value.y;
       value.x
@@ -457,38 +457,38 @@ Deno.test("multiple field requirements retain the same receiver", async () => {
 Deno.test("call parameter types discard incompatible nominal projection owners", async () => {
   const result = await checkSource(`
     record Trivia = { kind: String };
-    record Token = { kind: Number };
-    let acceptKind = (kind: Number) => { kind };
+    record Token = { kind: Real64.Real };
+    let acceptKind = (kind: Real64.Real) => { kind };
     let readKind = (token) => { acceptKind(token.kind) };
   `);
 
-  expectBinding(result.env, "readKind", { type: "'a -> Number where 'a.kind: Number", vars: 1 });
+  expectBinding(result.env, "readKind", { type: "'a -> Real64.Real where 'a.kind: Real64.Real", vars: 1 });
   assertEquals(result.diagnostics, []);
   assertEquals(result.facts.recordProjectionRequirements.size, 1);
 });
 
 Deno.test("call parameter types constrain fields without choosing a nominal owner", async () => {
   const result = await checkSource(`
-    record Point = { x: Number };
-    record Offset = { x: Number };
-    let acceptX = (x: Number) => { x };
+    record Point = { x: Real64.Real };
+    record Offset = { x: Real64.Real };
+    let acceptX = (x: Real64.Real) => { x };
     let readX = (value) => { acceptX(value.x) };
   `);
 
-  expectBinding(result.env, "readX", { type: "'a -> Number where 'a.x: Number", vars: 1 });
+  expectBinding(result.env, "readX", { type: "'a -> Real64.Real where 'a.x: Real64.Real", vars: 1 });
   assertEquals(result.diagnostics, []);
 });
 
 Deno.test("nominal record parameter annotations resolve shared field identities", async () => {
   const result = await checkSource(`
-    record Point = { x: Number };
-    record Offset = { x: Number };
+    record Point = { x: Real64.Real };
+    record Offset = { x: Real64.Real };
     let getPointX = (value: Point) => { value.x };
     let getOffsetX = (value: Offset) => { value.x };
   `);
 
-  expectBinding(result.env, "getPointX", { type: "Point -> Number", vars: 0 });
-  expectBinding(result.env, "getOffsetX", { type: "Offset -> Number", vars: 0 });
+  expectBinding(result.env, "getPointX", { type: "Point -> Real64.Real", vars: 0 });
+  expectBinding(result.env, "getOffsetX", { type: "Offset -> Real64.Real", vars: 0 });
   assertEquals(result.diagnostics, []);
   assertEquals(result.facts.recordProjections.size, 2);
   assertEquals(
@@ -516,7 +516,7 @@ Deno.test("repeated projections retain their receiver and result relationships",
 
 Deno.test("record function fields compose with whitespace curried calls", async () => {
   const result = await checkSource(`
-    record Task = { fn: (Void -> Number) -> Number };
+    record Task = { fn: (Void -> Real64.Real) -> Real64.Real };
     let via = (x) => {
       (f) => {
         x.fn(f)
@@ -526,12 +526,12 @@ Deno.test("record function fields compose with whitespace curried calls", async 
     let value = via task () => { 42 };
   `);
 
-  expectBinding(result.env, "value", { type: "Number", vars: 0 });
+  expectBinding(result.env, "value", { type: "Real64.Real", vars: 0 });
 });
 
 Deno.test("function field requirements specialize at the call", async () => {
   const result = await checkSource(`
-    record TaskLike = { fn: (Void -> Number) -> Number };
+    record TaskLike = { fn: (Void -> Real64.Real) -> Real64.Real };
     let via = (x) => {
       (f) => {
         x.fn(f)
@@ -545,7 +545,7 @@ Deno.test("function field requirements specialize at the call", async () => {
     type: "'a -> 'b -> 'c where 'a.fn: 'b -> 'c",
     vars: 3,
   });
-  expectBinding(result.env, "value", { type: "Number", vars: 0 });
+  expectBinding(result.env, "value", { type: "Real64.Real", vars: 0 });
   assertEquals(result.diagnostics, []);
 });
 
@@ -553,7 +553,7 @@ Deno.test("nominal projection results cannot acquire fields from another record"
   await assertRejects(
     () =>
       checkSource(`
-        record HasX = { x: Void -> Number };
+        record HasX = { x: Void -> Real64.Real };
         record HasY = { y: Void -> String };
         let passX = (value) => {
           let xf = value.x;
@@ -576,8 +576,8 @@ Deno.test("unknown dotted fields cannot escape as structural nominal casts", asy
           let _ = value.mystery;
           value
         };
-        record A = { mystery: Number, onlyA: String };
-        record B = { mystery: Number, onlyB: Void -> Number };
+        record A = { mystery: Real64.Real, onlyA: String };
+        record B = { mystery: Real64.Real, onlyB: Void -> Real64.Real };
         let a: A = .{ mystery = 1, onlyA = "a" };
         let forged: B = retainMystery(a);
         let boom = forged.onlyB(void);
@@ -612,7 +612,7 @@ Deno.test("generalized field requirements keep generic record arguments connecte
 record First<T> = { value: T };
 record Second<T> = { value: T };
 let get = (item) => { item.value };
-let n: Number = get(First(1));
+let n: Real64.Real = get(First(1));
 let s: String = get(First("hi"));
 let use = (items) => {
   let read = (item) => { item.value };
@@ -625,7 +625,7 @@ let use = (items) => {
 Deno.test("ambiguous receivers satisfy every projected field regardless of projection or declaration order", async () => {
   const records = [
     "record Wrong = { cursor: Option<String>, posts: List<Bool> };",
-    "record Right = { cursor: Option<String>, posts: List<Number> };",
+    "record Right = { cursor: Option<String>, posts: List<Real64.Real> };",
   ];
   for (const declarations of [records, [...records].reverse()]) {
     for (
@@ -642,7 +642,7 @@ Deno.test("ambiguous receivers satisfy every projected field regardless of proje
         };
         let result = render(Right(None, [1]));
       `);
-      expectBinding(result.env, "result", { type: "(Option<String>, List<Number>)", vars: 0 });
+      expectBinding(result.env, "result", { type: "(Option<String>, List<Real64.Real>)", vars: 0 });
       assertEquals(result.warnings, []);
     }
   }
@@ -651,7 +651,7 @@ Deno.test("ambiguous receivers satisfy every projected field regardless of proje
 Deno.test("projection groups merge when independent receivers become aliases", async () => {
   const result = await checkSource(`
     record Wrong = { cursor: Option<String>, posts: List<Bool> };
-    record Right = { cursor: Option<String>, posts: List<Number> };
+    record Right = { cursor: Option<String>, posts: List<Real64.Real> };
     let render = (first, second) => {
       let cursor = first.cursor;
       let posts = List.map(second.posts, (post) => { post + 1 });
@@ -660,7 +660,7 @@ Deno.test("projection groups merge when independent receivers become aliases", a
     };
   `);
   expectBinding(result.env, "render", {
-    type: "('a, 'a) -> ('a, 'b, List<Number>) where 'a.posts: List<Number>, 'a.cursor: 'b",
+    type: "('a, 'a) -> ('a, 'b, List<Real64.Real>) where 'a.posts: List<Real64.Real>, 'a.cursor: 'b",
     vars: 2,
   });
   assertEquals(result.warnings, []);
@@ -678,17 +678,17 @@ Deno.test("candidate checks share generic parameters across projected fields", a
     let value = read(Different(2, "text"));
   `);
   expectBinding(result.env, "read", {
-    type: "'a -> (Number, String) where 'a.first: Number, 'a.second: String",
+    type: "'a -> (Real64.Real, String) where 'a.first: Real64.Real, 'a.second: String",
     vars: 1,
   });
-  expectBinding(result.env, "value", { type: "(Number, String)", vars: 0 });
+  expectBinding(result.env, "value", { type: "(Real64.Real, String)", vars: 0 });
   assertEquals(result.warnings, []);
 });
 
 Deno.test("nested projection requirements eliminate incompatible outer record candidates", async () => {
   const result = await checkSource(`
     record WrongInner = { value: Bool };
-    record RightInner = { value: Number };
+    record RightInner = { value: Real64.Real };
     record WrongOuter = { cursor: Option<String>, item: WrongInner };
     record RightOuter = { cursor: Option<String>, item: RightInner };
     let read = (outer) => {
@@ -698,7 +698,7 @@ Deno.test("nested projection requirements eliminate incompatible outer record ca
     };
   `);
   expectBinding(result.env, "read", {
-    type: "'a -> ('b, Number) where 'a.cursor: 'b, 'a.item: 'c, 'c.value: Number",
+    type: "'a -> ('b, Real64.Real) where 'a.cursor: 'b, 'a.item: 'c, 'c.value: Real64.Real",
     vars: 3,
   });
   assertEquals(result.warnings, []);
@@ -706,8 +706,8 @@ Deno.test("nested projection requirements eliminate incompatible outer record ca
 
 Deno.test("candidate checks retain equality requirements on projected results", async () => {
   const result = await checkSource(`
-    record FunctionValue = { value: Number -> Number };
-    record NumberValue = { value: Number };
+    record FunctionValue = { value: Real64.Real -> Real64.Real };
+    record NumberValue = { value: Real64.Real };
     let equal = (record) => { record.value == record.value };
   `);
   expectBinding(result.env, "equal", { type: "'a -> Bool where 'a.value: 'b", vars: 2 });
@@ -720,7 +720,7 @@ Deno.test("joint projection resolution survives imports and emits the selected n
       "/test/records.wm",
       `
       record Wrong = { cursor: Option<String>, posts: List<Bool> };
-      record Right = { cursor: Option<String>, posts: List<Number> };
+      record Right = { cursor: Option<String>, posts: List<Real64.Real> };
     `,
     ],
     [
@@ -751,7 +751,7 @@ Deno.test("joint projection resolution survives imports and emits the selected n
 Deno.test("candidate checks retain JS representation requirements on projected results", async () => {
   const result = await checkSource(`
     from js.global("console") import unsafe { log: Js.Value -> Void };
-    record ListValue = { value: List<Number> };
+    record ListValue = { value: List<Real64.Real> };
     record TextValue = { value: String };
     let emit = (record) => { log(record.value) };
     let used = emit(TextValue("text"));
@@ -777,7 +777,7 @@ Deno.test("exported field requirements accept caller-owned nominal types and pre
       `
       from "./access.wm" import * as Access;
       record Session = { accessJwt: String, did: String };
-      record AppFeeds = { accessJwt: Number, posts: List<Number> };
+      record AppFeeds = { accessJwt: Real64.Real, posts: List<Real64.Real> };
       let session = Session("jwt", "did:example");
       let feeds = AppFeeds(42, [1]);
       let sessionToken = Access.token(session);
@@ -811,7 +811,7 @@ Deno.test("a generalized receiver cannot be cast to a different nominal identity
     () =>
       checkSource(`
       record Session = { token: String, did: String };
-      record AppFeeds = { token: String, posts: List<Number> };
+      record AppFeeds = { token: String, posts: List<Real64.Real> };
       let retain = (record) => { let _ = record.token; record };
       let session = Session("jwt", "did:example");
       let forged: AppFeeds = retain(session);
@@ -828,15 +828,15 @@ Deno.test("field obligations retain shared generic parameters at each call", asy
     let read = (record) => { (record.first + 1, record.second ++ "!") };
   `;
   const good = await checkSource(source + 'let pair = read(Different(1, "text"));');
-  expectBinding(good.env, "pair", { type: "(Number, String)", vars: 0 });
+  expectBinding(good.env, "pair", { type: "(Real64.Real, String)", vars: 0 });
   await assertRejects(() => checkSource(source + "let bad = read(Same(1, 2));"), Error);
 });
 
 Deno.test("field equality requirements survive independent polymorphic uses", async () => {
   const source = `
     record TextValue = { value: String };
-    record NumberValue = { value: Number };
-    record FunctionValue = { value: Number -> Number };
+    record NumberValue = { value: Real64.Real };
+    record FunctionValue = { value: Real64.Real -> Real64.Real };
     let same = (record) => { record.value == record.value };
   `;
   const good = await checkSource(
@@ -898,7 +898,7 @@ Deno.test("field requirements cannot hide a local nominal type in an escaping fu
     () =>
       checkSource(`
       let make = () => {
-        record Hidden = { value: Number };
+        record Hidden = { value: Real64.Real };
         record Wrapper = { hidden: Hidden };
         let requireHidden = (value: Hidden) => { void };
         let retain = (record) => { requireHidden(record.hidden); record };
@@ -912,7 +912,7 @@ Deno.test("field requirements cannot hide a local nominal type in an escaping fu
 
 Deno.test("local projection helpers retain captured receiver and result relationships", async () => {
   const result = await checkSource(`
-    record NumberValue = { value: Number };
+    record NumberValue = { value: Real64.Real };
     record StringValue = { value: String };
     let make = (record) => {
       let read = () => { record.value };
@@ -921,7 +921,7 @@ Deno.test("local projection helpers retain captured receiver and result relation
     let number = make(NumberValue(1))();
     let text = make(StringValue("text"))();
   `);
-  expectBinding(result.env, "number", { type: "Number", vars: 0 });
+  expectBinding(result.env, "number", { type: "Real64.Real", vars: 0 });
   expectBinding(result.env, "text", { type: "String", vars: 0 });
 });
 
@@ -929,7 +929,7 @@ Deno.test("merging receiver aliases checks equal-label field requirements immedi
   await assertRejects(
     () =>
       checkSource(`
-      record NumberValue = { value: Number };
+      record NumberValue = { value: Real64.Real };
       record StringValue = { value: String };
       let incompatible = (left, right) => {
         let number = left.value + 1;

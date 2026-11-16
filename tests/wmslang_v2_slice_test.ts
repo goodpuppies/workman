@@ -638,8 +638,8 @@ Deno.test("schema v2 tuple destructuring preserves vector lane order", async () 
 Deno.test("schema v2 lowers one curried nominal-record environment to uniforms", async () => {
   const input = normalizeGpuSliceProgram(
     await analysisFor(`
-      record Uniforms = { resolution: (Number, Number), time: Number };
-      record FrameState = { resolution: (Number, Number), time: Number, quit: Bool };
+      record Uniforms = { resolution: (Real64.Real, Real64.Real), time: Real64.Real };
+      record FrameState = { resolution: (Real64.Real, Real64.Real), time: Real64.Real, quit: Bool };
 
       let shade = (uniforms: Uniforms) => {
         (coord) => {
@@ -686,7 +686,7 @@ Deno.test("schema v5 accepts a concrete imported nominal environment schema", as
   const analysis = await analyzeVirtual(
     "/test/main.wm",
     new Map([
-      ["/test/uniforms.wm", "record Inputs = { time: Number };"],
+      ["/test/uniforms.wm", "record Inputs = { time: Real64.Real };"],
       [
         "/test/main.wm",
         `
@@ -717,7 +717,7 @@ Deno.test("schema v2 selects an imported shader factory from the host module", a
       [
         "/test/shader.wm",
         `
-          record Inputs = { time: Number };
+          record Inputs = { time: Real64.Real };
           let shade = (inputs: Inputs) => {
             (_coord) => { @gpu; (sin(inputs.time), 0.0, 0.0, 1.0) }
           };
@@ -750,8 +750,8 @@ Deno.test("schema v2 keeps the curried environment boundary closed", async () =>
   await assertRejects(
     () =>
       analysisFor(`
-        record ExpectedUniforms = { time: Number };
-        record WrongUniforms = { time: Number };
+        record ExpectedUniforms = { time: Real64.Real };
+        record WrongUniforms = { time: Real64.Real };
         let shade = (uniforms: ExpectedUniforms) => {
           (_coord) => { @gpu; (uniforms.time, 0.0, 0.0, 1.0) }
         };
@@ -765,7 +765,7 @@ Deno.test("schema v2 keeps the curried environment boundary closed", async () =>
   await assertRejects(
     () =>
       analysisFor(`
-        record Uniforms = { time: Number };
+        record Uniforms = { time: Real64.Real };
         let shade = (uniforms: Uniforms) => {
           @gpu;
           (_coord) => { @gpu; (uniforms.time, 0.0, 0.0, 1.0) }
@@ -780,7 +780,7 @@ Deno.test("schema v2 keeps the curried environment boundary closed", async () =>
   await assertRejects(
     () =>
       analysisFor(`
-        record Uniforms = { time: Number };
+        record Uniforms = { time: Real64.Real };
         let hostOffset = 0.25;
         let shade = (uniforms: Uniforms) => {
           (_coord) => {
@@ -1317,10 +1317,10 @@ Deno.test("schema v5 preserves explicit numeric conversions through IR and Slang
 
 Deno.test("schema v5 never defaults an unresolved numeric flow, with or without annotation", async () => {
   const compiler = await realSliceCompiler();
-  for (const annotation of ["", ": Number"]) {
+  for (const annotation of ["", ": Real64.Real"]) {
     const input = normalizeGpuSliceProgram(
       await analysisFor(`
-        record Uniforms = { value: Number };
+        record Uniforms = { value: Real64.Real };
         let shade = (uniforms: Uniforms) => {
           (_coord) => {
             @gpu;
@@ -1374,7 +1374,7 @@ Deno.test("schema v5 lowers sampled texture Sample and Load through the resource
   const input = normalizeGpuSliceProgram(
     await analysisFor(`
       record Inputs = {
-        resolution: (Number, Number),
+        resolution: (Real64.Real, Real64.Real),
         previous: Gpu.SampledTexture2D,
         sampler: Gpu.Sampler
       };

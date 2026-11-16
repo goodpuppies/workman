@@ -14,7 +14,7 @@ from "./subset_string.wm" import * as SubsetString;
 from "./subset_list.wm" import * as SubsetList;
 from "./subset_host.wm" import * as SubsetHost;
 
-type Error = HostError<String> | NonByte<I32> | InvalidPath;
+type Error = HostError<String> | NonByte<Int32.Int> | InvalidPath;
 let bytes = (value) => {
   SubsetResult.mapErr(
     SubsetString.fromNative(value),

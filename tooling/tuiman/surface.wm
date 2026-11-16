@@ -14,8 +14,8 @@ type Command =
   | Text<Geometry.Rect, String, Draw.Style>
   | Fill<Geometry.Rect, String, Draw.Style>
   | DeleteAllImages
-  | DeleteImage<Number>
-  | PlaceImage<Number, Geometry.Rect, Kitty.Scale, Kitty.Image>;
+  | DeleteImage<Real64>
+  | PlaceImage<Real64, Geometry.Rect, Kitty.Scale, Kitty.Image>;
 
 record Frame<Memory> = {
   output: String,

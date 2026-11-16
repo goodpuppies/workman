@@ -19,15 +19,15 @@ type Key =
   | PageDown
   | WheelUp
   | WheelDown
-  | MouseDown<Number, Number>
+  | MouseDown<Real64, Real64>
   | Home
   | End
-  | CellSize<Number, Number>
+  | CellSize<Real64, Real64>
   | CtrlC
   | Unknown<String>;
 
 type NumberPrefix =
-  | NumberPrefix<Number, List<String>>
+  | NumberPrefix<Real64, List<String>>
   | InvalidNumberPrefix;
 
 let controlC = fromCharCode(3) :> Result.getOr("");

@@ -3,7 +3,7 @@ from "./reactive.wm" import * as Reactive;
 type Dependency = Count | DetailsVisible | Details;
 
 record Model = {
-  count: Number,
+  count: Real64,
   detailsVisible: Bool,
   details: String,
 };

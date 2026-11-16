@@ -4,7 +4,7 @@ import { importProgram } from "./import_program.ts";
 
 Deno.test("JSON literals accept Js.Array values whose elements are JSON-compatible", async () => {
   await checkSource(`
-    record Row = { name: String, x: Number };
+    record Row = { name: String, x: Real64.Real };
     let rowJson = (row: Row) => { JSON{ name: row.name, x: row.x } };
     let document = JSON{
       names: Js.Array.fromList(["a", "b"]),

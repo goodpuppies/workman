@@ -33,7 +33,7 @@ export function typeExprKey(type: TypeExpr): string {
 
 function tsNamedType(type: Extract<TypeExpr, { kind: "TName" }>): string {
   if (type.name === "String") return "string";
-  if (type.name === "Number") return "number";
+  if (type.name === "Real64.Real") return "number";
   if (type.name === "Bool") return "boolean";
   if (type.name === "Void") return "void";
   if (type.name === "Js.Value") return "any";

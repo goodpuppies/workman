@@ -19,7 +19,7 @@ type Element =
   | Fill<Geometry.Rect, String, Draw.Style>
   | Box<Geometry.Rect, String, Bool>
   | TimelineBox<Geometry.Rect, Bool, Bool, Bool>
-  | Image<Number, Geometry.Rect, Kitty.Scale, Kitty.Image>;
+  | Image<Real64, Geometry.Rect, Kitty.Scale, Kitty.Image>;
 
 let empty = Empty;
 

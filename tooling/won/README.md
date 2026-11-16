@@ -55,7 +55,7 @@ let port = Won.read(source) :> Won.get("server") :> Won.get("port") :> Won.numbe
 ```
 
 `decode(source)` returns `Ok(value)` or `Err(Error(byteOffset, message))`. Offsets are
-zero-based bytes, typed `I32` (SML `int`). The Basis's Result is WM's built-in `Result`, so
+zero-based bytes, typed `Int32` (SML `int`). The Basis's Result is WM's built-in `Result`, so
 `Result.map`, `via` and pipes work on it directly.
 
 `encode(value)` returns `Ok(source)` or `Err(message)`.

@@ -25,7 +25,7 @@ Current H0 responsibilities:
 - solve the initial monotone `i32`/`f32` representation constraints through arithmetic and
   tuple-vector construction, scalar/vector broadcast, value-flow nodes, and resolved calls;
 - isolate numeric representation IDs by binding/expression occurrence so unrelated roots do not
-  exchange evidence through the shared host `Number` shape;
+  exchange evidence through the shared host `Real64` shape;
 - default only numeric types left abstract after the fixed point;
 - reject duplicate function IDs;
 - close the call graph from GPU roots by resolved function/binding IDs, including imported helpers;

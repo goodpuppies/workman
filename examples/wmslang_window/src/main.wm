@@ -12,21 +12,21 @@ from "./webgpu_present.wm" import {
 };
 
 type AppError = NativeFailure<NativeError> | HostFailure<Js.Error>;
-type Escape = Inside | Escaped<Number>;
+type Escape = Inside | Escaped<Real64>;
 
 record MandelbrotUniforms = {
-  resolution: (Number, Number),
-  center: (Number, Number),
-  scale: Number,
-  time: Number
+  resolution: (Real64, Real64),
+  center: (Real64, Real64),
+  scale: Real64,
+  time: Real64
 };
 
 record FrameState = {
   quit: Bool,
-  resolution: (Number, Number),
-  center: (Number, Number),
-  scale: Number,
-  time: Number
+  resolution: (Real64, Real64),
+  center: (Real64, Real64),
+  scale: Real64,
+  time: Real64
 };
 
 type PollStep = PollAgain<FrameState> | PollDone<FrameState>;
@@ -81,7 +81,7 @@ let initialState: FrameState = .{
   time = 0.0
 };
 
-let panByMouse = (state: FrameState, dx: Number, dy: Number) => {
+let panByMouse = (state: FrameState, dx: Real64, dy: Real64) => {
   let (centerX, centerY) = state.center;
   let (_width, viewHeight) = state.resolution;
   let worldPerPixel = state.scale * 2.0 / viewHeight;
@@ -108,7 +108,7 @@ let applyNativeEvent = (state: FrameState, event) => {
   }
 };
 
-let rec drainEvents = (native: NativeRuntime, state: FrameState, remaining: Number) => {
+let rec drainEvents = (native: NativeRuntime, state: FrameState, remaining: Real64) => {
   if (remaining <= 0) {
     Ok(state)
   } else {

@@ -5,7 +5,7 @@ record FixtureDescription = {
   name: String,
 };
 
-let double = (value: Number) => {
+let double = (value: Real64) => {
   value * 2
 };
 

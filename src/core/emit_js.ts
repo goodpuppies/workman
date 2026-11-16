@@ -1133,7 +1133,7 @@ function emitMainInvocation(entry: CoreModuleArtifact): string {
   // A Task settles to a Result, so one check covers both. Only the outermost `Err` is a failure:
   // `Ok(Err(x))` is a program that succeeded with that value.
   // A whole number returned directly is the exit code; a Task's `Ok(n)` is still a success.
-  // This runs in the program's scope, where `Number` can be Workman's module, not the JS global.
+  // This runs in the program's scope, where `Number` could be a Workman binding, not the JS global.
   return `if (typeof ${main} === "function") {
   const __wm_main_result = await ${main}();
   if (__wm_main_result?.ctor === ${basisCtorId("Err")}) {

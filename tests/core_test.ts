@@ -38,9 +38,9 @@ Deno.test("core lowers nullary Workman functions and calls through unit", async 
 Deno.test("core erases expression and pattern type constraints after checking", async () => {
   const module = await parse(`
     type Option<T> = None | Some<T>;
-    let value = (Some(1) : Option<Number>);
+    let value = (Some(1) : Option<Real64.Real>);
     let get = match(value) {
-      (Some(x) : Option<Number>) => { x },
+      (Some(x) : Option<Real64.Real>) => { x },
       None => { 0 },
     };
   `);
@@ -107,7 +107,7 @@ Deno.test("shared Core owns pipes and anonymous match functions before backend l
 
 Deno.test("core lowers constructor declarations and patterns to unary tuple payloads", async () => {
   const module = await parse(`
-    type Pair = | Pair<Number, String> | Empty;
+    type Pair = | Pair<Real64.Real, String> | Empty;
     let get = match(value) => {
       Pair(n, s) => { (n, s) },
       Empty => { (0, "") },
@@ -117,7 +117,7 @@ Deno.test("core lowers constructor declarations and patterns to unary tuple payl
   assertEquals(
     showCore(coreFromSurface(module)),
     [
-      "type Pair = Pair (Number, String) | Empty",
+      "type Pair = Pair (Real64.Real, String) | Empty",
       'let get = fn { value => match value { Pair (n, s) => (n, s) | Empty => (0, "") } }',
     ].join("\n"),
   );

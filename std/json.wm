@@ -10,7 +10,7 @@ from "basis/string.wm" import * as SubsetString;
 from "basis/list.wm" import * as SubsetList;
 from "basis/utf8.wm" import * as SubsetUtf8;
 from "basis/char.wm" import * as SubsetChar;
-from "basis/int.wm" import * as SubsetInt;
+from "basis/int32.wm" import * as SubsetInt;
 from "basis/natural.wm" import * as SubsetNatural;
 
 from "basis/option_value.wm" import *;
@@ -28,7 +28,7 @@ let decodeWithLimit = (source, limit) => {
     (bytes) => { JsonParser.decodeWithLimit(bytes, limit) }
   )
 };
-let decode = (source) => { decodeWithLimit(source, (128: I32)) };
+let decode = (source) => { decodeWithLimit(source, (128: Int32.Int)) };
 let root = (value) => { SubsetResult.Ok(JsonValue.node([], value)) };
 let read = (source) => {
   SubsetResult.map(
@@ -58,7 +58,7 @@ let hexDigit = (code) => {
 let quote = (bytes) => {
   match(SubsetUtf8.decode(bytes)) {
     SubsetResult.Err(error) => {
-      SubsetResult.Err(JsonValue.error((0: I32), "invalid UTF-8 string"))
+      SubsetResult.Err(JsonValue.error((0: Int32.Int), "invalid UTF-8 string"))
     },
     SubsetResult.Ok(scalars) => {
       let escape = (c) => {
@@ -71,9 +71,9 @@ let quote = (bytes) => {
           '\r' => { "\\r" },
           '\t' => { "\\t" },
           _ => {
-            let code = SubsetResult.getOr(SubsetChar.toCode(c), (0: I32));
-            if (code < (32: I32)) {
-              "\\u00" ++ hexDigit(I32.div(code, (16: I32))) ++ hexDigit(I32.mod(code, (16: I32)))
+            let code = SubsetResult.getOr(SubsetChar.toCode(c), (0: Int32.Int));
+            if (code < (32: Int32.Int)) {
+              "\\u00" ++ hexDigit(Int32.div(code, (16: Int32.Int))) ++ hexDigit(Int32.mod(code, (16: Int32.Int)))
             } else { SubsetResult.getOr(SubsetString.str(c), "") }
           }
         }
@@ -84,7 +84,7 @@ let quote = (bytes) => {
 };
 
 let rec render = (value, depth, limit) => {
-  let fail = (message) => { SubsetResult.Err(JsonValue.error((0: I32), message)) };
+  let fail = (message) => { SubsetResult.Err(JsonValue.error((0: Int32.Int), message)) };
   match(value) {
     JsonValue.Null => { SubsetResult.Ok("null") },
     JsonValue.Boolean(true) => { SubsetResult.Ok("true") },
@@ -106,7 +106,7 @@ let rec render = (value, depth, limit) => {
     JsonValue.Array(values) => {
       if (depth >= limit) { fail("maximum nesting depth exceeded") } else {
         SubsetResult.map(
-          SubsetList.traverse(values, (item) => { render(item, depth + (1: I32), limit) }),
+          SubsetList.traverse(values, (item) => { render(item, depth + (1: Int32.Int), limit) }),
           (pieces) => { "[" ++ SubsetString.concatWith(pieces, ",") ++ "]" }
         )
       }
@@ -120,7 +120,7 @@ let rec render = (value, depth, limit) => {
               SubsetResult.andThen(
                 quote(key),
                 (name) => {
-                  SubsetResult.map(render(item, depth + (1: I32), limit), (text) => { name ++ ":" ++ text })
+                  SubsetResult.map(render(item, depth + (1: Int32.Int), limit), (text) => { name ++ ":" ++ text })
                 }
               )
             }
@@ -133,11 +133,11 @@ let rec render = (value, depth, limit) => {
 };
 let encodeBytes = (value) => {
   SubsetResult.andThen(
-    render(value, (0: I32), (128: I32)),
+    render(value, (0: Int32.Int), (128: Int32.Int)),
     (source) => {
       SubsetResult.mapErr(
         SubsetString.fromNative(source),
-        (error) => { JsonValue.error((0: I32), "invalid output byte") }
+        (error) => { JsonValue.error((0: Int32.Int), "invalid output byte") }
       )
     }
   )
@@ -205,13 +205,13 @@ let nodes = (found) => {
               [item, ..tail] => {
                 go(
                   tail,
-                  index + (1: I32),
+                  index + (1: Int32.Int),
                   [JsonValue.node([JsonValue.Index(index), ..node.steps], item), ..acc]
                 )
               }
             }
           };
-          SubsetResult.Ok(go(values, (0: I32), []))
+          SubsetResult.Ok(go(values, (0: Int32.Int), []))
         },
         _ => { mismatch(node, "array") }
       }
@@ -301,11 +301,11 @@ let integer = (found) => {
         SubsetResult.Ok(JsonValue.Number(parsed)) => {
           if (parsed == spelling) {
             SubsetResult.mapErr(SubsetInt.parseDecimal(spelling), (error) => {
-              JsonValue.Mismatch(node.steps, "I32 integer")
+              JsonValue.Mismatch(node.steps, "Int32 integer")
             })
-          } else { mismatch(node, "I32 integer") }
+          } else { mismatch(node, "Int32 integer") }
         },
-        _ => { mismatch(node, "I32 integer") }
+        _ => { mismatch(node, "Int32 integer") }
       }
     })
   })
@@ -358,8 +358,8 @@ let pathText = (steps) => {
           "[" ++ quoted ++ "]"
         },
         JsonValue.Index(index) => {
-          let spelling = if (index == (-2147483648: I32)) { "-2147483648" } else {
-            if (index < (0: I32)) { "-" ++ SubsetResult.getOr(SubsetNatural.toString((0: I32) - index), "?") }
+          let spelling = if (index == (-2147483648: Int32.Int)) { "-2147483648" } else {
+            if (index < (0: Int32.Int)) { "-" ++ SubsetResult.getOr(SubsetNatural.toString((0: Int32.Int) - index), "?") }
             else { SubsetResult.getOr(SubsetNatural.toString(index), "?") }
           };
           "[" ++ spelling ++ "]"

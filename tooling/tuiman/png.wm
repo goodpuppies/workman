@@ -4,8 +4,8 @@ from js.module("node:zlib") import { inflateSync };
 
 record Pixels = {
   bytes: Buffer,
-  width: Number,
-  height: Number,
+  width: Real64,
+  height: Real64,
 };
 
 let length = (buffer) => {

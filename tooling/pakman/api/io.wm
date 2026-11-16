@@ -7,7 +7,7 @@ from "std/task.wm" import * as Task;
 from js.module("./js/recipe.ts") import unsafe {
   argv as argvRaw: Void -> Js.Array<String>,
   eprint as eprintRaw: String -> Void,
-  exit as exitRaw: Number -> Void,
+  exit as exitRaw: Real64.Real -> Void,
   fetchText as fetchRaw: (String, String -> result, String -> result) -> task,
   headInfo as headRaw: (String, Js.Array<String> -> result, String -> result) -> task,
   runCapture as runRaw: (String, Js.Array<String>, String -> result, String -> result) -> task

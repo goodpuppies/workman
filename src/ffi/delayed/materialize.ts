@@ -1122,7 +1122,7 @@ function isReflectedForeignTypeName(typeName: string): boolean {
 
 const builtInTypeNames = new Set([
   "Bool",
-  "Number",
+  "Real64.Real",
   "Option",
   "Result",
   "Task",

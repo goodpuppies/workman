@@ -5,8 +5,8 @@
 from js.global("Math") import { floor };
 
 record Viewport = {
-  start: Number,
-  inset: Number,
+  start: Real64,
+  inset: Real64,
 };
 
 let halfUp = (amount) => {
@@ -28,7 +28,7 @@ let approach = (current, target) => {
   }
 };
 
-let settled = (current: Number, target: Number) => {
+let settled = (current: Real64, target: Real64) => {
   current == target
 };
 

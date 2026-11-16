@@ -14,7 +14,7 @@ export type Fields = WmList<[string, Value]>;
 export type Value =
   | { name: "Null" }
   | { name: "Boolean"; a0: boolean }
-  | { name: "Number"; a0: string }
+  | { name: "Real64.Real"; a0: string }
   | { name: "Text"; a0: WmList<string> }
   | { name: "Blob"; a0: WmList<string> }
   | { name: "List"; a0: WmList<Value> }
@@ -208,7 +208,7 @@ export class Found {
 
   /** The exact spelling; numeric conversion is the caller's choice. */
   number(): string {
-    return this.read("number", (value) => value.name === "Number" ? value.a0 : undefined);
+    return this.read("number", (value) => value.name === "Real64.Real" ? value.a0 : undefined);
   }
 
   boolean(): boolean {

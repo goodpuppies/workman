@@ -32,7 +32,7 @@ record SliceEmitContext = {
   statements: List<GpuSliceLoweredStatementDto>,
   blocks: List<GpuSliceLoweredBlockDto>,
   cases: List<GpuSliceLoweredCaseDto>,
-  recursiveFunctionId: Number,
+  recursiveFunctionId: Real64,
   portable: Bool,
 };
 
@@ -55,7 +55,7 @@ let rec listLength = match(items, count) => {
   ([Var(_item), ..rest], Var(count)) => { listLength(rest, count + 1) }
 };
 
-let vectorLaneName = (index: Number) => {
+let vectorLaneName = (index: Real64) => {
   if (numberEqual(index, 0)) {
     "x"
   } else {

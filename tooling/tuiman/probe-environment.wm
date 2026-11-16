@@ -4,6 +4,6 @@ record Item = {
 
 record Environment = {
   label: String,
-  count: Number,
+  count: Real64,
   items: List<Item>,
 };

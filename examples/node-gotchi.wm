@@ -6,7 +6,7 @@ from js.module("npm:inquirer") import * as inquirer;
 from js.global("console") import * as console;
 from js.global("Math") import * as Math;
 from js.module("node:timers/promises") import unsafe {
-  setTimeout as wait:Number -> Task<Void, Js.Error>
+  setTimeout as wait:Real64 -> Task<Void, Js.Error>
 };
 
 let via = Monad.via;
@@ -21,10 +21,10 @@ type Action = Feed | Play | Sleep | Do_Nothing | Quit;
 
 record PetState = {
   name: String,
-  hunger: Number,
-  happiness: Number,
-  energy: Number,
-  age: Number
+  hunger: Real64,
+  happiness: Real64,
+  energy: Real64,
+  age: Real64
 };
 
 let log = (text: String) => {

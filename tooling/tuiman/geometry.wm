@@ -4,17 +4,17 @@
 from js.global("Math") import { floor };
 
 record Size = {
-  width: Number,
-  height: Number,
-  cellWidth: Number,
-  cellHeight: Number,
+  width: Real64,
+  height: Real64,
+  cellWidth: Real64,
+  cellHeight: Real64,
 };
 
 record Rect = {
-  x: Number,
-  y: Number,
-  width: Number,
-  height: Number,
+  x: Real64,
+  y: Real64,
+  width: Real64,
+  height: Real64,
 };
 
 let clamp = (minimum, maximum, value) => {

@@ -219,13 +219,13 @@ let items = (found) => {
               [item, ..tail] => {
                 go(
                   tail,
-                  position + (1: I32),
+                  position + (1: Int32.Int),
                   [SubsetWonValue.makeNode(indexStep(node.path, position), item), ..acc]
                 )
               }
             }
           };
-          SubsetResult.Ok(go(values, (0: I32), []))
+          SubsetResult.Ok(go(values, (0: Int32.Int), []))
         },
         _ => { mismatch(node, "list") }
       }

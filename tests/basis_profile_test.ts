@@ -11,13 +11,12 @@ import { loadStandardModules } from "../src/standard_library.ts";
 import { expectBinding } from "./type_helpers.ts";
 import { importProgram } from "./import_program.ts";
 
+// `Real64.Real` and `Int32.Int` are primitives too, bound in their `Real64` and `Int32` structures.
 const primitiveTypes = [
-  "Number",
   "Bool",
   "String",
   "Void",
   "Char",
-  "I32",
 ];
 
 const jsTypes = [
@@ -196,7 +195,7 @@ Deno.test("[module update B309/T134] pervasive constructors project the structur
 Deno.test("[module update B304] fixed operators type expressions without ValEnv bindings", async () => {
   const result = await checkSource("let value = 1 + 2;");
 
-  expectBinding(result.env, "value", { type: "Number", vars: 0 });
+  expectBinding(result.env, "value", { type: "Real64.Real", vars: 0 });
   assertEquals(result.env.has("+"), false);
 });
 
@@ -256,7 +255,7 @@ Deno.test("[module update T136/B305] pervasive print is an ordinarily shadowable
     let answer = print(41);
   `);
 
-  expectBinding(result.env, "answer", { type: "Number", vars: 0 });
+  expectBinding(result.env, "answer", { type: "Real64.Real", vars: 0 });
 });
 
 function collectStaticValues(environment: StaticEnv, prefix = ""): string[] {
@@ -357,10 +356,10 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
         types: [],
       },
       {
-        alias: "Float32",
+        alias: "Real32",
         values: [
-          "fromNumber",
-          "toNumber",
+          "fromReal64",
+          "toReal64",
           "add",
           "sub",
           "mul",
@@ -369,21 +368,7 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
         ],
         types: [
           "Real",
-        ],
-      },
-      {
-        alias: "Float64",
-        values: [
-          "fromNumber",
-          "toNumber",
-          "add",
-          "sub",
-          "mul",
-          "div",
-          "neg",
-        ],
-        types: [
-          "Real",
+          "Self",
         ],
       },
       {
@@ -500,8 +485,8 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
         alias: "Word8",
         values: [
           "wordSize",
-          "fromNumber",
-          "toNumber",
+          "fromReal64",
+          "toReal64",
           "andb",
           "orb",
           "xorb",
@@ -517,6 +502,7 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
         ],
         types: [
           "Word",
+          "Self",
         ],
       },
       {
@@ -579,11 +565,56 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
           "Cursor",
         ],
       },
-      { alias: "General", values: ["o", "before", "ignore"], types: [] },
+      {
+        alias: "General",
+        values: [
+          "o",
+          "before",
+          "ignore",
+        ],
+        types: [],
+      },
+      {
+        alias: "Int32",
+        values: [
+          "div",
+          "mod",
+          "checkedAdd",
+          "checkedSub",
+          "checkedMul",
+          "toReal64",
+          "fromReal64",
+          "toString",
+          "minimum",
+          "maximum",
+          "InvalidInteger",
+          "Overflow",
+          "StringError",
+          "digits",
+          "signed",
+          "fromString",
+          "complete",
+          "parseDecimal",
+          "parseNatural",
+        ],
+        types: [
+          "Int",
+          "Error",
+          "Self",
+        ],
+      },
       {
         alias: "Int64",
-        values: ["fromNumber", "toNumber", "fromString", "toString"],
-        types: ["Int"],
+        values: [
+          "fromReal64",
+          "toReal64",
+          "fromString",
+          "toString",
+        ],
+        types: [
+          "Int",
+          "Self",
+        ],
       },
       {
         alias: "JsonValue",
@@ -604,7 +635,13 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
           "Missing",
           "Mismatch",
         ],
-        types: ["Value", "Error", "Step", "Node", "Problem"],
+        types: [
+          "Value",
+          "Error",
+          "Step",
+          "Node",
+          "Problem",
+        ],
       },
       {
         alias: "JsonParser",
@@ -628,7 +665,9 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
           "decodeWithLimit",
           "decode",
         ],
-        types: ["Cursor"],
+        types: [
+          "Cursor",
+        ],
       },
       {
         alias: "Json",
@@ -665,7 +704,12 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
           "pathText",
           "problemText",
         ],
-        types: ["Value", "Node", "Error", "Problem"],
+        types: [
+          "Value",
+          "Node",
+          "Error",
+          "Problem",
+        ],
       },
       {
         alias: "List",
@@ -801,14 +845,6 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
         ],
       },
       {
-        alias: "Number",
-        values: [
-          "div",
-          "mod",
-        ],
-        types: [],
-      },
-      {
         alias: "Option",
         values: [
           "None",
@@ -831,7 +867,7 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
         types: [],
       },
       {
-        alias: "Real",
+        alias: "Real64",
         values: [
           "ManExp",
           "Split",
@@ -871,6 +907,8 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
           "round",
         ],
         types: [
+          "Real",
+          "Self",
           "ManExp",
           "Split",
         ],
@@ -905,7 +943,10 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
       },
       {
         alias: "String",
-        values: ["toList", "isSubsequence"],
+        values: [
+          "toList",
+          "isSubsequence",
+        ],
         types: [],
       },
       {
@@ -1002,8 +1043,8 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
         alias: "Word16",
         values: [
           "wordSize",
-          "fromNumber",
-          "toNumber",
+          "fromReal64",
+          "toReal64",
           "andb",
           "orb",
           "xorb",
@@ -1019,14 +1060,15 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
         ],
         types: [
           "Word",
+          "Self",
         ],
       },
       {
         alias: "Word32",
         values: [
           "wordSize",
-          "fromNumber",
-          "toNumber",
+          "fromReal64",
+          "toReal64",
           "andb",
           "orb",
           "xorb",
@@ -1042,14 +1084,15 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
         ],
         types: [
           "Word",
+          "Self",
         ],
       },
       {
         alias: "Word64",
         values: [
           "wordSize",
-          "fromNumber",
-          "toNumber",
+          "fromReal64",
+          "toReal64",
           "andb",
           "orb",
           "xorb",
@@ -1065,6 +1108,7 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
         ],
         types: [
           "Word",
+          "Self",
         ],
       },
       {

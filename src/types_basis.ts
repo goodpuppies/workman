@@ -10,9 +10,9 @@ import {
   fresh,
   freshTypeInfo,
   generalize,
-  I32Ty,
+  Int32Ty,
   named,
-  NumberTy,
+  Real64Ty,
   operatorNumericConstraint,
   StringTy,
   tuple,
@@ -106,10 +106,10 @@ export function basisOperatorEnv(): Env {
   const operator = (vars: number[], type: Ty) => ({ vars, type, standardLibrary: true });
   for (const descriptor of BASIS_OPERATORS) {
     switch (descriptor.kind) {
-      // `+ - *` take Number or I32 operands of one type; `/` and `%` stay Number-only.
+      // `+ - *` take Number or Int32.Int operands of one type; `/` and `%` stay Number-only.
       case "number": {
         if (descriptor.spelling === "/" || descriptor.spelling === "%") {
-          env.set(descriptor.spelling, operator([], fn([tuple([NumberTy, NumberTy])], NumberTy)));
+          env.set(descriptor.spelling, operator([], fn([tuple([Real64Ty, Real64Ty])], Real64Ty)));
           break;
         }
         const a = numericSchemeVar();
@@ -168,7 +168,7 @@ function addGpuBasisValues(env: Env, typeEnv: TypeEnv) {
     throw new Error("missing compiler-owned Gpu basis types");
   }
 
-  const rgba = tuple([NumberTy, NumberTy, NumberTy, NumberTy]);
+  const rgba = tuple([Real64Ty, Real64Ty, Real64Ty, Real64Ty]);
   const fragment = named(fragmentInfo);
   const texture = named(textureInfo);
   const sampledTexture = named(sampledTextureInfo);
@@ -202,10 +202,10 @@ function addGpuBasisValues(env: Env, typeEnv: TypeEnv) {
     "Gpu.fragment",
     GPU_SEMANTIC_IDS.fragment,
     [],
-    fn([fn([tuple([NumberTy, NumberTy])], rgba)], fragment),
+    fn([fn([tuple([Real64Ty, Real64Ty])], rgba)], fragment),
   );
-  basisFn("Gpu.i32", GPU_SEMANTIC_IDS.i32, [], fn([NumberTy], NumberTy));
-  basisFn("Gpu.f32", GPU_SEMANTIC_IDS.f32, [], fn([NumberTy], NumberTy));
+  basisFn("Gpu.i32", GPU_SEMANTIC_IDS.i32, [], fn([Real64Ty], Real64Ty));
+  basisFn("Gpu.f32", GPU_SEMANTIC_IDS.f32, [], fn([Real64Ty], Real64Ty));
 
   {
     const value = fresh("gpuUniformValue") as Extract<Ty, { tag: "var" }>;
@@ -273,21 +273,21 @@ function addGpuBasisValues(env: Env, typeEnv: TypeEnv) {
     fragmentInfo,
     "Gpu.uniformBinding",
     GPU_SEMANTIC_IDS.uniformBinding,
-    NumberTy,
+    Real64Ty,
   );
   addGpuUniformAccessor(
     env,
     fragmentInfo,
     "Gpu.uniformByteLength",
     GPU_SEMANTIC_IDS.uniformByteLength,
-    NumberTy,
+    Real64Ty,
   );
   addGpuUniformAccessor(
     env,
     fragmentInfo,
     "Gpu.uniformBytes",
     GPU_SEMANTIC_IDS.uniformBytes,
-    named(jsArrayInfo, [NumberTy]),
+    named(jsArrayInfo, [Real64Ty]),
   );
 
   {
@@ -296,7 +296,7 @@ function addGpuBasisValues(env: Env, typeEnv: TypeEnv) {
       "Gpu.texture2D",
       GPU_SEMANTIC_IDS.texture2D,
       [device],
-      fn([tuple([device, NumberTy, NumberTy])], result(texture)),
+      fn([tuple([device, Real64Ty, Real64Ty])], result(texture)),
     );
   }
   basisFn(
@@ -344,7 +344,7 @@ function addGpuBasisValues(env: Env, typeEnv: TypeEnv) {
     fragmentInfo,
     "Gpu.bindingCount",
     GPU_SEMANTIC_IDS.bindingCount,
-    NumberTy,
+    Real64Ty,
   );
   basisFn(
     "Gpu.renderTargetView",
@@ -494,27 +494,26 @@ function addBasisValues(env: Env, typeEnv: TypeEnv) {
     basis: true,
   });
   addJsArrayValues(env, typeEnv);
-  addI32Values(env, typeEnv);
+  addInt32Values(env, typeEnv);
 }
 
-function addI32Values(env: Env, typeEnv: TypeEnv) {
+function addInt32Values(env: Env, typeEnv: TypeEnv) {
   const option = typeInfoByName(typeEnv, "Option");
   if (!option) return;
   const value = (name: string, type: Ty) => {
-    env.set(`I32.${name}`, { vars: [], type, status: "value", basis: true });
+    env.set(`Int32.${name}`, { vars: [], type, status: "value", basis: true });
   };
-  const optionI32 = named(option, [I32Ty]);
-  value("div", fn([tuple([I32Ty, I32Ty])], I32Ty));
-  value("mod", fn([tuple([I32Ty, I32Ty])], I32Ty));
-  value("checkedAdd", fn([tuple([I32Ty, I32Ty])], optionI32));
-  value("checkedSub", fn([tuple([I32Ty, I32Ty])], optionI32));
-  value("checkedMul", fn([tuple([I32Ty, I32Ty])], optionI32));
-  value("toNumber", fn([I32Ty], NumberTy));
-  value("fromNumber", fn([NumberTy], optionI32));
-  value("toString", fn([I32Ty], StringTy));
-  value("fromString", fn([StringTy], optionI32));
-  value("minimum", I32Ty);
-  value("maximum", I32Ty);
+  const optionInt32 = named(option, [Int32Ty]);
+  value("div", fn([tuple([Int32Ty, Int32Ty])], Int32Ty));
+  value("mod", fn([tuple([Int32Ty, Int32Ty])], Int32Ty));
+  value("checkedAdd", fn([tuple([Int32Ty, Int32Ty])], optionInt32));
+  value("checkedSub", fn([tuple([Int32Ty, Int32Ty])], optionInt32));
+  value("checkedMul", fn([tuple([Int32Ty, Int32Ty])], optionInt32));
+  value("toReal64", fn([Int32Ty], Real64Ty));
+  value("fromReal64", fn([Real64Ty], optionInt32));
+  value("toString", fn([Int32Ty], StringTy));
+  value("minimum", Int32Ty);
+  value("maximum", Int32Ty);
 }
 
 function addJsArrayValues(env: Env, typeEnv: TypeEnv) {

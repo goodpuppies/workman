@@ -44,7 +44,7 @@ async function typeError(main: string): Promise<string> {
   assert(false, "expected a type error");
 }
 
-Deno.test("integer literals default to Number", async () => {
+Deno.test("integer literals default to Real64.Real", async () => {
   assertEquals(
     await runLines(`
       let half = (x) => { x / 2 };
@@ -56,46 +56,46 @@ Deno.test("integer literals default to Number", async () => {
   );
 });
 
-Deno.test("integer literals take I32 from context", async () => {
+Deno.test("integer literals take Int32.Int from context", async () => {
   assertEquals(
     await runLines(`
-      let add = (x: I32, y: I32) => { x + y };
-      let limit: I32 = 2147483647;
+      let add = (x: Int32.Int, y: Int32.Int) => { x + y };
+      let limit: Int32.Int = 2147483647;
       print(add(1, 2));
       print(limit);
       print(limit > 0);
       print(match(add(1, 1)) { 2 => { "two" }, _ => { "other" } });
-      print((-2147483648: I32));
-      print(match((3: I32)) { (3: I32) => { "three" }, _ => { "other" } });
+      print((-2147483648: Int32.Int));
+      print(match((3: Int32.Int)) { (3: Int32.Int) => { "three" }, _ => { "other" } });
     `),
     ["3", "2147483647", "true", "two", "-2147483648", "three"],
   );
 });
 
-Deno.test("I32 and Number do not mix", async () => {
-  assertStringIncludes(await typeError(`let bad = (x: I32) => { x + 1.5 };`), "Number");
-  assertStringIncludes(await typeError(`let bad = (x: I32) => { x / 2 };`), "I32");
+Deno.test("Int32.Int and Real64.Real do not mix", async () => {
+  assertStringIncludes(await typeError(`let bad = (x: Int32.Int) => { x + 1.5 };`), "Real64.Real");
+  assertStringIncludes(await typeError(`let bad = (x: Int32.Int) => { x / 2 };`), "Int32.Int");
   assertStringIncludes(
-    await typeError(`let n: Number = 1; let bad = (x: I32) => { x < n };`),
-    "I32",
+    await typeError(`let n: Real64.Real = 1; let bad = (x: Int32.Int) => { x < n };`),
+    "Int32.Int",
   );
-  assertStringIncludes(await typeError(`let bad = (x: I32) => { x ++ "a" };`), "I32");
+  assertStringIncludes(await typeError(`let bad = (x: Int32.Int) => { x ++ "a" };`), "Int32.Int");
 });
 
-Deno.test("integer literals outside the I32 range are rejected when selected as I32", async () => {
-  assertStringIncludes(await typeError(`let bad: I32 = 2147483648;`), "out of range for I32");
-  assertStringIncludes(await typeError(`let bad: I32 = -2147483649;`), "out of range for I32");
-  assertStringIncludes(await typeError(`let bad: I32 = 1.0;`), "Number");
+Deno.test("integer literals outside the Int32.Int range are rejected when selected as Int32.Int", async () => {
+  assertStringIncludes(await typeError(`let bad: Int32.Int = 2147483648;`), "out of range for Int32.Int");
+  assertStringIncludes(await typeError(`let bad: Int32.Int = -2147483649;`), "out of range for Int32.Int");
+  assertStringIncludes(await typeError(`let bad: Int32.Int = 1.0;`), "Real64.Real");
 });
 
-Deno.test("I32 arithmetic is exact at the boundaries", async () => {
+Deno.test("Int32.Int arithmetic is exact at the boundaries", async () => {
   assertEquals(
     await runLines(`
-      let sub = (x: I32, y: I32) => { x - y };
-      let mul = (x: I32, y: I32) => { x * y };
-      let neg = (x: I32) => { -x };
-      print(sub(I32.minimum, 0));
-      print(neg(I32.maximum));
+      let sub = (x: Int32.Int, y: Int32.Int) => { x - y };
+      let mul = (x: Int32.Int, y: Int32.Int) => { x * y };
+      let neg = (x: Int32.Int) => { -x };
+      print(sub(Int32.minimum, 0));
+      print(neg(Int32.maximum));
       print(mul(46340, 46340));
       print(mul(0, -5));
       print(mul(-65536, 32768));
@@ -104,61 +104,61 @@ Deno.test("I32 arithmetic is exact at the boundaries", async () => {
   );
 });
 
-Deno.test("I32 overflow panics", async () => {
+Deno.test("Int32.Int overflow panics", async () => {
   for (
     const expr of [
-      "I32.maximum + 1",
-      "I32.minimum - 1",
-      "-I32.minimum",
-      "I32.maximum * 2",
+      "Int32.maximum + 1",
+      "Int32.minimum - 1",
+      "-Int32.minimum",
+      "Int32.maximum * 2",
       "65536 * 32768",
-      "I32.div(I32.minimum, -1)",
+      "Int32.div(Int32.minimum, -1)",
     ]
   ) {
     assertStringIncludes(
-      await panics(`let f = (x: I32) => { x }; print(f(${expr}));`),
-      "I32 overflow",
+      await panics(`let f = (x: Int32.Int) => { x }; print(f(${expr}));`),
+      "Int32 overflow",
       expr,
     );
   }
 });
 
-Deno.test("I32 division and modulo floor like SML", async () => {
+Deno.test("Int32.Int division and modulo floor like SML", async () => {
   assertEquals(
     await runLines(`
-      print(I32.div(7, 2));
-      print(I32.div(-7, 2));
-      print(I32.div(7, -2));
-      print(I32.div(-7, -2));
-      print(I32.mod(7, 2));
-      print(I32.mod(-7, 2));
-      print(I32.mod(7, -2));
-      print(I32.mod(-7, -2));
-      print(I32.mod(-6, 2));
-      print(I32.mod(I32.minimum, -1));
+      print(Int32.div(7, 2));
+      print(Int32.div(-7, 2));
+      print(Int32.div(7, -2));
+      print(Int32.div(-7, -2));
+      print(Int32.mod(7, 2));
+      print(Int32.mod(-7, 2));
+      print(Int32.mod(7, -2));
+      print(Int32.mod(-7, -2));
+      print(Int32.mod(-6, 2));
+      print(Int32.mod(Int32.minimum, -1));
     `),
     ["3", "-4", "-4", "3", "1", "1", "-1", "-1", "0", "0"],
   );
-  assertStringIncludes(await panics(`print(I32.div(1, 0));`), "I32 division by zero");
-  assertStringIncludes(await panics(`print(I32.mod(1, 0));`), "I32 division by zero");
+  assertStringIncludes(await panics(`print(Int32.div(1, 0));`), "Int32 division by zero");
+  assertStringIncludes(await panics(`print(Int32.mod(1, 0));`), "Int32 division by zero");
 });
 
-Deno.test("I32 checked operations and conversions return options", async () => {
+Deno.test("Int32 checked operations, conversions and Basis parsers", async () => {
   assertEquals(
     await runLines(`
-      print(I32.checkedAdd(I32.maximum, 1));
-      print(I32.checkedSub(I32.minimum, 1));
-      print(I32.checkedMul(65536, -32768));
-      print(I32.checkedAdd(1, 2));
-      print(I32.fromNumber(1.5));
-      print(I32.fromNumber(2147483648));
-      print(I32.fromNumber(-0));
-      print(I32.fromString("-2147483648"));
-      print(I32.fromString("2147483648"));
-      print(I32.fromString(" 1"));
-      print(I32.fromString("+1"));
-      print(I32.toString(I32.minimum));
-      print(I32.toNumber(5) / 2);
+      print(Int32.checkedAdd(Int32.maximum, 1));
+      print(Int32.checkedSub(Int32.minimum, 1));
+      print(Int32.checkedMul(65536, -32768));
+      print(Int32.checkedAdd(1, 2));
+      print(Int32.fromReal64(1.5));
+      print(Int32.fromReal64(2147483648));
+      print(Int32.fromReal64(-0));
+      print(Int32.parseDecimal("-2147483648"));
+      print(Int32.parseDecimal("2147483648"));
+      print(Int32.parseDecimal(" 1"));
+      print(Int32.fromString(" 1x"));
+      print(Int32.toString(Int32.minimum));
+      print(Int32.toReal64(5) / 2);
     `),
     [
       "None",
@@ -168,10 +168,10 @@ Deno.test("I32 checked operations and conversions return options", async () => {
       "None",
       "None",
       "Some(0)",
-      "Some(-2147483648)",
-      "None",
-      "None",
-      "None",
+      "Ok(-2147483648)",
+      "Err(Overflow)",
+      "Err(InvalidInteger)",
+      "Ok(1)",
       "-2147483648",
       "2.5",
     ],

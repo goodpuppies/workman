@@ -4,7 +4,7 @@
 from "./writev.wm" import * as Writer;
 from "./error.wm" import * as Error;
 from js.global import { Uint8Array };
-from js.global import unsafe { String as textOf: Number -> String };
+from js.global import unsafe { String as textOf: Real64 -> String };
 
 type AppError =
   | AllocationFailed<Js.Error>

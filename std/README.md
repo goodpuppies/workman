@@ -31,7 +31,7 @@ manual types, as `word8_vector.wm` does:
 
 ```wm
 from js.module("./js/byte_vector.js") import unsafe {
-  length as primLength: Word8Vector.Vector -> Number,
+  length as primLength: Word8Vector.Vector -> Real64,
 };
 ```
 

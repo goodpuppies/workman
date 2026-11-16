@@ -43,7 +43,7 @@ export function list<T>(value: Variant): T[] {
   return items;
 }
 
-// WM offsets and ids are I32, which the host must check before passing a JS number in.
+// WM offsets and ids are Int32.Int, which the host must check before passing a JS number in.
 const isI32 = (value: number) =>
   Number.isInteger(value) && value >= -2147483648 && value <= 2147483647;
 

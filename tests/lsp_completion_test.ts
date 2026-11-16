@@ -16,7 +16,7 @@ Deno.test("ordinary completion returns lexical values with semantic type detail"
   assertEquals(items.map(({ label, kind, detail }) => ({ label, kind, detail })), [{
     label: "outer",
     kind: 6,
-    detail: "Number",
+    detail: "Real64.Real",
   }]);
 });
 
@@ -105,7 +105,7 @@ Deno.test("ordinary completion ranks local, imported, then basis values", async 
 
 Deno.test("ordinary completion distinguishes type position", async () => {
   const path = "/test/main.wm";
-  const source = "record Point = { x: Number }; let read = (point: Point) => { point };";
+  const source = "record Point = { x: Real64.Real }; let read = (point: Point) => { point };";
   const annotation = source.indexOf("Point", source.indexOf("point:"));
   const items = await completionAt(
     pathToFileUri(path),
@@ -121,7 +121,7 @@ Deno.test("ordinary completion distinguishes type position", async () => {
 
 Deno.test("ordinary type completion survives a malformed annotation phrase", async () => {
   const path = "/test/main.wm";
-  const source = "record Point = { x: Number }; let value: Po";
+  const source = "record Point = { x: Real64.Real }; let value: Po";
   const items = await completionAt(
     pathToFileUri(path),
     positionAt(source, source.length),
@@ -137,7 +137,7 @@ Deno.test("ordinary type completion survives a malformed annotation phrase", asy
 Deno.test("ordinary completion lists project and basis namespace members", async () => {
   const lib = "/test/lib.wm";
   const main = "/test/main.wm";
-  const libSource = "record Box = { value: Number }; let answer = 42;";
+  const libSource = "record Box = { value: Real64.Real }; let answer = 42;";
   const source = 'from "./lib.wm" import * as Lib; ' +
     "let project = Lib.answer; let gpu = Gpu.fragment;";
   const overrides = new Map([
@@ -162,7 +162,7 @@ Deno.test("ordinary completion lists project and basis namespace members", async
   );
   assertEquals(
     projectItems.find(({ label }) => label === "answer")?.detail,
-    "Number",
+    "Real64.Real",
   );
   assertEquals(gpuItems.some(({ label }) => label === "fragment"), true);
 });
@@ -209,7 +209,7 @@ Deno.test("namespace completion falls back when a broken head drops the imported
 
 Deno.test("ordinary completion uses nominal receiver identity for record fields", async () => {
   const path = "/test/main.wm";
-  const source = "record Point = { x: Number, y: String }; " +
+  const source = "record Point = { x: Real64.Real, y: String }; " +
     'let point = Point(1, "a"); let read = point.x;';
   const fieldStart = source.indexOf("point.x") + "point.".length;
   const items = await completionAt(
@@ -219,7 +219,7 @@ Deno.test("ordinary completion uses nominal receiver identity for record fields"
   );
 
   assertEquals(items.map(({ label, kind, detail }) => ({ label, kind, detail })), [
-    { label: "x", kind: 10, detail: "Number" },
+    { label: "x", kind: 10, detail: "Real64.Real" },
     { label: "y", kind: 10, detail: "String" },
   ]);
 });
@@ -346,7 +346,7 @@ Deno.test("import completion discovers exported namespaces in an unfinished clau
     positionAt(source, source.length),
     new Map([
       [main, source],
-      [lib, "record Box = { value: Number }; let bonus = 1;"],
+      [lib, "record Box = { value: Real64.Real }; let bonus = 1;"],
     ]),
   );
 
@@ -371,7 +371,7 @@ Deno.test("import completion excludes names already selected in the clause", asy
 
   assertEquals(items.map(({ label, detail }) => ({ label, detail })), [{
     label: "second",
-    detail: "Number",
+    detail: "Real64.Real",
   }]);
 });
 

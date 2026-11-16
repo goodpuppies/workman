@@ -13,6 +13,7 @@ import {
   setActiveWorkmanNamespaces,
 } from "./receiver/rewrite_expr.ts";
 import { recordFieldNamesInDecls } from "./record_fields.ts";
+import { canonicalizeFfiNumericNames } from "./numeric_names.ts";
 import {
   type FfiBinding,
   type FfiElaboration,
@@ -41,7 +42,9 @@ export function prepareFfiElaboration(
   );
   const previousReflectionBasePath = setActiveJsReflectionBasePath(options.filePath);
   try {
-    return prepareFfiElaborationInner(module);
+    return prepareFfiElaborationInner(
+      canonicalizeFfiNumericNames(module, localTypeNames(module)),
+    );
   } finally {
     setActiveJsReflectionBasePath(previousReflectionBasePath);
     setActiveRecordFields(previousRecordFields);
@@ -188,8 +191,8 @@ function isReflectedForeignTypeName(name: string, localTypes: Set<string>): bool
 
 const builtInTypeNames = new Set([
   "Bool",
-  "I32",
-  "Number",
+  "Int32.Int",
+  "Real64.Real",
   "Option",
   "Result",
   "Task",

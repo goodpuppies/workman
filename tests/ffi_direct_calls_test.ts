@@ -23,7 +23,7 @@ Deno.test("JS imports use direct tuple entries across modules and retain higher-
       [
         "/test/foreign.wm",
         `
-      from js.global("Math") import unsafe { max: (Number, Number) -> Number };
+      from js.global("Math") import unsafe { max: (Real64.Real, Real64.Real) -> Real64.Real };
       let maximum = (left, right) => { max(left, right) };
     `,
       ],
@@ -31,7 +31,7 @@ Deno.test("JS imports use direct tuple entries across modules and retain higher-
         "/test/main.wm",
         `
       from "./foreign.wm" import { maximum };
-      from js.global("Math") import unsafe { min: (Number, Number) -> Number };
+      from js.global("Math") import unsafe { min: (Real64.Real, Real64.Real) -> Real64.Real };
       from js.global("Math") import { max as checkedMax };
       let higher = (function) => { function(4, 9) };
       let throughTuple = (left, right) => { let pair = (left, right); min(pair) };
@@ -155,9 +155,9 @@ Deno.test({
         "/test/main.wm",
         `
       from c.lib("c") import unsafe {
-        strcmp: (String, String) -> I32,
-        strchr as required: (String, I32) -> String,
-        strchr as optional: (Option<String>, I32) -> Option<String>
+        strcmp: (String, String) -> Int32.Int,
+        strchr as required: (String, Int32.Int) -> String,
+        strchr as optional: (Option<String>, Int32.Int) -> Option<String>
       };
       from c.header("string.h") import unsafe { memcmp };
       from "host/c/pointer.wm" import * as Pointer;

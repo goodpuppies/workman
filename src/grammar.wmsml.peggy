@@ -6,7 +6,7 @@
     return name;
   }
   function typeName(name) {
-    if (name === "int") return "Number";
+    if (name === "int") return "Real64.Real";
     if (name === "bool") return "Bool";
     if (name === "string") return "String";
     if (name === "unit") return "Void";

@@ -16,9 +16,9 @@ Deno.test("a bare reference infers a defaulted type parameter at each use", asyn
     let text = same(stringTagged());
     let annotated = () => { let local: Tagged = numberTagged(); local };
   `);
-  expectBinding(result.env, "number", { type: "Tagged<Number>!", vars: 0 });
+  expectBinding(result.env, "number", { type: "Tagged<Real64.Real>!", vars: 0 });
   expectBinding(result.env, "text", { type: "Tagged<String>!", vars: 0 });
-  expectBinding(result.env, "annotated", { type: "Void -> Tagged<Number>!", vars: 0 });
+  expectBinding(result.env, "annotated", { type: "Void -> Tagged<Real64.Real>!", vars: 0 });
   assertEquals(result.warnings, []);
 });
 
@@ -38,11 +38,11 @@ Deno.test("a bare reference in an FFI signature works at each use", async () => 
 
 Deno.test("explicit arguments may stop before the defaulted parameters", async () => {
   const result = await checkSource(`${imports}
-    let pair: Pair<Number> = numberPair();
-    let both: Pair<Number, Number> = numberPair();
+    let pair: Pair<Real64.Real> = numberPair();
+    let both: Pair<Real64.Real, Real64.Real> = numberPair();
   `);
-  expectBinding(result.env, "pair", { type: "Pair<Number, Number>!", vars: 0 });
-  expectBinding(result.env, "both", { type: "Pair<Number, Number>!", vars: 0 });
+  expectBinding(result.env, "pair", { type: "Pair<Real64.Real, Real64.Real>!", vars: 0 });
+  expectBinding(result.env, "both", { type: "Pair<Real64.Real, Real64.Real>!", vars: 0 });
 });
 
 Deno.test("an explicit argument is still checked against the value", async () => {
@@ -60,7 +60,7 @@ Deno.test("a type parameter with no default can't be omitted", async () => {
     "Pair expects 2 type arguments",
   );
   await assertRejects(
-    () => checkSource(`${imports} let pair: Pair<Number, Number, Number> = numberPair();`),
+    () => checkSource(`${imports} let pair: Pair<Real64.Real, Real64.Real, Real64.Real> = numberPair();`),
     Error,
     "Pair expects 2 type arguments",
   );

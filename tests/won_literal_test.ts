@@ -111,7 +111,7 @@ Deno.test("native WON construction is independent of locally shadowed list const
   assertEquals(
     await execute(`
     from "basis/won_value.wm" import * as W;
-    type Other = Nil | Cons<Number>;
+    type Other = Nil | Cons<Real64.Real>;
     let value = WON["hello" {key = 1}];
     let main = () => {
       print(match(value) { W.List(_) => { true }, _ => { false } })

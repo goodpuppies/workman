@@ -29,13 +29,13 @@ Deno.test("ordinary literals take each existing exact numeric type from context"
     let mask: Word64.Word = 18446744073709551615;
     let min: Int64.Int = -9223372036854775808;
     let max: Int64.Int = 9223372036854775807;
-    print(Word8.toNumber(byte));
-    print(Word16.toNumber(port));
-    print(Word32.toNumber(flags));
+    print(Word8.toReal64(byte));
+    print(Word16.toReal64(port));
+    print(Word32.toReal64(flags));
     print(Text.of(mask));
     print(Int64.toString(min));
     print(Int64.toString(max));
-    print(Word8.toNumber(Word8.add(254, 1)));
+    print(Word8.toReal64(Word8.add(254, 1)));
     print(Text.of(Word64.add(9007199254740993, 2)));
   `),
     [
@@ -67,14 +67,14 @@ Deno.test("hexadecimal literals and patterns preserve exact 64-bit magnitudes", 
   );
 });
 
-Deno.test("unresolved literals retain Number defaults and exact types do not coerce existing values", async () => {
+Deno.test("unresolved literals retain Real64 defaults and exact types do not coerce existing values", async () => {
   assertEquals(
     await run(`
     let number = 9007199254740993;
     let half = x => x / 2;
     print(number);
     print(half(1));
-    print((1: I32));
+    print((1: Int32.Int));
   `),
     ["9007199254740992", "0.5", "1"],
   );
@@ -101,7 +101,7 @@ Deno.test("selected numeric types report literal range errors without wrapping o
       ["Word64.Word", "-1"],
       ["Int64.Int", "9223372036854775808"],
       ["Int64.Int", "-9223372036854775809"],
-      ["I32", "2147483648"],
+      ["Int32.Int", "2147483648"],
     ]
   ) {
     const error = await assertRejects(
@@ -127,7 +127,7 @@ Deno.test("literal constraints follow aliases and module boundaries without admi
     from "./values.wm" import { echo, exact };
     type Byte = Word8.Word;
     let local: Byte = 42;
-    print(Word8.toNumber(local));
+    print(Word8.toReal64(local));
     print(Text.of(echo(9007199254740993)));
     print(Text.of(exact));
   `,
@@ -146,7 +146,7 @@ Deno.test("literal constraints follow aliases and module boundaries without admi
       "/test/main.wm",
       new Map([
         ["/test/main.wm", 'from "./fake.wm" import * as Fake; let bad: Fake.Word = 1;'],
-        ["/test/fake.wm", "record Word = { value: Number };"],
+        ["/test/fake.wm", "record Word = { value: Real64.Real };"],
       ]),
     )
   );

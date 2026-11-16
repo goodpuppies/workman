@@ -59,7 +59,7 @@ Deno.test("recursive use scanner respects local block shadowing after initialize
 
 Deno.test("allows recursive records when recursive use is function-guarded", async () => {
   await checkSource(`
-    record Runner = { run: Number -> Number };
+    record Runner = { run: Real64.Real -> Real64.Real };
     let rec runner: Runner = .{ run = (n) => { runner.run(n) } };
   `);
 });
@@ -71,7 +71,7 @@ Deno.test("checks annotations on recursive function bindings", async () => {
     let b = id("s");
   `);
   await assertRejects(
-    () => checkSource("let rec bad: Number -> String = (x) => { x };"),
+    () => checkSource("let rec bad: Real64.Real -> String = (x) => { x };"),
     Error,
     "type mismatch",
   );

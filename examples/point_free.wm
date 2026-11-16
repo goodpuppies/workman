@@ -108,7 +108,7 @@ let nested = groups
 // These helpers are illustrative and can be replaced with WM's
 // preferred record construction/update operations.
 
-record User = {score:Number, level:Number};
+record User = {score:Real64, level:Real64};
 
 let getScore = user => user.score;
 let getLevel = user => user.level;

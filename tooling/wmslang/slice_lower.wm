@@ -47,44 +47,44 @@ from "./slice_lower_support.wm" import {
 };
 
 record LowerScope = {
-  bindings: Map.Map<Number, Number>,
-  loopParamLocalIds: List<Number>,
+  bindings: Map.Map<Real64, Real64>,
+  loopParamLocalIds: List<Real64>,
 };
 
 record LowerValueResult = {
-  statementIds: List<Number>,
-  atomId: Number,
+  statementIds: List<Real64>,
+  atomId: Real64,
   state: SliceLowerState,
 };
 
 record LowerTailResult = {
-  statementIds: List<Number>,
+  statementIds: List<Real64>,
   state: SliceLowerState,
 };
 
 record LowerChildrenResult = {
-  statementIds: List<Number>,
-  atomIds: List<Number>,
+  statementIds: List<Real64>,
+  atomIds: List<Real64>,
   state: SliceLowerState,
 };
 
 record LowerBindResult = {
-  statementIds: List<Number>,
+  statementIds: List<Real64>,
   scope: LowerScope,
   state: SliceLowerState,
 };
 
 record LowerParamResult = {
-  physicalLocalIds: List<Number>,
-  activeLocalIds: List<Number>,
-  initialStatementIds: List<Number>,
-  iterationStatementIds: List<Number>,
+  physicalLocalIds: List<Real64>,
+  activeLocalIds: List<Real64>,
+  initialStatementIds: List<Real64>,
+  iterationStatementIds: List<Real64>,
   scope: LowerScope,
   state: SliceLowerState,
 };
 
 record LowerCasesResult = {
-  caseIds: List<Number>,
+  caseIds: List<Real64>,
   state: SliceLowerState,
 };
 
@@ -152,8 +152,8 @@ and lowerSequenceValue = (
 }
 
 and bindPattern = (
-  patternId: Number,
-  atomId: Number,
+  patternId: Real64,
+  atomId: Real64,
   owner: GpuSliceIrExprDto,
   scope: LowerScope,
   context: SliceLowerContext,
@@ -191,10 +191,10 @@ and bindPattern = (
 
 and bindPatternValue = (
   pattern: GpuSlicePatternDto,
-  atomId: Number,
+  atomId: Real64,
   owner: GpuSliceIrExprDto,
   operationKind: String,
-  index: Number,
+  index: Real64,
   scope: LowerScope,
   state: SliceLowerState
 ) => {
@@ -306,8 +306,8 @@ and bindTupleChildren = match(
 
 let assignJoin = (
   expression: GpuSliceIrExprDto,
-  localId: Number,
-  atomId: Number,
+  localId: Real64,
+  atomId: Real64,
   state: SliceLowerState
 ) => {
   let statement: GpuSliceLoweredStatementDto = .{
@@ -569,7 +569,7 @@ and lowerMatchValueCases = match(
 
 and bindMatchPayload = (
   pattern: GpuSlicePatternDto,
-  scrutineeAtomId: Number,
+  scrutineeAtomId: Real64,
   owner: GpuSliceIrExprDto,
   scope: LowerScope,
   context: SliceLowerContext,
@@ -774,7 +774,7 @@ let bindOperation = (
   args,
   localKind: String,
   reason: String,
-  layoutId: Number,
+  layoutId: Real64,
   state: SliceLowerState
 ) => {
   let operation: GpuSliceLoweredOperationDto = .{
@@ -852,7 +852,7 @@ let bindSourceOperation = (
 };
 
 let rec lowerValue = (
-  expressionId: Number,
+  expressionId: Real64,
   scope: LowerScope,
   context: SliceLowerContext,
   state: SliceLowerState
@@ -979,7 +979,7 @@ and lowerChildren = match(
 
 let returnStatement = (
   expression: GpuSliceIrExprDto,
-  atomId: Number,
+  atomId: Real64,
   state: SliceLowerState
 ) => {
   let statement: GpuSliceLoweredStatementDto = .{
@@ -996,7 +996,7 @@ let returnStatement = (
 };
 
 let rec lowerTail = (
-  expressionId: Number,
+  expressionId: Real64,
   scope: LowerScope,
   context: SliceLowerContext,
   state: SliceLowerState

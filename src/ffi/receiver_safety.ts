@@ -16,8 +16,8 @@ export function inheritReceiverSafety<
         !type.name.startsWith("ForeignCallable_") &&
         ![
           "String",
-          "Number",
-          "I32",
+          "Real64.Real",
+          "Int32.Int",
           "Bool",
           "Char",
           "Void",
@@ -74,7 +74,7 @@ export function receiverCallFallible(ref: JsTypeRef): boolean {
 
 /** An emitted member adapter has one concrete policy, even for an annotated input. */
 export function receiverAdapterType(type: TypeExpr, ref: JsTypeRef): TypeExpr {
-  return type.kind === "TName" && !["String", "Number", "Bool"].includes(type.name)
+  return type.kind === "TName" && !["String", "Real64.Real", "Bool"].includes(type.name)
     ? { ...type, ffiFallible: receiverCallFallible(ref) }
     : type;
 }

@@ -26,10 +26,10 @@ async function run(files: Record<string, string>) {
 
 Deno.test("constructors work as pipe stages", async () => {
   const stdout = await run({
-    "lib.wm": `type Shape = | Circle<Number>;`,
+    "lib.wm": `type Shape = | Circle<Real64.Real>;`,
     "m.wm": `
       from "./lib.wm" import * as Lib;
-      type Color = | Paint<Number>;
+      type Color = | Paint<Real64.Real>;
       let wrap = value => value :> Some;
       let shown = (color) => { match(color) { Paint(n) => { n } } };
       let radius = (shape) => { match(shape) { Lib.Circle(n) => { n } } };

@@ -19,7 +19,7 @@ for (const mode of ["bun", "vite"]) {
         await Deno.writeTextFile(join(directory, "base.wm"), "let offset = 2;");
         await Deno.writeTextFile(
           join(directory, "entry.wm"),
-          'from "./base.wm" import { offset }; let add = (a: Number, b: Number) => a + b + offset;',
+          'from "./base.wm" import { offset }; let add = (a: Real64.Real, b: Real64.Real) => a + b + offset;',
         );
         await Deno.writeTextFile(
           join(directory, "consumer.js"),

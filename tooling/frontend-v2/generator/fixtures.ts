@@ -27,7 +27,7 @@ export const recognizerSmokeFixtures: readonly ParityFixture[] = Object.freeze([
   { name: "record", source: "record Pair<A, B> = { first: A, second: B };" },
   {
     name: "inline nominal records",
-    source: "let add = (r: AddI{a:I32, b:I32}): AddRes{result:I32} => {.{result=r.a+r.b}};",
+    source: "let add = (r: AddI{a:Int32.Int, b:Int32.Int}): AddRes{result:Int32.Int} => {.{result=r.a+r.b}};",
   },
   {
     name: "nested and generic inline records",

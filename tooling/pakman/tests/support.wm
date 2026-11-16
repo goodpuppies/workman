@@ -19,7 +19,7 @@ let withTempDir = (body) => {
 };
 
 
-record Run = { code: Number, output: String };
+record Run = { code: Real64, output: String };
 
 -- Runs `wm pakman` with the test packages. State (compiled package programs,
 -- the store) is shared between tests and kept between runs, so packages only

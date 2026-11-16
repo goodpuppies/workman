@@ -326,7 +326,7 @@ function typeRenderer(quantified: Set<number>, context: ProjectionContext) {
       }
       case "prim": {
         const primitive: Record<string, string> = {
-          Number: "number",
+          "Real64.Real": "number",
           Bool: "boolean",
           String: "string",
           Void: "undefined",

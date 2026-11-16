@@ -89,7 +89,7 @@ webGpuTest({
   ignore: webGpuUnavailable,
   async fn() {
     const source = `
-      record Uniforms = { color: (Number, Number, Number, Number) };
+      record Uniforms = { color: (Real64.Real, Real64.Real, Real64.Real, Real64.Real) };
       let shade = (uniforms: Uniforms) => {
         (_coord) => {
           @gpu;

@@ -25,7 +25,7 @@ Deno.test("type-debug hides the standard-library environment by default", async 
   const output = await typeDebugFile(main);
 
   assertStringIncludes(output, "note: std env hidden");
-  assertStringIncludes(output, "answer: Number");
+  assertStringIncludes(output, "answer: Real64.Real");
   assertEquals(output.includes("List.map:"), false);
 });
 
@@ -43,5 +43,5 @@ Deno.test("type-debug completes after recoverable delayed FFI diagnostics", asyn
   const output = await typeDebugFile(main);
 
   assertStringIncludes(output, "type-debug: ok");
-  assertStringIncludes(output, "value: Result<Number, Js.Error>!");
+  assertStringIncludes(output, "value: Result<Real64.Real, Js.Error>!");
 });

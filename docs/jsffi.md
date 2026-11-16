@@ -73,11 +73,11 @@ let method = methodOf(Panic("request"));
 ```
 
 Reflected generic class and interface instances retain representable type arguments:
-TypeScript `Box<number>` and `Box<string>` become distinct Workman `Box<Number>` and
+TypeScript `Box<number>` and `Box<string>` become distinct Workman `Box<Real64>` and
 `Box<String>` types. They remain foreign nominal types; their fields and methods are
 resolved through TypeScript at FFI operations. They do not become native Workman records.
 Module type-only imports also retain the constructor's arity, so a type imported as
-`Box` can appear as `Box<Number>` in a checked signature.
+`Box` can appear as `Box<Real64>` in a checked signature.
 
 Concrete generic calls use their inferred argument and callback types to ask
 TypeScript for an instantiated signature. Native tuple callback results can therefore
@@ -161,7 +161,7 @@ Manual typed unsafe imports are also supported:
 
 ```wm
 from js.global("console") import unsafe {
-  log: (String, Number) -> Void
+  log: (String, Real64) -> Void
 } as console;
 ```
 
@@ -190,7 +190,7 @@ every possible JS type. Annotate the parameter with the type the function is abo
 ```wm
 from js.module("@mapbox/vector-tile") import type { VectorTileFeature };
 let firstPoint = (feature: VectorTileFeature) => feature.loadGeometry();
-let show = (x: Number) => x :> .toString;
+let show = (x: Real64) => x :> .toString;
 ```
 
 Here the annotation chooses which function you are writing rather than checking an inferred type;
@@ -528,10 +528,10 @@ A dictionary of mixed values, such as `Record<string, number | string | boolean>
 
 ```wm
 let number = (value: Js.Value) => {
-  let n: Result<Number, Js.Error> = value :> Json.assert;
+  let n: Result<Real64, Js.Error> = value :> Json.assert;
   n
 };
-let topic = Dict.get(properties, "topic") :> Option.map(number);   -- Option<Result<Number, Js.Error>>
+let topic = Dict.get(properties, "topic") :> Option.map(number);   -- Option<Result<Real64, Js.Error>>
 ```
 
 `Json.assert` is currently an unchecked claim: its `Result` rejects only `null` and `undefined`,
@@ -602,7 +602,7 @@ Workman functions are still unary in the ML sense. A callback that looks like mu
 a tuple-shaped Workman argument at the core boundary:
 
 ```wm
-let hexByte = (byte: Number, index, array) => {
+let hexByte = (byte: Real64, index, array) => {
   byte :> .toString(16)
 };
 ```

@@ -104,7 +104,7 @@ Deno.test("frontend-v2 formatting Surface schema classifies the complete grammar
 
 Deno.test("frontend-v2 lowers supported semantics from the generated Surface tree", async () => {
   const sources = [
-    'from "./lib.wm" import { value as alias };\nlet x: Number = alias;',
+    'from "./lib.wm" import { value as alias };\nlet x: Real64.Real = alias;',
     "let sum = 1 + 2 * 3;\nlet pair = (sum, true);",
     'let printer = (x: String) => { print x };\nlet main = () => { printer "ok" };',
     "let record = .{ x = 1, y, ..base };\nlet named = Point{ x = 1 };",
@@ -216,7 +216,7 @@ Deno.test("frontend-v2 parses a long binary chain without matcher stack overflow
     131084,
   ];
   const condition = tags.map((tag) => `value == ${tag}`).join(" || ");
-  const source = `let isTag = (value: Number) => { ${condition} };`;
+  const source = `let isTag = (value: Real64.Real) => { ${condition} };`;
   assertEquals(surfaceParser.parseSurfaceProgram(source).name, "Some");
 });
 
@@ -461,8 +461,8 @@ Deno.test("frontend-v2 marks an unambiguous missing block-declaration semicolon"
 Deno.test("frontend-v2 generated brace annotations repair committed grammar families", async () => {
   for (
     const [source, expected] of [
-      ["record Point = x: Number }", "record Point = { x: Number };"],
-      ["record Point = { x: Number", "record Point = { x: Number };"],
+      ["record Point = x: Real64.Real }", "record Point = { x: Real64.Real };"],
+      ["record Point = { x: Real64.Real", "record Point = { x: Real64.Real };"],
       ['from "./x.wm" import a }', 'from "./x.wm" import { a };'],
       ["let x = JSON answer: 42 };", "let x = JSON{ answer: 42 };"],
       ["let x = JSON { answer: 42;", "let x = JSON{ answer: 42 };"],
@@ -489,14 +489,14 @@ Deno.test("frontend-v2 generated brace annotations repair committed grammar fami
 });
 
 Deno.test("frontend-v2 constructs and canonically renders the type-declaration slice", () => {
-  const source = "type Int_list=Empty|ICons<Number,Int_list>;\n" +
+  const source = "type Int_list=Empty|ICons<Real64.Real,Int_list>;\n" +
     "type List<T>=Nil|Cons<T,List<T>>;\n" +
     "type Ordering=Less|Equal|Greater;\n" +
-    "let rec answer:Number=42;";
-  const expected = "type Int_list = Empty | ICons<Number, Int_list>;\n" +
+    "let rec answer:Real64.Real=42;";
+  const expected = "type Int_list = Empty | ICons<Real64.Real, Int_list>;\n" +
     "type List<T> = Nil | Cons<T, List<T>>;\n" +
     "type Ordering = Less | Equal | Greater;\n" +
-    "let rec answer: Number = 42;";
+    "let rec answer: Real64.Real = 42;";
   const first = surfaceParser.formatSurfaceSource(source);
   assertEquals(first.name, "Some");
   assertEquals(first.a0, expected);
@@ -507,17 +507,17 @@ Deno.test("frontend-v2 constructs and canonically renders the type-declaration s
 
 Deno.test("frontend-v2 formats the coordinated function-type arrow grammar", async () => {
   const source = [
-    "let unary:Number->String=f;",
-    "let tupled:(Number,String)->Bool=f;",
-    "let chained:Number->String->Bool=f;",
-    "let higher:(Number->String)->Bool=f;",
+    "let unary:Real64.Real->String=f;",
+    "let tupled:(Real64.Real,String)->Bool=f;",
+    "let chained:Real64.Real->String->Bool=f;",
+    "let higher:(Real64.Real->String)->Bool=f;",
     "let nullary:Void->Bool=f;",
   ].join("");
   const expected = [
-    "let unary: Number -> String = f;",
-    "let tupled: (Number, String) -> Bool = f;",
-    "let chained: Number -> String -> Bool = f;",
-    "let higher: (Number -> String) -> Bool = f;",
+    "let unary: Real64.Real -> String = f;",
+    "let tupled: (Real64.Real, String) -> Bool = f;",
+    "let chained: Real64.Real -> String -> Bool = f;",
+    "let higher: (Real64.Real -> String) -> Bool = f;",
     "let nullary: Void -> Bool = f;",
   ].join("\n");
 
@@ -549,9 +549,9 @@ Deno.test("frontend-v2 formats the coordinated function-type arrow grammar", asy
 
   for (
     const invalid of [
-      "let bad: (Number) = value;",
-      "let bad: (Number) -> String = value;",
-      "let bad: (Number) => String = value;",
+      "let bad: (Real64.Real) = value;",
+      "let bad: (Real64.Real) -> String = value;",
+      "let bad: (Real64.Real) => String = value;",
     ]
   ) {
     let compilerAccepted = true;
@@ -567,8 +567,8 @@ Deno.test("frontend-v2 formats the coordinated function-type arrow grammar", asy
 });
 
 Deno.test("frontend-v2 preserves and formats postfix type ascriptions", async () => {
-  const source = "let answer=(1+2):Number;";
-  const expected = "let answer = (1 + 2) : Number;";
+  const source = "let answer=(1+2):Real64.Real;";
+  const expected = "let answer = (1 + 2) : Real64.Real;";
   const first = surfaceParser.formatSurfaceSource(source);
   assertEquals(first.name, "Some");
   assertEquals(first.a0, expected);
@@ -579,17 +579,17 @@ Deno.test("frontend-v2 preserves and formats postfix type ascriptions", async ()
 });
 
 Deno.test("frontend-v2 preserves and formats general expression and pattern constraints", async () => {
-  const source = "record Point={x:Number,y:Number};let point=(.{x=1,y=2}:Point);" +
-    "type Option<T>=None|Some<T>;let get=(value:Option<Number>)=>{" +
-    "match(value){(Some(x):Option<Number>)=>{x},None=>{0}}};" +
-    "let (left,(right:Number))=(1,2);let add=((x:Number),y)=>{x+y};";
+  const source = "record Point={x:Real64.Real,y:Real64.Real};let point=(.{x=1,y=2}:Point);" +
+    "type Option<T>=None|Some<T>;let get=(value:Option<Real64.Real>)=>{" +
+    "match(value){(Some(x):Option<Real64.Real>)=>{x},None=>{0}}};" +
+    "let (left,(right:Real64.Real))=(1,2);let add=((x:Real64.Real),y)=>{x+y};";
   const expected = [
-    "record Point = { x: Number, y: Number };",
+    "record Point = { x: Real64.Real, y: Real64.Real };",
     "let point = (.{ x = 1, y = 2 } : Point);",
     "type Option<T> = None | Some<T>;",
-    "let get = (value: Option<Number>) => {",
+    "let get = (value: Option<Real64.Real>) => {",
     "  match(value) {",
-    "    (Some(x) : Option<Number>) => {",
+    "    (Some(x) : Option<Real64.Real>) => {",
     "      x",
     "    },",
     "    None => {",
@@ -597,8 +597,8 @@ Deno.test("frontend-v2 preserves and formats general expression and pattern cons
     "    }",
     "  }",
     "};",
-    "let (left, (right : Number)) = (1, 2);",
-    "let add = ((x : Number), y) => {",
+    "let (left, (right : Real64.Real)) = (1, 2);",
+    "let add = ((x : Real64.Real), y) => {",
     "  x + y",
     "};",
   ].join("\n");

@@ -432,7 +432,7 @@ function unknownArgScore(expected: TypeExpr, candidate: FfiVariant): number {
     if (expected.name === "Js.Object") return 1;
     if (expected.name === "Js.Value") return 2;
   }
-  if (expected.name === "Number" || expected.name === "String" || expected.name === "Bool") {
+  if (expected.name === "Real64.Real" || expected.name === "String" || expected.name === "Bool") {
     return 4;
   }
   return 2;
@@ -446,8 +446,8 @@ function isConcreteForeignName(typeName: string): boolean {
 
 const builtInTypeNames = new Set([
   "Bool",
-  "I32",
-  "Number",
+  "Int32.Int",
+  "Real64.Real",
   "Option",
   "Result",
   "String",
@@ -459,7 +459,7 @@ function literalType(expr: Expr): string | undefined {
   switch (expr.kind) {
     case "Int":
     case "Float":
-      return "Number";
+      return "Real64.Real";
     case "Char":
       return "Char";
     case "String":

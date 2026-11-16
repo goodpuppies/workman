@@ -1,11 +1,11 @@
-record Vec2 = { x: Number, y: Number };
+record Vec2 = { x: Real64, y: Real64 };
 
 let zero = Vec2(0, 0);
 
 // Registering Vec2 as a carrier: `succeed` broadcasts a scalar across the lanes
 // and `map2` combines them componentwise, which is all a lifted operator needs.
 // Vec2 has no `andThen`, so it gets operators without `via` or `Vec2|...|`.
-let succeed = (s: Number) => {
+let succeed = (s: Real64) => {
   Vec2(s, s)
 };
 
@@ -27,14 +27,14 @@ let lengthSq = (v: Vec2) => {
   v.x * v.x + v.y * v.y
 };
 
-let rec sqrtIter = (value: Number, guess: Number, steps: Number) => {
+let rec sqrtIter = (value: Real64, guess: Real64, steps: Real64) => {
   match(steps) {
     0 => { guess },
     _ => { sqrtIter(value, (guess + value / guess) / 2, steps - 1) },
   }
 };
 
-let sqrt = (value: Number) => {
+let sqrt = (value: Real64) => {
   if (value <= 0) {
     0
   } else {
@@ -51,6 +51,6 @@ let normalize = (v: Vec2) => {
   if (len <= 0) { zero } else { Vec2(v.x / len, v.y / len) }
 };
 
-let withinSq = (a: Vec2, b: Vec2, radius: Number) => {
+let withinSq = (a: Vec2, b: Vec2, radius: Real64) => {
   lengthSq(Vec2(a.x - b.x, a.y - b.y)) < radius * radius
 };

@@ -8,7 +8,7 @@ Deno.test("ordinary type inlays cover useful binders and inferred parameters", a
     "let literal = 1;",
     "let identity = (item) => { item };",
     "let increment = (value) => { value + 1 };",
-    "let annotated: Number -> Number = (hidden) => { hidden + 1 };",
+    "let annotated: Real64.Real -> Real64.Real = (hidden) => { hidden + 1 };",
     'let (left, right) = (1, "x");',
   ].join("\n");
   const hints = await semanticInlayHints(
@@ -32,17 +32,17 @@ Deno.test("ordinary type inlays cover useful binders and inferred parameters", a
         category: "result",
       },
       {
-        label: ": Number",
+        label: ": Real64.Real",
         position: { line: 2, character: "let increment = (value".length },
         category: "parameter",
       },
       {
-        label: ": Number",
+        label: ": Real64.Real",
         position: { line: 2, character: "let increment = (value)".length },
         category: "result",
       },
       {
-        label: ": Number",
+        label: ": Real64.Real",
         position: { line: 4, character: "let (left".length },
         category: "binding",
       },
@@ -72,7 +72,7 @@ Deno.test("ordinary type inlays honor the requested range", async () => {
     new Map([[path, source]]),
   );
 
-  assertEquals(hints.map(({ label }) => label), [": Number", ": String"]);
+  assertEquals(hints.map(({ label }) => label), [": Real64.Real", ": String"]);
 });
 
 Deno.test("ordinary type inlays include local let binders", async () => {
@@ -88,9 +88,9 @@ Deno.test("ordinary type inlays include local let binders", async () => {
   assertEquals(
     typeHints.map(({ label, data }) => [label, data.category]),
     [
-      [": Number", "parameter"],
-      [": Number", "result"],
-      [": Number", "binding"],
+      [": Real64.Real", "parameter"],
+      [": Real64.Real", "result"],
+      [": Real64.Real", "binding"],
     ],
   );
   assertEquals(hints[2].position.character, source.indexOf("doubled") + "doubled".length);
@@ -120,7 +120,7 @@ Deno.test("empty mismatched match arm becomes a recovery-only hole without hidin
     { typeHints: true, parameterHints: false, recoveryHoles: true },
   );
 
-  assertEquals(hints.map(({ label }) => label), [": Number", "?", ": 'a", ": 'a"]);
+  assertEquals(hints.map(({ label }) => label), [": Real64.Real", "?", ": 'a", ": 'a"]);
   const hole = hints.find((hint) => hint.label === "?");
   assertEquals(hole?.position.character, source.indexOf("  }") + 2);
   if (!hole || hole.data.kind !== "workman.structural") throw new Error("missing recovery hole");
@@ -131,7 +131,7 @@ Deno.test("empty mismatched match arm becomes a recovery-only hole without hidin
 
 Deno.test("direct function inlays respect authored annotations and empty parameters", async () => {
   const path = "/test/main.wm";
-  const source = "let annotated = (value: Number): Number => { value }; " +
+  const source = "let annotated = (value: Real64.Real): Real64.Real => { value }; " +
     "let empty = () => { 1 };";
   const hints = await semanticInlayHints(
     pathToFileUri(path),
@@ -147,7 +147,7 @@ Deno.test("direct function inlays respect authored annotations and empty paramet
       category: data.category,
     })),
     [{
-      label: ": Number",
+      label: ": Real64.Real",
       position: { line: 0, character: source.indexOf("()") + 2 },
       category: "result",
     }],
@@ -157,7 +157,7 @@ Deno.test("direct function inlays respect authored annotations and empty paramet
 Deno.test("type inlay labels have a hard ASCII ellipsis cutoff and full tooltip", async () => {
   const path = "/test/main.wm";
   const typeName = "ExtraordinarilyLongRecordTypeWhoseNameCannotFitInsideOneInlayLabel";
-  const source = `record ${typeName} = { value: Number }; ` +
+  const source = `record ${typeName} = { value: Real64.Real }; ` +
     `let value = ${typeName}(1);`;
   const hints = await semanticInlayHints(
     pathToFileUri(path),
@@ -210,7 +210,7 @@ Deno.test("parameter-name inlays follow callable identities across imports", asy
 
 Deno.test("parameter-name inlays use record field names", async () => {
   const path = "/test/main.wm";
-  const source = 'record Point = { x: Number, y: String }; let point = Point(1, "here");';
+  const source = 'record Point = { x: Real64.Real, y: String }; let point = Point(1, "here");';
   const hints = await semanticInlayHints(
     pathToFileUri(path),
     fullRange(source),
@@ -239,7 +239,7 @@ Deno.test("parameter-name inlays omit aliases without reliable authored paramete
 Deno.test("record literal inlays name the type after the closing brace", async () => {
   const path = "/test/main.wm";
   const source = [
-    "record Recipe = { version: String, install: Number };",
+    "record Recipe = { version: String, install: Real64.Real };",
     "let recipe = .{",
     '  version = "1.0",',
     "  install = 1",
@@ -273,7 +273,7 @@ Deno.test("record literal inlays name the type after the closing brace", async (
 
 Deno.test("named record literals do not repeat their authored type", async () => {
   const path = "/test/main.wm";
-  const source = "record Recipe = { version: String, install: Number }; " +
+  const source = "record Recipe = { version: String, install: Real64.Real }; " +
     'let recipe = Recipe{ version = "1.0", install = 1 };';
   const hints = await semanticInlayHints(
     pathToFileUri(path),
@@ -313,13 +313,13 @@ Deno.test("type inlays show effect taint and keep it when a label is shortened",
   const labels = hints.filter((hint) => hint.kind === 1 && hint.data.category !== "capture")
     .map((hint) => [hint.position.line, hint.label]);
   assertEquals(labels, [
-    [0, ": Number!"],
-    [1, ": Number!"],
+    [0, ": Real64.Real!"],
+    [1, ": Real64.Real!"],
     [2, ": Void -> 'a"],
     [2, ": 'a"],
-    [3, ": List<Number!>"],
-    [4, ": List<Number!>!"],
-    [5, ": List<(Number, Stri...!"],
+    [3, ": List<Real64.Real!>"],
+    [4, ": List<Real64.Real!>!"],
+    [5, ": List<(Real64.Real,...!"],
   ]);
 });
 
@@ -342,14 +342,14 @@ Deno.test("a bare lambda parameter shows its result after the parameter's own ty
   const labels = hints.filter((hint) => hint.kind === 1 && hint.data.category !== "capture")
     .map((hint) => [hint.position.line, hint.position.character, hint.label]);
   const at = (line: number) => labels.filter((label) => label[0] === line).map((label) => label[2]);
-  assertEquals(at(0), [": Number", "-> Number"]);
+  assertEquals(at(0), [": Real64.Real", "-> Real64.Real"]);
   assertEquals(labels.filter((label) => label[0] === 0).map((label) => label[1]), [
     "let bare = x".length,
     "let bare = x".length,
   ]);
-  assertEquals(at(1), [": Number", "-> Number"]);
+  assertEquals(at(1), [": Real64.Real", "-> Real64.Real"]);
   assertEquals(at(2), [": 'a", "-> 'a"]);
-  assertEquals(at(3).slice(0, 2), [": Number", "-> Number -> Number"]);
-  assertEquals(at(4), [": Number", ": Number"]);
-  assertEquals(at(6).includes("-> Number"), false);
+  assertEquals(at(3).slice(0, 2), [": Real64.Real", "-> Real64.Real -> Rea..."]);
+  assertEquals(at(4), [": Real64.Real", ": Real64.Real"]);
+  assertEquals(at(6).includes("-> Real64.Real"), false);
 });

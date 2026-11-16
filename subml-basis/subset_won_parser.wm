@@ -22,7 +22,7 @@ from "./subset_string.wm" import * as SubsetString;
 
 export from "./subset_option_value.wm" import *;
 
-record Cursor = {input: List<Char>, offset: I32};
+record Cursor = {input: List<Char>, offset: Int32.Int};
 let makeCursor = (input, offset) => { (.{ input = input, offset = offset }: Cursor) };
 
 let via = SubsetResult.via;
@@ -34,7 +34,7 @@ let fail = (cursor: Cursor, message) => {
 let advance = (cursor: Cursor) => {
   match(cursor.input) {
     [] => { cursor },
-    [_, ..rest] => { makeCursor(rest, cursor.offset + (1: I32)) }
+    [_, ..rest] => { makeCursor(rest, cursor.offset + (1: Int32.Int)) }
   }
 };
 
@@ -75,11 +75,11 @@ let rec block = (cursor: Cursor, depth) => {
   match(cursor.input) {
     [] => { fail(cursor, "unterminated block comment") },
     ['/', '*', ..rest] => {
-      block(makeCursor(rest, cursor.offset + (2: I32)), depth + (1: I32))
+      block(makeCursor(rest, cursor.offset + (2: Int32.Int)), depth + (1: Int32.Int))
     },
     ['*', '/', ..rest] => {
-      let next = makeCursor(rest, cursor.offset + (2: I32));
-      if (depth <= (1: I32)) { SubsetResult.Ok(next) } else { block(next, depth - (1: I32)) }
+      let next = makeCursor(rest, cursor.offset + (2: Int32.Int));
+      if (depth <= (1: Int32.Int)) { SubsetResult.Ok(next) } else { block(next, depth - (1: Int32.Int)) }
     },
     _ => { block(advance(cursor), depth) }
   }
@@ -101,7 +101,7 @@ let rec skip = (cursor: Cursor) => {
       skip(next)
     },
     ['/', '*', ..rest] => {
-      match(block(makeCursor(rest, cursor.offset + (2: I32)), (1: I32))) {
+      match(block(makeCursor(rest, cursor.offset + (2: Int32.Int)), (1: Int32.Int))) {
         SubsetResult.Err(e) => { SubsetResult.Err(e) },
         SubsetResult.Ok(next) => { skip(next) }
       }
@@ -141,7 +141,9 @@ let text = (cursor) => {
             }, c != '\t') {
               (true, true) => { true },
               _ => { false }
-            }) { go(makeCursor(rest, cur.offset + (4: I32)), [c, ..acc]) } else { fail(cur, "use literal UTF-8 or the named text escape") }
+            }) {
+              go(makeCursor(rest, cur.offset + (4: Int32.Int)), [c, ..acc])
+            } else { fail(cur, "use literal UTF-8 or the named text escape") }
           },
           None => { fail(cur, "expected two hex digits after \\x") }
         }
@@ -156,7 +158,9 @@ let text = (cursor) => {
           _ => { None }
         };
         match(decoded) {
-          Some(value) => { go(makeCursor(rest, cur.offset + (2: I32)), [value, ..acc]) },
+          Some(value) => {
+            go(makeCursor(rest, cur.offset + (2: Int32.Int)), [value, ..acc])
+          },
           None => { fail(cur, "unknown escape") }
         }
       },
@@ -246,7 +250,9 @@ let blob = (cursor) => {
       },
       [a, b, ..tail] => {
         match(SubsetWonSyntax.hexPair(a, b)) {
-          Some(c) => { go(makeCursor(tail, input.offset + (2: I32)), [c, ..acc]) },
+          Some(c) => {
+            go(makeCursor(tail, input.offset + (2: Int32.Int)), [c, ..acc])
+          },
           None => { fail(input, "hex blob requires pairs of hex digits") }
         }
       },
@@ -288,14 +294,14 @@ let rec value = (cursor, depth) => {
   let parse = via((cur: Cursor) => {
     let sequence = (input) => {
       SubsetResult.map(
-        collect(input, ']', (next, _) => { value(next, depth + (1: I32)) }),
+        collect(input, ']', (next, _) => { value(next, depth + (1: Int32.Int)) }),
         (items, stop) => { (SubsetWonValue.List(items), stop) }
       )
     };
     let fields = (input, close) => {
       let readField = (next, previous) => {
         let readValue = via((name, afterKey) => {
-          let parseValue = via((afterEquals) => { value(afterEquals, depth + (1: I32)) });
+          let parseValue = via((afterEquals) => { value(afterEquals, depth + (1: Int32.Int)) });
           if (SubsetWonSyntax.duplicate(previous, name)) { fail(next, "duplicate field: " ++ name) } else {
             SubsetResult.map(parseValue(expect(afterKey, '=')), (v, stop) => { ((name, v), stop) })
           }
@@ -316,7 +322,7 @@ let rec value = (cursor, depth) => {
         }
       });
       match(input.input) {
-        ['(', .._] => { closeScalar(value(advance(input), depth + (1: I32))) },
+        ['(', .._] => { closeScalar(value(advance(input), depth + (1: Int32.Int))) },
         ['[', .._] => { sequence(advance(input)) },
         ['{', .._] => {
           SubsetResult.map(
@@ -343,7 +349,7 @@ let rec value = (cursor, depth) => {
       let attributes = if (peek(afterName, '<')) { requireAttributes(fields(advance(afterName), '>')) } else { SubsetResult.Ok([], afterName) };
       attachPayload(attributes)
     };
-    if (depth > (128: I32)) { fail(cur, "maximum nesting depth exceeded") } else {
+    if (depth > (128: Int32.Int)) { fail(cur, "maximum nesting depth exceeded") } else {
       match(cur.input) {
         [] => { fail(cur, "expected value") },
         ['"', .._] => {
@@ -378,7 +384,7 @@ let rec value = (cursor, depth) => {
 };
 
 let decode = (source) => {
-  let parse = via((input) => { value(makeCursor(input, (0: I32)), (0: I32)) });
+  let parse = via((input) => { value(makeCursor(input, (0: Int32.Int)), (0: Int32.Int)) });
   let requireEnd = via((parsed, stop) => {
     let finish = via((next: Cursor) => {
       match(next.input) {
@@ -390,6 +396,8 @@ let decode = (source) => {
   });
   requireEnd(parse(SubsetResult.mapErr(
     SubsetString.fromNative(source),
-    (_) => { SubsetWonValue.makeError((0: I32), "expected a byte string") }
+    (_) => {
+      SubsetWonValue.makeError((0: Int32.Int), "expected a byte string")
+    }
   )))
 };

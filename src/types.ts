@@ -130,7 +130,7 @@ export type ProjectionFieldInfo = RecordFieldInfo & {
  * together with top-level `succeed`, `map`, and `map2`. `succeed`'s result type
  * names the carrier and its parameter locates the payload, so a generic carrier
  * (`Result<a, e>`) reports the payload's argument index while a monomorphic one
- * (`Vec2` over `Number`) reports the fixed payload type instead.
+ * (`Vec2` over `Real64.Real`) reports the fixed payload type instead.
  */
 export type CarrierInfo = {
   /** Declaring module, or undefined for the basis carrier reached as a bare value. */
@@ -256,7 +256,7 @@ export const operatorNumericConstraint = (): NumericConstraint => ({
   literals: [],
 });
 
-/** Operators retain their implemented Number/I32 domain in the first literal slice. */
+/** Operators retain their implemented Real64/Int32 domain in the first literal slice. */
 export function freshNumeric(name?: string): Ty {
   const t = fresh(name) as Extract<Ty, { tag: "var" }>;
   markNumeric(t, operatorNumericConstraint());
@@ -334,14 +334,14 @@ function unifyAgainstNumber(
 
 /**
  * Resolve overloaded numeric literals and operators that context left undecided, as SML does
- * at each top-level declaration. Existing WM code therefore keeps its `Number` meaning.
+ * at each top-level declaration. Existing WM code therefore keeps its `Real64.Real` meaning.
  */
 export function defaultNumericVars(): void {
   const pending = pendingNumeric;
   pendingNumeric = [];
   for (const t of pending) {
     const target = prune(t);
-    if (target.tag === "var" && target.numeric) unify(target, NumberTy);
+    if (target.tag === "var" && target.numeric) unify(target, Real64Ty);
   }
 }
 export const freshFfi = (
@@ -393,8 +393,8 @@ export const freshTypeInfo = (name: string, arity: number): TypeInfo => ({
   arity,
 });
 
-export const NumberTy = Object.freeze(prim("Number"));
-export const I32Ty = Object.freeze(prim("I32"));
+export const Real64Ty = Object.freeze(prim("Real64.Real"));
+export const Int32Ty = Object.freeze(prim("Int32.Int"));
 export const BoolTy = Object.freeze(prim("Bool"));
 export const CharTy = Object.freeze(prim("Char"));
 export const StringTy = Object.freeze(prim("String"));
@@ -511,19 +511,19 @@ export function unify(
     }
     return;
   }
-  // A non-numeric type meeting a numeric variable fails exactly as it would against Number,
+  // A non-numeric type meeting a numeric variable fails exactly as it would against Real64.Real,
   // which keeps existing diagnostics; check before binding so the variable stays intact.
   if (
     a.tag === "var" && a.numeric && b.tag !== "var" && b.tag !== "ffi" &&
     !checkNumeric(a.numeric, b)
   ) {
-    unifyAgainstNumber(NumberTy, b, originalA, originalB, onBind, path, onDeferFfi);
+    unifyAgainstNumber(Real64Ty, b, originalA, originalB, onBind, path, onDeferFfi);
   }
   if (
     b.tag === "var" && b.numeric && a.tag !== "var" && a.tag !== "ffi" &&
     !checkNumeric(b.numeric, a)
   ) {
-    unifyAgainstNumber(a, NumberTy, originalA, originalB, onBind, path, onDeferFfi);
+    unifyAgainstNumber(a, Real64Ty, originalA, originalB, onBind, path, onDeferFfi);
   }
   if (a.tag === "var") {
     if (occurs(a.id, b)) throw new Error(`recursive type ${show(a)} ~ ${show(b)}`);
@@ -1313,9 +1313,9 @@ export function typeFromAst(
   }
   if (
     expr.args.length === 0 &&
-    ["Number", "I32", "Bool", "Char", "String", "Void"].includes(expr.name)
+    ["Real64.Real", "Int32.Int", "Bool", "Char", "String", "Void"].includes(info.name)
   ) {
-    return resolved(prim(expr.name));
+    return resolved(prim(info.name));
   }
   const args = expr.args.map((x) => typeFromAst(x, typeEnv, vars, options));
   while (args.length < info.arity) args.push(fresh());

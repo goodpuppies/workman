@@ -3,8 +3,8 @@ import { checkSource, compileLibraryVirtual } from "../src/compiler.ts";
 
 Deno.test("repeated wildcards work in constructor payloads and list match patterns", async () => {
   const source = `
-    type Pair = | Pair<Number, String>;
-    type Item = Operand<Number> | Operator<String>;
+    type Pair = | Pair<Real64.Real, String>;
+    type Item = Operand<Real64.Real> | Operator<String>;
     let pair = match(value) => {
       Pair(_, _) => { 1 },
     };

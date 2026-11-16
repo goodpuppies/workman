@@ -10,7 +10,7 @@ Deno.test("resolved pattern facts preserve all Workman grammar contexts and sema
     new Map([
       [
         "/test/types.wm",
-        `record Pair = { first: Number, second: Bool };
+        `record Pair = { first: Real64.Real, second: Bool };
          type Choice = None | Some<Pair>;`,
       ],
       [
@@ -97,11 +97,11 @@ Deno.test("host patterns over compiler standard-library records retain field evi
     new Map([[
       "/test/main.wm",
       `let get = (.{ via }: Monad.Carrier<
-        Number, Number, Number, Number,
-        Number, Number, Number, Number,
-        Number, Number, Number, Number,
-        Number, Number, Number, Number,
-        Number, Number, Number
+        Real64.Real, Real64.Real, Real64.Real, Real64.Real,
+        Real64.Real, Real64.Real, Real64.Real, Real64.Real,
+        Real64.Real, Real64.Real, Real64.Real, Real64.Real,
+        Real64.Real, Real64.Real, Real64.Real, Real64.Real,
+        Real64.Real, Real64.Real, Real64.Real
       >) => { via };`,
     ]]),
   );

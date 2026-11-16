@@ -1,0 +1,20 @@
+from js.module("./js/float.js") import unsafe {
+  float32Round as primFromReal64: Real64.Real -> Real32.Real,
+  float32Round as primToReal64: Real32.Real -> Real64.Real,
+  float32Add: (Real32.Real, Real32.Real) -> Real32.Real,
+  float32Sub: (Real32.Real, Real32.Real) -> Real32.Real,
+  float32Mul: (Real32.Real, Real32.Real) -> Real32.Real,
+  float32Div: (Real32.Real, Real32.Real) -> Real32.Real,
+  float32Neg: Real32.Real -> Real32.Real
+};
+
+/** The type a bare `Real32` names in annotations (docs/modules.md). */
+type Self = Real32.Real;
+
+let fromReal64 = primFromReal64;
+let toReal64 = primToReal64;
+let add = float32Add;
+let sub = float32Sub;
+let mul = float32Mul;
+let div = float32Div;
+let neg = float32Neg;

@@ -8,26 +8,26 @@ let twoPi = 6.283185307179586;
 
 -- Truncate toward zero (JS `% 1` trick), then correct to a true floor so it
 -- works for negative inputs too.
-let truncate = (x: Number) => {
+let truncate = (x: Real64) => {
   x - (x % 1)
 };
 
-let floorReal = (x: Number) => {
+let floorReal = (x: Real64) => {
   let t = truncate(x);
   if (t > x) { t - 1 } else { t }
 };
 
-let round = (x: Number) => {
+let round = (x: Real64) => {
   floorReal(x + 0.5)
 };
 
 -- Bring any angle into [-pi, pi] where the series is most accurate.
-let reduce = (x: Number) => {
+let reduce = (x: Real64) => {
   x - round(x / twoPi) * twoPi
 };
 
 -- sin(x) = x*(1 - x^2/6 (1 - x^2/20 (1 - x^2/42 (1 - x^2/72 (1 - x^2/110 (1 - x^2/156))))))
-let sinReduced = (x: Number) => {
+let sinReduced = (x: Real64) => {
   let x2 = x * x;
   x * (1 - x2 / 6 *
       (1 - x2 / 20 *
@@ -38,7 +38,7 @@ let sinReduced = (x: Number) => {
 };
 
 -- cos(x) = 1 - x^2/2 (1 - x^2/12 (1 - x^2/30 (1 - x^2/56 (1 - x^2/90 (1 - x^2/132)))))
-let cosReduced = (x: Number) => {
+let cosReduced = (x: Real64) => {
   let x2 = x * x;
   1 - x2 / 2 *
       (1 - x2 / 12 *
@@ -48,10 +48,10 @@ let cosReduced = (x: Number) => {
       (1 - x2 / 132)))))
 };
 
-let sin = (x: Number) => {
+let sin = (x: Real64) => {
   sinReduced(reduce(x))
 };
 
-let cos = (x: Number) => {
+let cos = (x: Real64) => {
   cosReduced(reduce(x))
 };

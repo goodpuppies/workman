@@ -65,7 +65,7 @@ let decodeAsset = (found) => {
     Result.map(textField(found, "browser_download_url"), (url) => {
       let digest = textField(found, "digest") :> Result.getOr("");
       let sha256 = if (UnicodeText.isPrefix(digest, "sha256:") :> Result.getOr(false)) {
-        UnicodeText.extract(digest, (7: I32), None) :> Result.getOr("")
+        UnicodeText.extract(digest, (7: Int32.Int), None) :> Result.getOr("")
       } else { "" };
       ReleaseAsset(name, url, sha256)
     })
@@ -196,7 +196,7 @@ let decodeGitlabTag = (found) => {
 -- Encode the slash-separated project identity in a GitLab API path.
 let projectPath = (project: String) => {
   match(UnicodeText.translate(project, (scalar) => {
-    if (scalar == (47: I32)) { "%2F" } else { scalarText(scalar) }
+    if (scalar == (47: Int32.Int)) { "%2F" } else { scalarText(scalar) }
   })) {
     Ok(path) => { path },
     Err(_) => { Panic("invalid Unicode project path") }

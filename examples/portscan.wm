@@ -12,14 +12,14 @@ from js.global("Deno") import unsafe {
   args: Js.Array<String>,
 };
 from js.global("Deno") import { connect };
-from js.global import unsafe { Number as numberOf: String -> Number };
+from js.global import unsafe { Number as numberOf: String -> Real64 };
 
-type ScanResult = Open<Number> | Closed<Number>;
+type ScanResult = Open<Real64> | Closed<Real64>;
 
 record ScanConfig = {
   host: String,
-  startPort: Number,
-  endPort: Number,
+  startPort: Real64,
+  endPort: Real64,
 };
 
 let toNumber = (text: String) => { Ok(numberOf(text)) };

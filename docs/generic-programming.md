@@ -191,7 +191,7 @@ let with = (.{ succeed, map, andThen }) => {
 The caller supplies the implementation of those operations:
 
 ```wm
-let parsed: Result<List<Number>, String> = Traverse.with Result (
+let parsed: Result<List<Real64>, String> = Traverse.with Result (
   ["1", "2", "3"],
   parseNumber,
 );
@@ -211,7 +211,7 @@ The generic function does not need to name an abstract `F<Value>` type. At each
 use, inference sees a concrete shape:
 
 ```wm
-Result<List<Number>, String>
+Result<List<Real64>, String>
 Task<List<String>, Js.Error>
 ```
 
@@ -445,7 +445,7 @@ of `define` therefore receives fresh method-specific types:
 
 ```text
 LOG : String -> Task<String, String>
-ADD : (Number, Number) -> Task<Number, String>
+ADD : (Real64, Real64) -> Task<Real64, String>
 ```
 
 This is ordinary rank-1 let-polymorphism. It does not make a function parameter
@@ -532,7 +532,7 @@ let resultMap = .{
   run = Result.map,
 };
 
-let numberResult: Result<Number, String> = resultMap.run(
+let numberResult: Result<Real64, String> = resultMap.run(
   Ok(1),
   increment,
 );
@@ -560,7 +560,7 @@ would become fixed to one type.
 ## One limitation to recognize
 
 A function parameter has one type during a call. A single received operation
-cannot be used at both `Number` and `String` if those types do not unify:
+cannot be used at both `Real64` and `String` if those types do not unify:
 
 ```wm
 let consume = (stage) => {

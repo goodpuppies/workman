@@ -19,9 +19,9 @@ Deno.test("compiler frontend modes execute the v2 simple-let subset", async () =
   const packagedV2Result = await checkSource(source, { frontend: "v2" });
   const v2Result = await checkSource(source, { frontend: "v2", frontendV2ModuleUrl });
 
-  expectBinding(defaultResult.env, "x", { type: "Number", vars: 0 });
-  expectBinding(packagedV2Result.env, "x", { type: "Number", vars: 0 });
-  expectBinding(v2Result.env, "x", { type: "Number", vars: 0 });
+  expectBinding(defaultResult.env, "x", { type: "Real64.Real", vars: 0 });
+  expectBinding(packagedV2Result.env, "x", { type: "Real64.Real", vars: 0 });
+  expectBinding(v2Result.env, "x", { type: "Real64.Real", vars: 0 });
   expectBinding(v2Result.env, "ok", { type: "Bool", vars: 0 });
   assertStringIncludes(await compile(source, { frontend: "v2", frontendV2ModuleUrl }), "const x_");
 });
@@ -94,14 +94,14 @@ Deno.test("compiler v2 mode typechecks simple calls", async () => {
 
 Deno.test("compiler v2 treats question marks as contextually typed holes", async () => {
   const frontendV2ModuleUrl = await buildFrontendV2();
-  const source = "let answer: Number = ?;";
+  const source = "let answer: Real64.Real = ?;";
   const result = await checkSource(source, { frontend: "v2", frontendV2ModuleUrl });
 
-  expectBinding(result.env, "answer", { type: "Number", vars: 0 });
+  expectBinding(result.env, "answer", { type: "Real64.Real", vars: 0 });
   assertEquals(await formatFrontendV2Source(source), source);
   assertStringIncludes(
     await compile(source, { frontend: "v2", frontendV2ModuleUrl }),
-    '__wm_fail("TypedHole", "error[type.typed-hole <source>:1:21]: typed hole; expected type: Number',
+    '__wm_fail("TypedHole", "error[type.typed-hole <source>:1:26]: typed hole; expected type: Real64.Real',
   );
 });
 
@@ -115,10 +115,10 @@ Deno.test("compiler v2 mode projects basic arithmetic with precedence", async ()
   ].join("\n");
   const result = await checkSource(source, { frontend: "v2", frontendV2ModuleUrl });
 
-  expectBinding(result.env, "sum", { type: "Number", vars: 0 });
-  expectBinding(result.env, "precedence", { type: "Number", vars: 0 });
-  expectBinding(result.env, "grouped", { type: "Number", vars: 0 });
-  expectBinding(result.env, "negative", { type: "Number", vars: 0 });
+  expectBinding(result.env, "sum", { type: "Real64.Real", vars: 0 });
+  expectBinding(result.env, "precedence", { type: "Real64.Real", vars: 0 });
+  expectBinding(result.env, "grouped", { type: "Real64.Real", vars: 0 });
+  expectBinding(result.env, "negative", { type: "Real64.Real", vars: 0 });
 });
 
 Deno.test("compiler v2 preserves and elaborates mutual type declaration groups", async () => {
@@ -179,7 +179,7 @@ Deno.test("compiler v2 mode typechecks independent bindings after a recovered se
   );
   const result = await checkSource(source, { frontend: "v2", frontendV2ModuleUrl });
 
-  expectBinding(result.env, "x", { type: "Number", vars: 0 });
+  expectBinding(result.env, "x", { type: "Real64.Real", vars: 0 });
   expectBinding(result.env, "ok", { type: "Bool", vars: 0 });
 });
 
@@ -194,7 +194,7 @@ Deno.test("compiler v2 mode resolves imports from virtual source overrides", asy
     { frontend: "v2", frontendV2ModuleUrl },
   );
 
-  expectBinding(results.get("/main.wm")!.env, "x", { type: "Number", vars: 0 });
+  expectBinding(results.get("/main.wm")!.env, "x", { type: "Real64.Real", vars: 0 });
 });
 
 Deno.test("compiler v2 mode resolves imports from disk", async () => {
@@ -208,7 +208,7 @@ Deno.test("compiler v2 mode resolves imports from disk", async () => {
   const analysis = await analyzeFile(main, { frontend: "v2", frontendV2ModuleUrl });
 
   expectBinding(analysis.results.get(moduleId(await Deno.realPath(main)))!.env, "x", {
-    type: "Number",
+    type: "Real64.Real",
     vars: 0,
   });
 });
@@ -238,7 +238,7 @@ Deno.test("compiler v2 mode resolves named import aliases", async () => {
     ]),
   });
 
-  expectBinding(analysis.results.get(moduleId("/main.wm"))!.env, "x", { type: "Number", vars: 0 });
+  expectBinding(analysis.results.get(moduleId("/main.wm"))!.env, "x", { type: "Real64.Real", vars: 0 });
 });
 
 Deno.test("compiler v2 checks named import aliases through a custom artifact", async () => {
@@ -270,7 +270,7 @@ Deno.test("compiler v2 mode typechecks namespace values and tuple expressions", 
   });
 
   expectBinding(analysis.results.get(moduleId("/main.wm"))!.env, "pair", {
-    type: "(Number, Bool)",
+    type: "(Real64.Real, Bool)",
     vars: 0,
   });
 });
@@ -290,7 +290,7 @@ Deno.test("compiler v2 checks namespace tuples through a custom artifact", async
   });
 
   expectBinding(analysis.results.get(moduleId("/main.wm"))!.env, "pair", {
-    type: "(Number, Bool)",
+    type: "(Real64.Real, Bool)",
     vars: 0,
   });
 });
@@ -307,7 +307,7 @@ Deno.test("compiler v2 checks open imports through a custom artifact", async () 
   });
 
   expectBinding(analysis.results.get(moduleId("/main.wm"))!.env, "pair", {
-    type: "(Number, Bool)",
+    type: "(Real64.Real, Bool)",
     vars: 0,
   });
 });
@@ -387,7 +387,7 @@ Deno.test("compiler v2 backports hexadecimal integers and exponent notation", as
     "let hex = 0xDEAD;\nlet negative = -0x2a;\nlet real = 3e-7;\nlet fraction = 3.32E+5;";
   const result = await checkSource(source);
   for (const name of ["hex", "negative", "real", "fraction"]) {
-    expectBinding(result.env, name, { type: "Number", vars: 0 });
+    expectBinding(result.env, name, { type: "Real64.Real", vars: 0 });
   }
   const javaScript = await compile(source);
   assertStringIncludes(javaScript, "57005");

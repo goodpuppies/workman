@@ -1,23 +1,23 @@
 // Raw C pointers. Allocation and release come from the imported C library.
 from js.module("./js/pointer.js") import unsafe {
   cast as primCast: Ptr<a> -> Ptr<b>,
-  offset as primOffset: (Ptr<t>, Number) -> Ptr<t>,
+  offset as primOffset: (Ptr<t>, Real64.Real) -> Ptr<t>,
   equals as primEquals: (Ptr<a>, Ptr<b>) -> Bool,
   // The backing bytes have no signedness; infer the pointee from the C call.
   fromString as primFromString: String -> Ptr<t>,
   fromBytes as primFromBytes: bytes -> Ptr<t>,
-  getPointer as primGetPointer: (Ptr<a>, Number) -> Option<Ptr<b>>,
-  distance as primDistance: (Ptr<a>, Ptr<b>) -> Number,
+  getPointer as primGetPointer: (Ptr<a>, Real64.Real) -> Option<Ptr<b>>,
+  distance as primDistance: (Ptr<a>, Ptr<b>) -> Real64.Real,
   toString as primToString: Ptr<t> -> String,
-  byteLength as primByteLength: String -> Number,
-  readUtf8 as primReadUtf8: (Ptr<t>, Number) -> String,
-  writeUtf8 as primWriteUtf8: (Ptr<t>, Number, String) -> Number,
-  getU8 as primGetU8: (Ptr<t>, Number) -> Number,
-  setU8 as primSetU8: (Ptr<t>, Number, Number) -> Void,
-  getU32 as primGetU32: (Ptr<t>, Number) -> Number,
-  getI32 as primGetI32: (Ptr<t>, Number) -> Number,
-  setU32 as primSetU32: (Ptr<t>, Number, Number) -> Void,
-  setI32 as primSetI32: (Ptr<t>, Number, Number) -> Void,
+  byteLength as primByteLength: String -> Real64.Real,
+  readUtf8 as primReadUtf8: (Ptr<t>, Real64.Real) -> String,
+  writeUtf8 as primWriteUtf8: (Ptr<t>, Real64.Real, String) -> Real64.Real,
+  getU8 as primGetU8: (Ptr<t>, Real64.Real) -> Real64.Real,
+  setU8 as primSetU8: (Ptr<t>, Real64.Real, Real64.Real) -> Void,
+  getU32 as primGetU32: (Ptr<t>, Real64.Real) -> Real64.Real,
+  getI32 as primGetI32: (Ptr<t>, Real64.Real) -> Real64.Real,
+  setU32 as primSetU32: (Ptr<t>, Real64.Real, Real64.Real) -> Void,
+  setI32 as primSetI32: (Ptr<t>, Real64.Real, Real64.Real) -> Void,
 };
 let cast = (pointer) => { primCast(pointer) };
 let offset = primOffset;

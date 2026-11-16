@@ -5,7 +5,7 @@ from "basis/list.wm" import * as Lists;
 from "basis/result.wm" import * as R;
 
 record InlineHint = {
-  insertionId: I32,
+  insertionId: Int32,
   position: Source.Position,
   label: Text.Source,
   paddingLeft: Bool,

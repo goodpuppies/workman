@@ -20,11 +20,11 @@ Deno.test("wide tuple expressions and patterns produce style warnings", async ()
 Deno.test("wide carrier pipes do not produce positional tuple warnings", async () => {
   const result = await checkSource(`
     record Values = {
-      first: Number,
-      second: Number,
-      third: Number,
-      fourth: Number,
-      fifth: Number,
+      first: Real64.Real,
+      second: Real64.Real,
+      third: Real64.Real,
+      fourth: Real64.Real,
+      fifth: Real64.Real,
     };
 
     let values = Result|Ok(1), Ok(2), Ok(3), Ok(4), Ok(5)|

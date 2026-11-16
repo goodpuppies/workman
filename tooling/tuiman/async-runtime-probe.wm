@@ -8,7 +8,7 @@ from "./geometry.wm" import * as Geometry;
 from "./runtime.wm" import * as Runtime;
 
 record ProbeModel = {
-  count: Number,
+  count: Real64,
 };
 
 let update = match(key, model) => {

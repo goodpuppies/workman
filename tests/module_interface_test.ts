@@ -146,7 +146,7 @@ Deno.test("[module update A608] semantic scopes use compiler identities and decl
   );
   assertEquals(semanticScopeAt(main, 0).values.get("print")?.kind, "value");
   assertEquals(String(semanticScopeAt(main, 0).structures.get("Option")), "basis-structure:Option");
-  assertEquals(semanticScopeAt(main, 0).types.has("Number"), true);
+  assertEquals(semanticScopeAt(main, 0).types.has("Bool"), true);
 });
 
 Deno.test("[module update A608] annotation type variables retain declaration-group regions", async () => {
@@ -317,7 +317,7 @@ Deno.test("[module update A608] type uses come from elaborator-resolved type ide
   const analysis = await analyzeVirtual(
     "/test/main.wm",
     new Map([
-      ["/test/lib.wm", "type Box = | Box<Number>;"],
+      ["/test/lib.wm", "type Box = | Box<Real64.Real>;"],
       ["/test/main.wm", source],
     ]),
   );
@@ -365,7 +365,7 @@ Deno.test("[module update A604/A608] qualified type uses preserve repeated alias
   const analysis = await analyzeVirtual(
     "/test/main.wm",
     new Map([
-      ["/test/lib.wm", "record Box = { value: Number };"],
+      ["/test/lib.wm", "record Box = { value: Real64.Real };"],
       ["/test/main.wm", source],
     ]),
   );
@@ -414,7 +414,7 @@ Deno.test("[module update A603/A608] named import source and alias retain every 
   const analysis = await analyzeVirtual(
     "/test/main.wm",
     new Map([
-      ["/test/lib.wm", "type Box = | Box<Number>;"],
+      ["/test/lib.wm", "type Box = | Box<Real64.Real>;"],
       ["/test/main.wm", mainSource],
     ]),
   );
@@ -445,7 +445,7 @@ Deno.test("[module update A603/A608] named import source and alias retain every 
   const constructorAlias = semanticOccurrencesAt(main, aliasOffset).find((item) =>
     item.target.kind === "constructor"
   )!;
-  assertEquals(main.semanticTypes[constructor.inferredType!.id].rendered, "Number -> Box");
+  assertEquals(main.semanticTypes[constructor.inferredType!.id].rendered, "Real64.Real -> Box");
   assertEquals(constructor.inferredType?.generalized, true);
   assertStrictEquals(constructor.inferredType?.id, constructorAlias.inferredType?.id);
   assertEquals(
@@ -498,7 +498,7 @@ Deno.test("[module update A608] named value imports retain declaration and use-s
       },
       {
         role: "reference",
-        type: "Number -> Number",
+        type: "Real64.Real -> Real64.Real",
         generalized: false,
         variables: 0,
       },
@@ -514,7 +514,7 @@ Deno.test("[module update A608] nominal record field identities cross module bou
   const analysis = await analyzeVirtual(
     "/test/main.wm",
     new Map([
-      ["/test/point.wm", "record Point = { x: Number, y: Number };"],
+      ["/test/point.wm", "record Point = { x: Real64.Real, y: Real64.Real };"],
       ["/test/main.wm", mainSource],
     ]),
   );
@@ -552,8 +552,8 @@ Deno.test("[module update A608] nominal record field identities cross module bou
 });
 
 Deno.test("[module update A608] generalized field requirements retain relations without a guessed field identity", async () => {
-  const source = "record Point = { x: Number }; " +
-    "record Offset = { x: Number }; " +
+  const source = "record Point = { x: Real64.Real }; " +
+    "record Offset = { x: Real64.Real }; " +
     "let getX = (value) => { value.x };";
   const analysis = await analyzeVirtual(
     "/test/main.wm",
@@ -608,13 +608,13 @@ Deno.test("[module update A608] occurrences reference immutable semantic type sn
     generalized: false,
     quantifiedVariables: 0,
   });
-  assertEquals(referenceType.rendered, "Number -> Number");
+  assertEquals(referenceType.rendered, "Real64.Real -> Real64.Real");
   assertEquals(Object.isFrozen(main.semanticTypes), true);
   assertEquals(Object.isFrozen(declarationType.shape), true);
 });
 
 Deno.test("[module update A608] typed-node queries cover expressions, patterns, and annotations", async () => {
-  const source = 'let id = (x: t): t => { x }; let pair: (Number, String) = (1, "s"); ' +
+  const source = 'let id = (x: t): t => { x }; let pair: (Real64.Real, String) = (1, "s"); ' +
     "let used = id(1);";
   const analysis = await analyzeVirtual(
     "/test/main.wm",
@@ -622,7 +622,7 @@ Deno.test("[module update A608] typed-node queries cover expressions, patterns, 
   );
   const main = analysis.interfaces.get(moduleId("/test/main.wm"))!;
   const id = semanticTypedNodeAt(main, source.indexOf("id"))!;
-  const annotation = semanticTypedNodesAt(main, source.indexOf("Number"));
+  const annotation = semanticTypedNodesAt(main, source.indexOf("Real64.Real"));
   const number = semanticTypedNodeAt(main, source.indexOf("1"))!;
   const string = semanticTypedNodeAt(main, source.indexOf('"s"'))!;
   const idUse = semanticTypedNodeAt(main, source.lastIndexOf("id"))!;
@@ -648,15 +648,15 @@ Deno.test("[module update A608] typed-node queries cover expressions, patterns, 
       main.semanticTypes[node.type.id].rendered,
     ]),
     [
-      ["type-expression", "Number", "Number"],
-      ["type-expression", "(Number, String)", "(Number, String)"],
+      ["type-expression", "Real64.Real", "Real64.Real"],
+      ["type-expression", "(Real64.Real, String)", "(Real64.Real, String)"],
     ],
   );
-  assertEquals(main.semanticTypes[number.type.id].rendered, "Number");
+  assertEquals(main.semanticTypes[number.type.id].rendered, "Real64.Real");
   assertEquals(main.semanticTypes[string.type.id].rendered, "String");
   assertEquals(id.label, "id");
   assertEquals(idUse.label, "id");
-  assertEquals(main.semanticTypes[idUse.type.id].rendered, "Number -> Number");
+  assertEquals(main.semanticTypes[idUse.type.id].rendered, "Real64.Real -> Real64.Real");
   assertEquals(main.semanticTypes[idUse.generalType!.id].rendered, "t -> t");
   assertEquals(Object.isFrozen(main.typedNodes), true);
   assertEquals(Object.isFrozen(number), true);
@@ -710,14 +710,14 @@ Deno.test("[module update G21] carrier operations expose immutable compiler sema
         carrier: "Result",
         operands: ["wrapped", "pure"],
         error: "'a",
-        payload: "Number",
+        payload: "Real64.Real",
       },
       {
         source: "Ok(4) * Ok(5)",
         carrier: "Result",
         operands: ["wrapped", "wrapped"],
         error: "'b",
-        payload: "Number",
+        payload: "Real64.Real",
       },
     ],
   );
@@ -745,8 +745,8 @@ Deno.test("[module update G21] GPU operations and fragment selections cross the 
     })),
     [
       { identity: "sin", source: "sin(coord)", args: ["'a"], result: "'a" },
-      { identity: "gpu.projection.x", source: "wave.x", args: ["'a"], result: "Number" },
-      { identity: "gpu.projection.y", source: "wave.y", args: ["'a"], result: "Number" },
+      { identity: "gpu.projection.x", source: "wave.x", args: ["'a"], result: "Real64.Real" },
+      { identity: "gpu.projection.y", source: "wave.y", args: ["'a"], result: "Real64.Real" },
     ],
   );
   assertEquals(main.gpuFacts.builtins.map((builtin) => builtin.name), ["sin"]);
@@ -935,14 +935,14 @@ Deno.test("[module update A610] failed declarations contribute no type-variable 
     false,
   );
   const goodValue = semanticTypedNodeAt(main, source.indexOf("1"))!;
-  assertEquals(main.semanticTypes[goodValue.type.id].rendered, "Number");
+  assertEquals(main.semanticTypes[goodValue.type.id].rendered, "Real64.Real");
   assertEquals(semanticTypedNodeAt(main, source.indexOf("String")), undefined);
   assertEquals(semanticTypedNodeAt(main, source.lastIndexOf("u")), undefined);
 });
 
 Deno.test("[module update A610] uncertified JS imports contribute no FFI facts", async () => {
   const source = "let good = 1; let bad: String = 1; " +
-    'from js.global("Math") import unsafe { max: (Number, Number) -> Number };';
+    'from js.global("Math") import unsafe { max: (Real64.Real, Real64.Real) -> Real64.Real };';
   const graph = await loadModuleGraph("/test/main.wm", {
     virtualFs: new Map([["/test/main.wm", source]]),
   });
@@ -1073,7 +1073,7 @@ Deno.test("[module update A611] failed semantic phrases do not block independent
   assertEquals(main.publicEnvironment.valEnv.has("after"), true);
   assertEquals(semanticTypedNodeAt(main, source.indexOf('"two"')), undefined);
   const recoveredValue = semanticTypedNodeAt(main, source.lastIndexOf("2"))!;
-  assertEquals(main.semanticTypes[recoveredValue.type.id].rendered, "Number");
+  assertEquals(main.semanticTypes[recoveredValue.type.id].rendered, "Real64.Real");
 });
 
 Deno.test("[module update A611] dependent and unresolved-import phrases recover independently", async () => {
@@ -1250,7 +1250,7 @@ Deno.test("[module update A608] JS imports use compiler binding identities in sc
         sourceName: "floor",
         localName: "jsfloor",
         fallible: true,
-        type: "Number -> Result<Number, Js.Error>!",
+        type: "Real64.Real -> Result<Real64.Real, Js.Error>!",
       }],
     }],
   );
@@ -1311,7 +1311,7 @@ Deno.test("[module update A608] inferred JS namespace members retain authored FF
 });
 
 Deno.test("[module update A608] lowered JS structures retain authored qualifier identities", async () => {
-  const source = 'from js.global("console") import unsafe { log: Number -> Void } as console; ' +
+  const source = 'from js.global("console") import unsafe { log: Real64.Real -> Void } as console; ' +
     "let main = () => { console.log(1) };";
   const analysis = await analyzeVirtual(
     "/test/main.wm",
@@ -1418,7 +1418,7 @@ function declarationTextRange(source: string, startText: string): { start: numbe
 Deno.test("[module update A608] strict occurrences cover every authored named node", async () => {
   const lib = [
     "record Point<T> = { x: T, y: T };",
-    "type Shape = | Dot<Point<Number>> | Empty;",
+    "type Shape = | Dot<Point<Real64.Real>> | Empty;",
     "let origin = Point(0, 0);",
     "let describe = (shape: Shape) => { match(shape) { Dot(p) => { p.x }, Empty => { 0 } } };",
   ].join(" ");
@@ -1487,7 +1487,7 @@ Deno.test("[module update A608] strict occurrences cover every authored named no
 Deno.test("[module update A608] strict scopes reproduce every reference occurrence", async () => {
   const lib = [
     "record Point<T> = { x: T, y: T };",
-    "type Shape = | Dot<Point<Number>> | Empty;",
+    "type Shape = | Dot<Point<Real64>> | Empty;",
     "let origin = Point(0, 0);",
     "let describe = (shape: Shape) => { match(shape) { Dot(p) => { p.x }, Empty => { 0 } } };",
   ].join(" ");

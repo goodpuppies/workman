@@ -44,7 +44,7 @@ export const C_HOST_TYPES: readonly BasisTypeDescriptor[] = Object.freeze([
           args: [{ kind: "TName", name: "pointee", args: [] }],
         },
       },
-      { name: "size", type: { kind: "TName", name: "Number", args: [] } },
+      { name: "size", type: { kind: "TName", name: "Real64.Real", args: [] } },
     ],
   },
 ]);

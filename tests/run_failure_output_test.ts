@@ -14,7 +14,7 @@ for (const terminal of [true, false]) {
         await Deno.writeTextFile(
           input,
           silent
-            ? 'from js.global("process") import unsafe { exit: Number -> Void }; let main = () => { exit(7) };'
+            ? 'from js.global("process") import unsafe { exit: Real64.Real -> Void }; let main = () => { exit(7) };'
             : 'let main = () => { Panic("retained diagnostic") };',
         );
         // Record writes from the runner to verify ordering across stdout and stderr. The real

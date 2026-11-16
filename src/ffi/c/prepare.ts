@@ -531,7 +531,7 @@ function isNumericField(desc: ExtractedTypeDesc): boolean {
 }
 
 function numberType(node: Decl["node"]): TypeExpr {
-  return { kind: "TName", name: "Number", args: [], node };
+  return { kind: "TName", name: "Real64.Real", args: [], node };
 }
 
 function ptrType(inner: string, node: Decl["node"]): TypeExpr {

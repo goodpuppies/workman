@@ -63,7 +63,7 @@ cross-declaration collision policy. Bare `Lib` in expression position is a synta
 meaning `Lib.carrier`, tried only after ordinary value lookup; it adds no value binding. Bare `Lib`
 in type position likewise means `Lib.Self`, tried only after ordinary type lookup, with any type
 arguments passed on (`Lib<a>` is `Lib.Self<a>`); it adds no type binding. A module opts in by
-declaring `type Self = ...`: if `meters.wm` declares `type Self = Number`, then after
+declaring `type Self = ...`: if `meters.wm` declares `type Self = Real64`, then after
 `from "./meters.wm" import * as Meters` an annotation can say `(x: Meters)`.
 
 ### Library imports
@@ -118,7 +118,7 @@ recorded kernel profile. Standard-basis construction is deterministic and observ
 effect-free.
 
 The [default pervasives](pervasives.md) include data-first list and option functions from
-the shared SubsetML Basis, plus selected WM extras. In particular, bare `length` returns `I32`,
+the shared SubsetML Basis, plus selected WM extras. In particular, bare `length` returns `Int32`,
 both bare folds use element-first callbacks, and bare `concat` flattens lists.
 
 ## Interface artifact

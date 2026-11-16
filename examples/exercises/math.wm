@@ -1,4 +1,4 @@
-type Int_list = Empty | ICons<Number, Int_list>;
+type Int_list = Empty | ICons<Real64, Int_list>;
 type List<T> = Nil | Cons<T, List<T>>;
 
 type Ordering = Less | Equal | Greater;

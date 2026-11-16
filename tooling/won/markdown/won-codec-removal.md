@@ -11,7 +11,7 @@ prerequisite for using WON. See [why WON exists](won-design.md).
 Done alongside the removal:
 
 - Value constructors renamed `Decimal`/`Sequence`/`Fields` to
-  `Number`/`List`/`Record`; the JS accessor `decimal` became `number`.
+  `Real64`/`List`/`Record`; the JS accessor `decimal` became `number`.
 - Number tokens now follow JSON's grammar (`E`, `e+`); commas are whitespace.
 - The repository-level `examples/won-file` and `examples/won-json` were
   deleted during the redesign rather than migrated. `tooling/won/examples/`

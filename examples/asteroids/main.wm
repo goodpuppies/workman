@@ -15,7 +15,7 @@ type AppError =
   | RaylibError<Js.Error>
   | RenderError<Js.Error>;
 
-record Color = { r: Number, g: Number, b: Number, a: Number };
+record Color = { r: Real64, g: Real64, b: Real64, a: Real64 };
 
 let raylibpath = "./libraylib.so";
 let title = "Asteroids - Workman";
@@ -57,11 +57,11 @@ let bit = (b: Bool) => {
   if (b) { 1 } else { 0 }
 };
 
-let eitherDown = (k1: Number, k2: Number) => {
+let eitherDown = (k1: Real64, k2: Real64) => {
   Raylib.IsKeyDown(k1) || Raylib.IsKeyDown(k2)
 };
 
-let axis = (positive: Number, negative: Number, altPositive: Number, altNegative: Number) => {
+let axis = (positive: Real64, negative: Real64, altPositive: Real64, altNegative: Real64) => {
   Result|eitherDown(positive, altPositive), eitherDown(negative, altNegative)|
     :> Result.map((forward, back) => { bit(forward) - bit(back) })
 };

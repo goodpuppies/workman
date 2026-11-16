@@ -258,7 +258,7 @@ type Text = | Lit<String> | Ref<PathRef> | Cat<List<Text>>;
 
 -- archive: a source file, then members to open in turn (["gale.deb", "data.tar.gz"]);
 -- members: paths to take from the innermost archive ([] = all); strip: leading components to drop
-record Unpack = { archive: List<String>, members: List<String>, dest: String, strip: Number };
+record Unpack = { archive: List<String>, members: List<String>, dest: String, strip: Real64 };
 
 type InstallOp =
   | Install<String, String, Mode>   -- source file, destination, mode
@@ -277,7 +277,7 @@ record Package = {
 
 record Checksum = { url: String, sha256: String };
 record Candidate = { version: String, published: String, channel: String, checksums: List<Checksum>, ref: String };
-record Policy = { channel: String, minAgeDays: Number, onlyLatest: Bool, accept: String -> Bool };
+record Policy = { channel: String, minAgeDays: Real64, onlyLatest: Bool, accept: String -> Bool };
 ```
 
 A candidate's `ref` carries whatever else `make` needs to find that version's downloads when the

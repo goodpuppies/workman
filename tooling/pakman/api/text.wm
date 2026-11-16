@@ -10,11 +10,11 @@ let join = ByteString.concatWith;
 
 -- Reject malformed host text rather than interpreting a broken path as no components.
 let pathSegments = (path: String) => {
-  UnicodeText.tokens(path, (scalar) => { scalar == (47: I32) })
+  UnicodeText.tokens(path, (scalar) => { scalar == (47: Int32.Int) })
 };
 
 -- Only used with validated scalars supplied by UnicodeText callbacks.
-let scalarText = (scalar: I32) => {
+let scalarText = (scalar: Int32.Int) => {
   match(UnicodeText.str(scalar)) {
     Ok(text) => { text },
     Err(_) => { Panic("invalid Unicode scalar") }
@@ -23,7 +23,7 @@ let scalarText = (scalar: I32) => {
 
 let shellQuote = (value: String) => {
   match(UnicodeText.translate(value, (scalar) => {
-    if (scalar == (39: I32)) { "'\\''" } else { scalarText(scalar) }
+    if (scalar == (39: Int32.Int)) { "'\\''" } else { scalarText(scalar) }
   })) {
     Ok(escaped) => { "'" ++ escaped ++ "'" },
     Err(_) => { Panic("invalid Unicode shell argument") }
@@ -45,10 +45,10 @@ let before = (left, right) => { match(compare(left, right)) { Order.Less => { tr
 
 -- Store component encoding preserves the previous one-underscore-per-UTF-16-unit policy.
 let packageStoreName = (name: String) => {
-  let safe = (unit: I32) => {
-    (unit >= (65: I32) && unit <= (90: I32)) || (unit >= (97: I32) && unit <= (122: I32))
-      || (unit >= (48: I32) && unit <= (57: I32)) || unit == (46: I32)
-      || unit == (95: I32) || unit == (43: I32) || unit == (45: I32)
+  let safe = (unit: Int32.Int) => {
+    (unit >= (65: Int32.Int) && unit <= (90: Int32.Int)) || (unit >= (97: Int32.Int) && unit <= (122: Int32.Int))
+      || (unit >= (48: Int32.Int) && unit <= (57: Int32.Int)) || unit == (46: Int32.Int)
+      || unit == (95: Int32.Int) || unit == (43: Int32.Int) || unit == (45: Int32.Int)
   };
   match(UnicodeText.explode(name)) {
     Err(_) => { Panic("invalid Unicode store name") },

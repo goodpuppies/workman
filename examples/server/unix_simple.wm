@@ -9,7 +9,7 @@ from c.header("arpa/inet.h") import unsafe { htons };
 from c.header("unistd.h") import unsafe { close };
 
 let cstr = str => Some(str :> Pointer.fromString);
-let size = Word64.fromNumber;
+let size = Word64.fromReal64;
 let httpPayload =
   "HTTP/1.1 200 OK\r\n" ++
   "Content-Type: text/plain\r\n" ++
@@ -20,7 +20,7 @@ let httpPayload =
 let handleClient = (clientSock) => {
   let Some(buffer) = calloc(1, 1024) :> Option.map(Pointer.cast);
   let bytesReceived = recv(clientSock, Some(buffer), 1024, 0);
-  if (Int64.toNumber(bytesReceived) > 0) {
+  if (Int64.toReal64(bytesReceived) > 0) {
     send(clientSock, cstr httpPayload, size(Pointer.byteLength(httpPayload)), 0);
   } else { void };
   free(Some(Pointer.cast(buffer)));
@@ -41,11 +41,11 @@ let serve = (port) => {
   let listenSock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   if (listenSock == -1) { 1 } else {
     let serverAddr = sockaddr_in{
-      sin_family = Word16.fromNumber(I32.toNumber(AF_INET)),
+      sin_family = Word16.fromReal64(Int32.toReal64(AF_INET)),
       sin_port = htons(port),
       sin_addr = { s_addr = INADDR_ANY }
     };
-    let bindResult = bind(listenSock, Some(Pointer.cast(serverAddr.pointer)), Word32.fromNumber(serverAddr.size));
+    let bindResult = bind(listenSock, Some(Pointer.cast(serverAddr.pointer)), Word32.fromReal64(serverAddr.size));
     if (bindResult == -1) {
       close(listenSock);
       1

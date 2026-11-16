@@ -1,6 +1,6 @@
 from js.module("./js/bytes.js") import unsafe {
   readFile as primReadFile: (String, a -> r, String -> r, r) -> task,
-  readSlice as primReadSlice: (String, Number, Number, a -> r, String -> r, r) -> task,
+  readSlice as primReadSlice: (String, Real64.Real, Real64.Real, a -> r, String -> r, r) -> task,
   writeFile as primWriteFile: (String, Word8Vector.Vector, a -> r, String -> r, r) -> task
 };
 
@@ -14,7 +14,7 @@ let readFile: String -> Task<Word8Vector.Vector, Js.Error> = (path) => {
   primReadFile(path, Ok, (message) => { Err(Js.Error(message)) }, Err(Js.Unknown))
 };
 
-let readSlice: (String, Number, Number) -> Task<Word8Vector.Vector, Js.Error> = (path, offset, length) => {
+let readSlice: (String, Real64.Real, Real64.Real) -> Task<Word8Vector.Vector, Js.Error> = (path, offset, length) => {
   primReadSlice(path, offset, length, Ok, (message) => { Err(Js.Error(message)) }, Err(Js.Unknown))
 };
 

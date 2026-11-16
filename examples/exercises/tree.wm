@@ -1,7 +1,7 @@
 from "./math.wm" import *;
 
-type Tree = EmptyT | Node<Number, Tree, Tree>;
-type NumOption = NNone | NSome<Number>;
+type Tree = EmptyT | Node<Real64, Tree, Tree>;
+type NumOption = NNone | NSome<Real64>;
 
 let rec findTree = match(num, tree) => {
   (_, EmptyT) => {NNone},

@@ -185,7 +185,7 @@ Deno.test("fragment selection rejects ordinary and dynamically supplied function
           "/test/main.wm",
           `
           let make = (
-            shader: (Number, Number) -> (Number, Number, Number, Number)
+            shader: (Real64.Real, Real64.Real) -> (Real64.Real, Real64.Real, Real64.Real, Real64.Real)
           ) => {
             Gpu.fragment(shader)
           };

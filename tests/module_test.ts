@@ -10,20 +10,20 @@ Deno.test("imported type constructors and constructors remain available through 
     ["/test/option.wm", "type Option<T> = None | Some<T>; let wrap = (x) => { Some(x) };"],
     [
       "/test/main.wm",
-      'from "./option.wm" import * as Opt; let value: Opt.Option<Number> = Opt.wrap(1); let get = match(value) => { Opt.Some(x) => { x }, Opt.None => { 0 } };',
+      'from "./option.wm" import * as Opt; let value: Opt.Option<Real64.Real> = Opt.wrap(1); let get = match(value) => { Opt.Some(x) => { x }, Opt.None => { 0 } };',
     ],
   ]);
 
   const results = await checkVirtual("/test/main.wm", virtualFs);
   const main = results.get("/test/main.wm");
   if (!main) throw new Error("missing main result");
-  expectBinding(main.env, "get", { type: "Option<Number> -> Number", vars: 0 });
+  expectBinding(main.env, "get", { type: "Option<Real64.Real> -> Real64.Real", vars: 0 });
 });
 
 Deno.test("named import allows a type and constructor to share one local spelling", async () => {
   const virtualFs = new Map<string, string>([
     ["/test/lib.wm", "type Box<T> = | Box<T>;"],
-    ["/test/main.wm", 'from "./lib.wm" import { Box }; let x: Box<Number> = Box(1);'],
+    ["/test/main.wm", 'from "./lib.wm" import { Box }; let x: Box<Real64.Real> = Box(1);'],
   ]);
 
   await checkVirtual("/test/main.wm", virtualFs);
@@ -33,7 +33,7 @@ Deno.test("transitive imports preserve hidden nominal type-name support", async 
   const virtualFs = new Map<string, string>([
     [
       "/test/token.wm",
-      "record Token = { tag: Number }; let token = (tag) => { .{ tag } };",
+      "record Token = { tag: Real64.Real }; let token = (tag) => { .{ tag } };",
     ],
     [
       "/test/lexer.wm",
@@ -56,7 +56,7 @@ Deno.test("block declarations do not undergo module export checks", async () => 
   const virtualFs = new Map<string, string>([
     [
       "/test/token.wm",
-      "record Token = { tag: Number }; let token = (tag) => { .{ tag } };",
+      "record Token = { tag: Real64.Real }; let token = (tag) => { .{ tag } };",
     ],
     [
       "/test/lexer.wm",
@@ -80,7 +80,7 @@ Deno.test("named imports can replace basis option type and constructors together
     ["/test/lib.wm", "type Option<T> = None | Some<T>;"],
     [
       "/test/main.wm",
-      'from "./lib.wm" import { Option, Some, None }; let value: Option<Number> = Some(1); let get = match(value) => { Some(x) => { x }, None => { 0 } };',
+      'from "./lib.wm" import { Option, Some, None }; let value: Option<Real64.Real> = Some(1); let get = match(value) => { Some(x) => { x }, None => { 0 } };',
     ],
   ]);
 
@@ -90,7 +90,7 @@ Deno.test("named imports can replace basis option type and constructors together
 Deno.test("star import without alias opens module members", async () => {
   const virtualFs = new Map<string, string>([
     ["/test/lib.wm", "type Box<T> = | Box<T>; let make = (x) => { Box(x) };"],
-    ["/test/main.wm", 'from "./lib.wm" import *; let x: Box<Number> = make(1); let y = Box(2);'],
+    ["/test/main.wm", 'from "./lib.wm" import *; let x: Box<Real64.Real> = make(1); let y = Box(2);'],
   ]);
 
   await checkVirtual("/test/main.wm", virtualFs);
@@ -112,7 +112,7 @@ Deno.test("later type imports shadow existing local type declarations", async ()
     ["/test/lib.wm", "type Box<T> = T;"],
     [
       "/test/main.wm",
-      'type Box = | LocalBox; from "./lib.wm" import { Box }; let x: Box<Number> = 1;',
+      'type Box = | LocalBox; from "./lib.wm" import { Box }; let x: Box<Real64.Real> = 1;',
     ],
   ]);
 
@@ -240,7 +240,7 @@ Deno.test("only a bare namespace value resolves to its carrier export", async ()
 
 Deno.test("a bare namespace in type position resolves its Self type", async () => {
   const virtualFs = new Map<string, string>([
-    ["/test/meters.wm", "type Self = I32; type Pair<a> = (a, a);"],
+    ["/test/meters.wm", "type Self = Int32.Int; type Pair<a> = (a, a);"],
     ["/test/box.wm", "type Self<a> = | Box<a>;"],
     [
       "/test/main.wm",
@@ -254,14 +254,14 @@ Deno.test("a bare namespace in type position resolves its Self type", async () =
 
   const main = (await checkVirtual("/test/main.wm", virtualFs)).get("/test/main.wm");
   if (!main) throw new Error("missing main result");
-  expectBinding(main.env, "double", { type: "I32 -> I32", vars: 0 });
-  expectBinding(main.env, "explicit", { type: "I32 -> I32", vars: 0 });
+  expectBinding(main.env, "double", { type: "Int32.Int -> Int32.Int", vars: 0 });
+  expectBinding(main.env, "explicit", { type: "Int32.Int -> Int32.Int", vars: 0 });
   expectBinding(main.env, "boxed", { type: "Self<String>", vars: 0 });
 });
 
 Deno.test("a bare namespace in a JS import signature is its Self type, not a JS type", async () => {
   const virtualFs = new Map<string, string>([
-    ["/test/meters.wm", "type Self = Number;"],
+    ["/test/meters.wm", "type Self = Real64.Real;"],
     [
       "/test/main.wm",
       'from "./meters.wm" import * as Meters; ' +
@@ -284,7 +284,7 @@ Deno.test("a bare namespace in a JS import signature is its Self type, not a JS 
 
 Deno.test("a type of the same name wins over a namespace's Self", async () => {
   const virtualFs = new Map<string, string>([
-    ["/test/meters.wm", "type Self = I32;"],
+    ["/test/meters.wm", "type Self = Int32.Int;"],
     [
       "/test/main.wm",
       'from "./meters.wm" import * as Meters; ' +
@@ -404,14 +404,14 @@ Deno.test("named imports keep aliases transparent inside datatype constructor pa
     ],
     [
       "/test/main.wm",
-      'from "./lib.wm" import { Pair, Box, make }; let pair: Pair<Number> = (1, 2); let value: Box<Number> = make(1, 2); let sum = match(value) { Box(left, right) => { left + right } };',
+      'from "./lib.wm" import { Pair, Box, make }; let pair: Pair<Real64.Real> = (1, 2); let value: Box<Real64.Real> = make(1, 2); let sum = match(value) { Box(left, right) => { left + right } };',
     ],
   ]);
 
   const results = await checkVirtual("/test/main.wm", virtualFs);
   const main = results.get("/test/main.wm");
   if (!main) throw new Error("missing main result");
-  expectBinding(main.env, "sum", { type: "Number", vars: 0 });
+  expectBinding(main.env, "sum", { type: "Real64.Real", vars: 0 });
 });
 
 Deno.test("namespace imports keep aliases transparent for datatype exhaustiveness", async () => {
@@ -422,14 +422,14 @@ Deno.test("namespace imports keep aliases transparent for datatype exhaustivenes
     ],
     [
       "/test/main.wm",
-      'from "./lib.wm" import * as Lib; let value: Lib.Box<Number> = Lib.make(1, 2); let sum = match(value) { Lib.Box(left, right) => { left + right } };',
+      'from "./lib.wm" import * as Lib; let value: Lib.Box<Real64.Real> = Lib.make(1, 2); let sum = match(value) { Lib.Box(left, right) => { left + right } };',
     ],
   ]);
 
   const results = await checkVirtual("/test/main.wm", virtualFs);
   const main = results.get("/test/main.wm");
   if (!main) throw new Error("missing main result");
-  expectBinding(main.env, "sum", { type: "Number", vars: 0 });
+  expectBinding(main.env, "sum", { type: "Real64.Real", vars: 0 });
 });
 
 Deno.test("namespace imports keep same-spelled type aliases distinct when their results are nominal", async () => {

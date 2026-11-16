@@ -290,11 +290,11 @@ let byteChars = [
    hundreds of steps (docs/basis.md, "Byte character codes"). */
 let toCode = (c) => {
   let code = SubsetTextHost.charCode(c);
-  if (if (code >= (0: I32)) { code <= (255: I32) } else { false }) { SubsetResult.Ok(code) } else { SubsetResult.Err(NonByteCharacter) }
+  if (if (code >= (0: Int32.Int)) { code <= (255: Int32.Int) } else { false }) { SubsetResult.Ok(code) } else { SubsetResult.Err(NonByteCharacter) }
 };
 
-let fromCode = (code: I32) => {
-  if (if (code >= (0: I32)) { code <= (255: I32) } else { false }) { SubsetResult.Ok(SubsetTextHost.codeChar(code)) } else { SubsetResult.Err(InvalidCode) }
+let fromCode = (code: Int32.Int) => {
+  if (if (code >= (0: Int32.Int)) { code <= (255: Int32.Int) } else { false }) { SubsetResult.Ok(SubsetTextHost.codeChar(code)) } else { SubsetResult.Err(InvalidCode) }
 };
 
 let rec member = (c: Char, chars) => {

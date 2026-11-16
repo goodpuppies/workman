@@ -18,7 +18,7 @@ const frontend = await loadFrontendV2Surface(
 Deno.test("expression operands share syntax across pipes, calls and operators", async () => {
   const operands = [
     "x => x",
-    "(x: Number) => x + 1",
+    "(x: Real64.Real) => x + 1",
     "(Ok(x) => x)",
     "(Ok (x) => x)",
     "(None => 0)",
@@ -64,7 +64,7 @@ Deno.test("expression operands share syntax across pipes, calls and operators", 
 Deno.test("shared operands execute while preserving lambda scope and pipe associativity", async () => {
   const source = `
     record Box<t> = { value: t };
-    type Pair = | Pair<Number, Number>;
+    type Pair = | Pair<Real64.Real, Real64.Real>;
     type Empty = | Empty;
     let identity = x => x;
     let increment = x => x + 1;

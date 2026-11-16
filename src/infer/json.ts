@@ -17,7 +17,7 @@ export function jsonValueTy(typeEnv: TypeEnv): Ty {
 
 export function assertJsonCompatible(type: Ty, typeEnv: TypeEnv, expr: Expr) {
   const t = prune(type);
-  if (t.tag === "prim" && ["Number", "String", "Bool", "Void"].includes(t.name)) return;
+  if (t.tag === "prim" && ["Real64.Real", "String", "Bool", "Void"].includes(t.name)) return;
   if (isJsValueTy(t, typeEnv) || isJsObjectLikeTy(t, typeEnv)) return;
   if (t.tag === "var") return;
   const element = jsArrayElementTy(t, typeEnv);

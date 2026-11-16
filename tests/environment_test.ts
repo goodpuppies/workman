@@ -7,10 +7,10 @@ import {
   projectStaticEnv,
   staticEnv,
 } from "../src/infer/environment.ts";
-import { BoolTy, freshTypeInfo, NumberTy, type Scheme, type TypeInfo } from "../src/types.ts";
+import { BoolTy, freshTypeInfo, Real64Ty, type Scheme, type TypeInfo } from "../src/types.ts";
 
 Deno.test("SML static environment modification is right-biased per namespace", () => {
-  const leftValue: Scheme = { vars: [], type: NumberTy };
+  const leftValue: Scheme = { vars: [], type: Real64Ty };
   const rightValue: Scheme = { vars: [], type: BoolTy };
   const leftType: TypeInfo = { id: 1, name: "shared", arity: 0 };
   const rightType: TypeInfo = { id: 2, name: "shared", arity: 0 };
@@ -38,7 +38,7 @@ Deno.test("SML static environment modification is right-biased per namespace", (
 });
 
 Deno.test("StrEnv recursively contains complete static environments", () => {
-  const member: Scheme = { vars: [], type: NumberTy };
+  const member: Scheme = { vars: [], type: Real64Ty };
   const nested = staticEnv(new Map(), new Map(), new Map([["member", member]]));
   const root = staticEnv(new Map([["Nested", nested]]));
 
@@ -46,7 +46,7 @@ Deno.test("StrEnv recursively contains complete static environments", () => {
 });
 
 Deno.test("[module update T116] named projection preserves namespaces and renames keys only", () => {
-  const scheme: Scheme = { vars: [], type: NumberTy, status: "constructor" };
+  const scheme: Scheme = { vars: [], type: Real64Ty, status: "constructor" };
   const type = freshTypeInfo("Thing", 0);
   const structure = staticEnv(new Map(), new Map(), new Map([["member", scheme]]));
   const source = staticEnv(
@@ -67,7 +67,7 @@ Deno.test("[module update T116] named projection preserves namespaces and rename
 
 Deno.test("[module update G8] basis and local binders use SML environment modification", () => {
   const environment = staticEnv();
-  const first: Scheme = { vars: [], type: NumberTy };
+  const first: Scheme = { vars: [], type: Real64Ty };
   const second: Scheme = { vars: [], type: BoolTy };
   const type = freshTypeInfo("Item", 0);
   const structure = staticEnv();

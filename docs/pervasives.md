@@ -5,19 +5,19 @@ The shared Basis ordering type `Order` and its constructors `Less`, `Equal`, and
 identities defined by `basis/order.wm`, including in patterns:
 
 ```wm
-let rank: Order -> Number = match {
+let rank: Order -> Real64 = match {
   Less => -1,
   Equal => 0,
   Greater => 1
 };
-let result = match(Real.compare(1, 0)) {
+let result = match(Real64.compare(1, 0)) {
   Ok(Greater) => true,
   _ => false
 };
 ```
 
 This follows the SML Basis Library's top-level `order` datatype, using WM names.
-Comparison functions remain qualified or explicitly imported. `Real.compare`
+Comparison functions remain qualified or explicitly imported. `Real64.compare`
 is available through the preloaded `Real` namespace; `compareInt` and `compareReal`
 from `basis/order.wm` require explicit imports. The ordering type and constructors
 are omitted under `-- @no-prelude`, shadow normally, and are not re-exported by
@@ -47,7 +47,7 @@ identity; it is not a wrapper with another calling convention.
 let doubled = map([1, 2, 3], (n) => { n * 2 });
 let selected = filter(doubled, (n) => { n > 2 });
 let flattened = concat([[1, 2], [], [3]]);
-let count: I32 = length(flattened);
+let count: Int32 = length(flattened);
 
 // Both callbacks receive (element, accumulator).
 let left = foldLeft([1, 2, 3], "", (item, acc) => { acc ++ Text.of(item) });
@@ -72,11 +72,11 @@ The character and string functions use the shared Basis's **byte** domain (codes
 
 | Function | Type | Failure |
 | --- | --- | --- |
-| `chr` | `I32 -> Result<Char, Chars.Error>` | `Chars.InvalidCode` outside 0–255 |
-| `ord` | `Char -> Result<I32, Chars.Error>` | `Chars.NonByteCharacter` for a foreign non-byte character |
+| `chr` | `Int32 -> Result<Char, Chars.Error>` | `Chars.InvalidCode` outside 0–255 |
+| `ord` | `Char -> Result<Int32, Chars.Error>` | `Chars.NonByteCharacter` for a foreign non-byte character |
 | `explode` | `String -> Result<List<Char>, Strings.Error>` | `Strings.NonByte(offset)` at the first non-byte element |
 | `implode` | `List<Char> -> Result<String, Strings.Error>` | `Strings.NonByte(offset)` at the first non-byte character |
-| `size` | `String -> Result<I32, Strings.Error>` | Same full byte validation as `explode` |
+| `size` | `String -> Result<Int32, Strings.Error>` | Same full byte validation as `explode` |
 | `str` | `Char -> Result<String, Strings.Error>` | `Strings.NonByte(0)` for a non-byte character |
 
 `Chars` and `Strings` denote explicit import aliases for `basis/char.wm` and
@@ -87,10 +87,10 @@ linear time. These functions do not encode or decode Unicode text.
 ```wm
 let bytes = explode("abc"); // Ok(['a', 'b', 'c'])
 let native = implode(['a', 'b', 'c']); // Ok("abc")
-let count = size("abc"); // Ok(3: I32)
+let count = size("abc"); // Ok(3: Int32)
 let initial = str('a'); // Ok("a")
-let code = ord('a'); // Ok(97: I32)
-let character = chr(97: I32); // Ok('a')
+let code = ord('a'); // Ok(97: Int32)
+let character = chr(97: Int32); // Ok('a')
 ```
 
 `toList: String -> List<String>` is a WM std convenience, also available as
@@ -101,18 +101,18 @@ whole input, including non-byte text such as an emoji or a character above 255.
 Use `explode` when the caller needs the typed error. `std/string.wm` has no direct
 JS FFI; all host access stays behind the shared Basis adapters.
 
-The current rounding helpers return `Result<Number, Basis.Error>`, report NaN as
+The current rounding helpers return `Result<Real64, Basis.Error>`, report NaN as
 `Err(Basis.Domain)`, and panic on infinity. `print` remains available separately
 with its existing generic display and newline behavior.
 
 The older preloaded `List` namespace still contains some transitional std APIs:
-`List.length` returns `Number`, and its `List.foldLeft` callback is accumulator-first.
+`List.length` returns `Real64`, and its `List.foldLeft` callback is accumulator-first.
 The new bare functions use the shared Basis API instead. To name that same owner
 explicitly, import it:
 
 ```wm
 from "basis/list.wm" import * as Lists;
-let count: I32 = Lists.length([1, 2]);
+let count: Int32 = Lists.length([1, 2]);
 ```
 
 Local declarations, parameters and explicit imports shadow pervasive values under

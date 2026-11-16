@@ -47,7 +47,7 @@ export function jsTypedArrayMember(
   return {
     name: "reduce",
     type: fn([
-      fn([accumulator, array.element, name("Number"), array.type], accumulator),
+      fn([accumulator, array.element, name("Real64.Real"), array.type], accumulator),
       accumulator,
     ], accumulator),
   };

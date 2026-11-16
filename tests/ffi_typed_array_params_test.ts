@@ -18,7 +18,7 @@ Deno.test("Atomics helpers retain nominal typed-array parameters through ordinar
     let exchange = (cells) => { ready(cells) };
     let call = (cells: Int32Array) => { exchange(cells) };
   `);
-  expectBinding(result.env, "call", { type: "Int32Array -> Result<Number, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "call", { type: "Int32Array -> Result<Real64.Real, Js.Error>!", vars: 0 });
 });
 
 Deno.test("importers retain RPC exports after several pending FFI declaration boundaries", async () => {

@@ -14,7 +14,7 @@ import { expectBinding } from "./type_helpers.ts";
 
 Deno.test("supports typed JS namespace imports", async () => {
   const result = await checkSource(`
-    from js.global("console") import unsafe { log: (String, Number) -> Void } as console;
+    from js.global("console") import unsafe { log: (String, Real64.Real) -> Void } as console;
     let main = () => {
       console.log("answer", 42)
     };
@@ -25,7 +25,7 @@ Deno.test("supports typed JS namespace imports", async () => {
 
 Deno.test("unsafe primitive imports bypass the conversion runtime", async () => {
   const js = await compile(`
-    from js.global("Math") import unsafe { max: (Number, Number) -> Number };
+    from js.global("Math") import unsafe { max: (Real64.Real, Real64.Real) -> Real64.Real };
     let answer = max(1, 2);
   `);
 
@@ -149,14 +149,14 @@ Deno.test("unsafe manual JS imports may explicitly quantify type variables", asy
       value :> toWire :> fromWire
     };
     let nothing: Void = roundTrip(void);
-    let answer: Number = roundTrip(42);
+    let answer: Real64.Real = roundTrip(42);
   `);
 
   expectBinding(result.env, "erase", { type: "value -> Js.Value!", vars: 1 });
   expectBinding(result.env, "restore", { type: "Js.Value -> value!", vars: 1 });
   expectBinding(result.env, "roundTrip", { type: "'a -> 'b!", vars: 2 });
   expectBinding(result.env, "nothing", { type: "Void!", vars: 0 });
-  expectBinding(result.env, "answer", { type: "Number!", vars: 0 });
+  expectBinding(result.env, "answer", { type: "Real64.Real!", vars: 0 });
 });
 
 Deno.test("supports inferred JS named and namespace imports", async () => {
@@ -168,10 +168,10 @@ Deno.test("supports inferred JS named and namespace imports", async () => {
     let rooted = Math.sqrt(9);
   `);
 
-  expectBinding(result.env, "floor", { type: "Number -> Result<Number, Js.Error>!", vars: 0 });
-  expectBinding(result.env, "bigger", { type: "Result<Number, Js.Error>!", vars: 0 });
-  expectBinding(result.env, "rounded", { type: "Result<Number, Js.Error>!", vars: 0 });
-  expectBinding(result.env, "rooted", { type: "Result<Number, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "floor", { type: "Real64.Real -> Result<Real64.Real, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "bigger", { type: "Result<Real64.Real, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "rounded", { type: "Result<Real64.Real, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "rooted", { type: "Result<Real64.Real, Js.Error>!", vars: 0 });
 });
 
 Deno.test("rejects unknown reflected JS globals instead of using a dynamic namespace", async () => {
@@ -783,11 +783,11 @@ Deno.test("reflects JS namespace functions as values", async () => {
   `);
 
   expectBinding(result.env, "sin", {
-    type: "Result<Number, Js.Error> -> Result<Number, Js.Error>!",
+    type: "Result<Real64.Real, Js.Error> -> Result<Real64.Real, Js.Error>!",
     vars: 0,
   });
   expectBinding(result.env, "wave", {
-    type: "Result<Number, Js.Error>!",
+    type: "Result<Real64.Real, Js.Error>!",
     vars: 0,
   });
 });
@@ -811,8 +811,8 @@ Deno.test("delayed JS binding calls preserve their Result carrier in operators",
   const results = await checkFile(input);
   const result = [...results.values()][0];
   if (!result) throw new Error("missing main result");
-  expectBinding(result.env, "time", { type: "Result<Number, Js.Error>!", vars: 0 });
-  expectBinding(result.env, "scaled", { type: "Result<Number, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "time", { type: "Result<Real64.Real, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "scaled", { type: "Result<Real64.Real, Js.Error>!", vars: 0 });
 });
 
 Deno.test("orders generated receiver imports after local record types", async () => {
@@ -831,7 +831,7 @@ Deno.test("orders generated receiver imports after local record types", async ()
     `
       from js.module("./helper.ts") import * as Helper;
       let title = "colors";
-      record Color = { r: Number };
+      record Color = { r: Real64.Real };
       let made = Helper.H.make();
     `,
   );
@@ -844,12 +844,12 @@ Deno.test("orders built-in receiver imports before an earlier value use", async 
     let textLength = (text) => {
       text :> .length :> Result.getOr(0)
     };
-    record Position = { index: Number };
+    record Position = { index: Real64.Real };
     let measured = textLength("abc");
   `);
 
-  expectBinding(result.env, "textLength", { type: "String -> Number!", vars: 0 });
-  expectBinding(result.env, "measured", { type: "Number!", vars: 0 });
+  expectBinding(result.env, "textLength", { type: "String -> Real64.Real!", vars: 0 });
+  expectBinding(result.env, "measured", { type: "Real64.Real!", vars: 0 });
 });
 
 Deno.test("supports inferred callable root JS globals", async () => {
@@ -936,7 +936,7 @@ Deno.test("maps function-valued JS union parameters as JS values", async () => {
     let timer = setTimeout(() => { void }, 10);
   `);
 
-  expectBinding(result.env, "timer", { type: "Number!", vars: 0 });
+  expectBinding(result.env, "timer", { type: "Real64.Real!", vars: 0 });
 });
 
 Deno.test("maps object-bearing JS union parameters as JS values", async () => {

@@ -1,12 +1,12 @@
 from "./basis.wm" import * as Basis;
 from js.module("./js/byte_vector.js") import unsafe {
-  length as vectorLength: Word8Vector.Vector -> Number,
+  length as vectorLength: Word8Vector.Vector -> Real64.Real,
   sliceFull: Word8Vector.Vector -> Word8VectorSlice.Slice,
-  sliceVector: (Word8Vector.Vector, Number, Number) -> Word8VectorSlice.Slice,
-  sliceSubslice: (Word8VectorSlice.Slice, Number, Number) -> Word8VectorSlice.Slice,
-  sliceBase: Word8VectorSlice.Slice -> (Word8Vector.Vector, Number, Number),
-  sliceLength: Word8VectorSlice.Slice -> Number,
-  sliceSub: (Word8VectorSlice.Slice, Number) -> Word8.Word,
+  sliceVector: (Word8Vector.Vector, Real64.Real, Real64.Real) -> Word8VectorSlice.Slice,
+  sliceSubslice: (Word8VectorSlice.Slice, Real64.Real, Real64.Real) -> Word8VectorSlice.Slice,
+  sliceBase: Word8VectorSlice.Slice -> (Word8Vector.Vector, Real64.Real, Real64.Real),
+  sliceLength: Word8VectorSlice.Slice -> Real64.Real,
+  sliceSub: (Word8VectorSlice.Slice, Real64.Real) -> Word8.Word,
   sliceToVector: Word8VectorSlice.Slice -> Word8Vector.Vector,
   sliceConcatArray: Js.Array<Word8VectorSlice.Slice> -> Word8Vector.Vector,
   newArray: Void -> Js.Array<a>,
@@ -15,7 +15,7 @@ from js.module("./js/byte_vector.js") import unsafe {
 
 let full = sliceFull;
 
-let slice = (vector, start: Number, length: Option<Number>) => {
+let slice = (vector, start: Real64.Real, length: Option<Real64.Real>) => {
   let available = vectorLength(vector);
   let resolved = match(length) {
     Some(count) => { count },
@@ -31,7 +31,7 @@ let slice = (vector, start: Number, length: Option<Number>) => {
   }
 };
 
-let subslice = (bytes, start: Number, length: Option<Number>) => {
+let subslice = (bytes, start: Real64.Real, length: Option<Real64.Real>) => {
   let available = sliceLength(bytes);
   let resolved = match(length) {
     Some(count) => { count },
@@ -53,7 +53,7 @@ let length = sliceLength;
 
 let isEmpty = (bytes) => { sliceLength(bytes) == 0 };
 
-let sub = (bytes, index: Number) => {
+let sub = (bytes, index: Real64.Real) => {
   if (index >= 0 && index % 1 == 0 && index < sliceLength(bytes)) {
     Ok(sliceSub(bytes, index))
   } else {

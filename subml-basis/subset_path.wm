@@ -17,7 +17,7 @@ from "./subset_string.wm" import * as SubsetString;
 
 let dir = (value) => {
   SubsetResult.map(
-    SubsetText.fields(value, (scalar) => { scalar == (47: I32) }),
+    SubsetText.fields(value, (scalar) => { scalar == (47: Int32.Int) }),
     (pieces) => {
       match(SubsetList.reverse(pieces)) {
         [] => { "" },

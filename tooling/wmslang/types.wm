@@ -1,72 +1,72 @@
 record GpuSpanDto = {
-  id: Number,
+  id: Real64,
   path: String,
-  line: Number,
-  col: Number,
-  start: Number,
-  end: Number,
+  line: Real64,
+  col: Real64,
+  start: Real64,
+  end: Real64,
 };
 
 record GpuTypeDto = {
-  id: Number,
+  id: Real64,
   kind: String,
   name: String,
   representation: String,
-  width: Number,
-  items: Js.Array<Number>,
-  params: Js.Array<Number>,
-  result: Number,
+  width: Real64,
+  items: Js.Array<Real64>,
+  params: Js.Array<Real64>,
+  result: Real64,
 };
 
 record GpuBindingDto = {
-  id: Number,
+  id: Real64,
   name: String,
-  typeId: Number,
-  definitionExprId: Number,
-  spanId: Number,
+  typeId: Real64,
+  definitionExprId: Real64,
+  spanId: Real64,
   scope: String,
 };
 
 record GpuParamDto = {
-  bindingId: Number,
+  bindingId: Real64,
   name: String,
-  typeId: Number,
+  typeId: Real64,
 };
 
 record GpuExprDto = {
-  id: Number,
+  id: Real64,
   kind: String,
-  typeId: Number,
-  spanId: Number,
-  bindingId: Number,
+  typeId: Real64,
+  spanId: Real64,
+  bindingId: Real64,
   name: String,
   operator: String,
-  numberValue: Number,
+  numberValue: Real64,
   boolValue: Bool,
-  children: Js.Array<Number>,
+  children: Js.Array<Real64>,
   capability: String,
 };
 
 record GpuRootDto = {
-  regionId: Number,
-  functionId: Number,
-  bindingId: Number,
+  regionId: Real64,
+  functionId: Real64,
+  bindingId: Real64,
 };
 
 record GpuFunctionDto = {
-  id: Number,
-  regionId: Number,
-  bindingId: Number,
+  id: Real64,
+  regionId: Real64,
+  bindingId: Real64,
   name: String,
   params: Js.Array<GpuParamDto>,
-  resultTypeId: Number,
-  bodyExprId: Number,
-  spanId: Number,
+  resultTypeId: Real64,
+  bodyExprId: Real64,
+  spanId: Real64,
   capability: String,
 };
 
 record GpuElaborationInputDto = {
-  schemaVersion: Number,
+  schemaVersion: Real64,
   roots: Js.Array<GpuRootDto>,
   functions: Js.Array<GpuFunctionDto>,
   bindings: Js.Array<GpuBindingDto>,
@@ -76,113 +76,113 @@ record GpuElaborationInputDto = {
 };
 
 record TypedGpuExprDto = {
-  id: Number,
+  id: Real64,
   kind: String,
-  typeId: Number,
-  spanId: Number,
-  bindingId: Number,
+  typeId: Real64,
+  spanId: Real64,
+  bindingId: Real64,
   name: String,
   operator: String,
-  numberValue: Number,
+  numberValue: Real64,
   boolValue: Bool,
-  children: Js.Array<Number>,
+  children: Js.Array<Real64>,
   capability: String,
 };
 
 record TypedGpuFunctionDto = {
-  id: Number,
-  regionId: Number,
-  bindingId: Number,
+  id: Real64,
+  regionId: Real64,
+  bindingId: Real64,
   name: String,
   params: Js.Array<GpuParamDto>,
-  resultTypeId: Number,
-  bodyExprId: Number,
-  spanId: Number,
+  resultTypeId: Real64,
+  bodyExprId: Real64,
+  spanId: Real64,
   capability: String,
 };
 
 record GpuCaptureDto = {
-  regionId: Number,
-  bindingId: Number,
-  typeId: Number,
-  spanId: Number,
+  regionId: Real64,
+  bindingId: Real64,
+  typeId: Real64,
+  spanId: Real64,
   category: String,
 };
 
 record GpuRepresentationFactDto = {
-  typeId: Number,
+  typeId: Real64,
   representation: String,
 };
 
 record GpuSpecializationDto = {
-  id: Number,
-  functionId: Number,
-  bindingId: Number,
+  id: Real64,
+  functionId: Real64,
+  bindingId: Real64,
   name: String,
-  paramTypeIds: Js.Array<Number>,
-  resultTypeId: Number,
+  paramTypeIds: Js.Array<Real64>,
+  resultTypeId: Real64,
   paramRepresentations: Js.Array<String>,
   resultRepresentation: String,
   typeFacts: Js.Array<GpuRepresentationFactDto>,
 };
 
 record GpuRootSpecializationDto = {
-  regionId: Number,
-  specializationId: Number,
+  regionId: Real64,
+  specializationId: Real64,
 };
 
 record GpuSpecializedCallDto = {
-  callerSpecializationId: Number,
-  expressionId: Number,
-  targetSpecializationId: Number,
+  callerSpecializationId: Real64,
+  expressionId: Real64,
+  targetSpecializationId: Real64,
 };
 
 record GpuIrParamDto = {
-  bindingId: Number,
+  bindingId: Real64,
   name: String,
-  typeId: Number,
+  typeId: Real64,
   representation: String,
 };
 
 record GpuIrExprDto = {
-  id: Number,
-  specializationId: Number,
-  sourceExprId: Number,
+  id: Real64,
+  specializationId: Real64,
+  sourceExprId: Real64,
   kind: String,
-  typeId: Number,
+  typeId: Real64,
   representation: String,
-  spanId: Number,
-  bindingId: Number,
+  spanId: Real64,
+  bindingId: Real64,
   name: String,
   operator: String,
-  numberValue: Number,
+  numberValue: Real64,
   boolValue: Bool,
-  children: Js.Array<Number>,
+  children: Js.Array<Real64>,
   capability: String,
   valueKind: String,
-  callTargetSpecializationId: Number,
+  callTargetSpecializationId: Real64,
 };
 
 record GpuIrFunctionDto = {
-  specializationId: Number,
-  functionId: Number,
-  bindingId: Number,
+  specializationId: Real64,
+  functionId: Real64,
+  bindingId: Real64,
   name: String,
   params: Js.Array<GpuIrParamDto>,
-  resultTypeId: Number,
+  resultTypeId: Real64,
   resultRepresentation: String,
-  bodyExprId: Number,
-  spanId: Number,
+  bodyExprId: Real64,
+  spanId: Real64,
 };
 
 record GpuDiagnosticDto = {
   code: String,
   message: String,
-  spanId: Number,
+  spanId: Real64,
 };
 
 record GpuCompilationOutputDto = {
-  schemaVersion: Number,
+  schemaVersion: Real64,
   functions: Js.Array<TypedGpuFunctionDto>,
   captures: Js.Array<GpuCaptureDto>,
   specializations: Js.Array<GpuSpecializationDto>,
@@ -200,141 +200,141 @@ record GpuCompilationOutputDto = {
 -- the slice is brought up atomically.
 
 record GpuSliceSpanDto = {
-  id: Number,
+  id: Real64,
   path: String,
-  line: Number,
-  col: Number,
-  start: Number,
-  end: Number,
+  line: Real64,
+  col: Real64,
+  start: Real64,
+  end: Real64,
 };
 
 record GpuSliceTypeDto = {
-  id: Number,
+  id: Real64,
   kind: String,
-  typeNameId: Number,
-  items: Js.Array<Number>,
-  params: Js.Array<Number>,
-  result: Number,
+  typeNameId: Real64,
+  items: Js.Array<Real64>,
+  params: Js.Array<Real64>,
+  result: Real64,
 };
 
 record GpuSliceShaderTypeDto = {
-  id: Number,
+  id: Real64,
   kind: String,
-  typeNameId: Number,
-  items: Js.Array<Number>,
-  params: Js.Array<Number>,
-  result: Number,
+  typeNameId: Real64,
+  items: Js.Array<Real64>,
+  params: Js.Array<Real64>,
+  result: Real64,
 };
 
 record GpuSliceTypeEvidenceDto = {
-  typeId: Number,
+  typeId: Real64,
   semanticKind: String,
   shaderKind: String,
   reason: String,
 };
 
 record GpuSliceAdtDto = {
-  typeNameId: Number,
+  typeNameId: Real64,
   name: String,
-  constructorIds: Js.Array<Number>,
-  spanId: Number,
+  constructorIds: Js.Array<Real64>,
+  spanId: Real64,
 };
 
 record GpuSliceConstructorDto = {
-  id: Number,
-  typeNameId: Number,
+  id: Real64,
+  typeNameId: Real64,
   name: String,
-  tag: Number,
-  payloadTypeId: Number,
-  spanId: Number,
+  tag: Real64,
+  payloadTypeId: Real64,
+  spanId: Real64,
 };
 
 record GpuSlicePatternDto = {
-  id: Number,
+  id: Real64,
   context: String,
   kind: String,
-  typeId: Number,
-  ownerFunctionId: Number,
-  bindingId: Number,
-  constructorId: Number,
-  children: Js.Array<Number>,
-  spanId: Number,
+  typeId: Real64,
+  ownerFunctionId: Real64,
+  bindingId: Real64,
+  constructorId: Real64,
+  children: Js.Array<Real64>,
+  spanId: Real64,
 };
 
 record GpuSliceParamDto = {
-  id: Number,
-  patternId: Number,
-  typeId: Number,
-  declaredIndex: Number,
-  spanId: Number,
+  id: Real64,
+  patternId: Real64,
+  typeId: Real64,
+  declaredIndex: Real64,
+  spanId: Real64,
 };
 
 record GpuSliceLetDto = {
-  id: Number,
-  patternId: Number,
-  valueExprId: Number,
-  declaredIndex: Number,
-  spanId: Number,
+  id: Real64,
+  patternId: Real64,
+  valueExprId: Real64,
+  declaredIndex: Real64,
+  spanId: Real64,
 };
 
 record GpuSliceMatchArmDto = {
-  id: Number,
-  patternId: Number,
-  bodyExprId: Number,
-  declaredIndex: Number,
-  spanId: Number,
+  id: Real64,
+  patternId: Real64,
+  bodyExprId: Real64,
+  declaredIndex: Real64,
+  spanId: Real64,
 };
 
 record GpuSliceBlockItemDto = {
-  id: Number,
-  blockExprId: Number,
-  declaredIndex: Number,
+  id: Real64,
+  blockExprId: Real64,
+  declaredIndex: Real64,
   kind: String,
-  expressionId: Number,
-  letId: Number,
-  spanId: Number,
+  expressionId: Real64,
+  letId: Real64,
+  spanId: Real64,
 };
 
 record GpuSliceBlockDto = {
-  expressionId: Number,
-  itemIds: Js.Array<Number>,
-  resultExprId: Number,
+  expressionId: Real64,
+  itemIds: Js.Array<Real64>,
+  resultExprId: Real64,
 };
 
 record GpuSliceMatchDto = {
-  expressionId: Number,
-  valueExprId: Number,
-  armIds: Js.Array<Number>,
+  expressionId: Real64,
+  valueExprId: Real64,
+  armIds: Js.Array<Real64>,
 };
 
 record GpuSliceExprDto = {
-  id: Number,
+  id: Real64,
   kind: String,
-  typeId: Number,
-  spanId: Number,
-  ownerFunctionId: Number,
-  bindingId: Number,
-  functionId: Number,
-  constructorId: Number,
+  typeId: Real64,
+  spanId: Real64,
+  ownerFunctionId: Real64,
+  bindingId: Real64,
+  functionId: Real64,
+  constructorId: Real64,
   semanticId: String,
   operatorId: String,
   builtinName: String,
   resourceOperation: String,
-  numberValue: Number,
+  numberValue: Real64,
   numberKind: String,
   boolValue: Bool,
-  index: Number,
-  children: Js.Array<Number>,
+  index: Real64,
+  children: Js.Array<Real64>,
 };
 
 record GpuSliceBuiltinCatalogIdentityDto = {
-  schemaVersion: Number,
+  schemaVersion: Real64,
   slangVersion: String,
   sourceSha256: String,
 };
 
 record GpuSliceBuiltinOverloadDto = {
-  id: Number,
+  id: Real64,
   name: String,
   params: Js.Array<String>,
   result: String,
@@ -347,35 +347,35 @@ record GpuSliceBuiltinCatalogDto = {
 };
 
 record GpuSliceFunctionDto = {
-  id: Number,
-  bindingId: Number,
-  sourceBindingId: Number,
+  id: Real64,
+  bindingId: Real64,
+  sourceBindingId: Real64,
   name: String,
-  typeId: Number,
-  paramIds: Js.Array<Number>,
-  resultTypeId: Number,
-  bodyExprId: Number,
-  recursionGroupId: Number,
-  spanId: Number,
+  typeId: Real64,
+  paramIds: Js.Array<Real64>,
+  resultTypeId: Real64,
+  bodyExprId: Real64,
+  recursionGroupId: Real64,
+  spanId: Real64,
 };
 
 record GpuSliceOccurrenceTypeDto = {
   kind: String,
-  sourceId: Number,
-  typeId: Number,
-  shaderTypeId: Number,
-  spanId: Number,
+  sourceId: Real64,
+  typeId: Real64,
+  shaderTypeId: Real64,
+  spanId: Real64,
   representationEvidence: String,
   representation: String,
 };
 
 record GpuSliceBuiltinSelectionDto = {
-  expressionId: Number,
-  overloadId: Number,
+  expressionId: Real64,
+  overloadId: Real64,
 };
 
 record GpuSliceTypeElaborationOutputDto = {
-  schemaVersion: Number,
+  schemaVersion: Real64,
   shaderTypes: Js.Array<GpuSliceTypeDto>,
   typeEvidence: Js.Array<GpuSliceTypeEvidenceDto>,
   occurrences: Js.Array<GpuSliceOccurrenceTypeDto>,
@@ -383,49 +383,49 @@ record GpuSliceTypeElaborationOutputDto = {
 };
 
 record GpuSliceRootDto = {
-  functionId: Number,
-  selectorSpanId: Number,
-  environmentId: Number,
+  functionId: Real64,
+  selectorSpanId: Real64,
+  environmentId: Real64,
 };
 
 record GpuSliceEnvironmentFieldDto = {
-  id: Number,
-  environmentId: Number,
+  id: Real64,
+  environmentId: Real64,
   name: String,
-  declaredIndex: Number,
+  declaredIndex: Real64,
   kind: String,
-  binding: Number,
-  typeId: Number,
-  spanId: Number,
+  binding: Real64,
+  typeId: Real64,
+  spanId: Real64,
 };
 
 record GpuSliceEnvironmentDto = {
-  id: Number,
-  recordId: Number,
-  typeNameId: Number,
+  id: Real64,
+  recordId: Real64,
+  typeNameId: Real64,
   name: String,
-  bindingId: Number,
-  fieldIds: Js.Array<Number>,
-  spanId: Number,
+  bindingId: Real64,
+  fieldIds: Js.Array<Real64>,
+  spanId: Real64,
 };
 
 record GpuSliceRecursionGroupDto = {
-  id: Number,
-  memberFunctionIds: Js.Array<Number>,
-  spanId: Number,
+  id: Real64,
+  memberFunctionIds: Js.Array<Real64>,
+  spanId: Real64,
 };
 
 record GpuSliceRecursiveReferenceDto = {
-  expressionId: Number,
-  groupId: Number,
-  targetFunctionId: Number,
+  expressionId: Real64,
+  groupId: Real64,
+  targetFunctionId: Real64,
   relation: String,
   invocation: String,
-  spanId: Number,
+  spanId: Real64,
 };
 
 record GpuSliceElaborationInputDto = {
-  schemaVersion: Number,
+  schemaVersion: Real64,
   sourcePath: String,
   builtinCatalog: GpuSliceBuiltinCatalogDto,
   root: GpuSliceRootDto,
@@ -449,75 +449,75 @@ record GpuSliceElaborationInputDto = {
 };
 
 record GpuSliceDiagnosticRelatedDto = {
-  spanId: Number,
+  spanId: Real64,
   label: String,
 };
 
 record GpuSliceDiagnosticDto = {
   code: String,
   message: String,
-  spanId: Number,
+  spanId: Real64,
   related: Js.Array<GpuSliceDiagnosticRelatedDto>,
 };
 
 record GpuSliceIrExprDto = {
-  id: Number,
-  functionId: Number,
-  sourceExprId: Number,
+  id: Real64,
+  functionId: Real64,
+  sourceExprId: Real64,
   kind: String,
-  typeId: Number,
-  spanId: Number,
-  bindingId: Number,
-  patternId: Number,
-  targetFunctionId: Number,
-  constructorId: Number,
+  typeId: Real64,
+  spanId: Real64,
+  bindingId: Real64,
+  patternId: Real64,
+  targetFunctionId: Real64,
+  constructorId: Real64,
   semanticId: String,
   operatorId: String,
   builtinName: String,
-  builtinOverloadId: Number,
+  builtinOverloadId: Real64,
   resourceOperation: String,
-  numberValue: Number,
+  numberValue: Real64,
   numberKind: String,
   boolValue: Bool,
-  index: Number,
-  children: Js.Array<Number>,
-  armIds: Js.Array<Number>,
+  index: Real64,
+  children: Js.Array<Real64>,
+  armIds: Js.Array<Real64>,
 };
 
 record GpuSliceIrMatchArmDto = {
-  id: Number,
-  sourceArmId: Number,
-  patternId: Number,
-  bodyExprId: Number,
-  spanId: Number,
+  id: Real64,
+  sourceArmId: Real64,
+  patternId: Real64,
+  bodyExprId: Real64,
+  spanId: Real64,
 };
 
 record GpuSliceIrFunctionDto = {
-  functionId: Number,
-  bindingId: Number,
+  functionId: Real64,
+  bindingId: Real64,
   name: String,
-  paramIds: Js.Array<Number>,
-  resultTypeId: Number,
-  bodyExprId: Number,
-  recursionGroupId: Number,
-  spanId: Number,
+  paramIds: Js.Array<Real64>,
+  resultTypeId: Real64,
+  bodyExprId: Real64,
+  recursionGroupId: Real64,
+  spanId: Real64,
 };
 
 record GpuSliceAdtLayoutDto = {
-  id: Number,
-  typeId: Number,
-  typeNameId: Number,
-  fieldIds: Js.Array<Number>,
-  spanId: Number,
+  id: Real64,
+  typeId: Real64,
+  typeNameId: Real64,
+  fieldIds: Js.Array<Real64>,
+  spanId: Real64,
 };
 
 record GpuSliceAdtFieldDto = {
-  id: Number,
-  layoutId: Number,
-  constructorId: Number,
-  tag: Number,
-  typeId: Number,
-  spanId: Number,
+  id: Real64,
+  layoutId: Real64,
+  constructorId: Real64,
+  tag: Real64,
+  typeId: Real64,
+  spanId: Real64,
 };
 
 record GpuSliceLoweringSeedDto = {
@@ -526,91 +526,91 @@ record GpuSliceLoweringSeedDto = {
 };
 
 record GpuSliceLoweredLocalDto = {
-  id: Number,
-  functionId: Number,
+  id: Real64,
+  functionId: Real64,
   kind: String,
-  typeId: Number,
-  bindingId: Number,
+  typeId: Real64,
+  bindingId: Real64,
   mutable: Bool,
-  spanId: Number,
+  spanId: Real64,
 };
 
 record GpuSliceLoweredAtomDto = {
-  id: Number,
-  functionId: Number,
+  id: Real64,
+  functionId: Real64,
   kind: String,
-  typeId: Number,
-  sourceExprId: Number,
-  spanId: Number,
-  localId: Number,
-  numberValue: Number,
+  typeId: Real64,
+  sourceExprId: Real64,
+  spanId: Real64,
+  localId: Real64,
+  numberValue: Real64,
   numberKind: String,
   boolValue: Bool,
 };
 
 record GpuSliceLoweredOperationDto = {
-  id: Number,
-  functionId: Number,
+  id: Real64,
+  functionId: Real64,
   kind: String,
-  typeId: Number,
-  sourceExprId: Number,
-  spanId: Number,
-  targetFunctionId: Number,
-  constructorId: Number,
-  layoutId: Number,
-  fieldId: Number,
+  typeId: Real64,
+  sourceExprId: Real64,
+  spanId: Real64,
+  targetFunctionId: Real64,
+  constructorId: Real64,
+  layoutId: Real64,
+  fieldId: Real64,
   operatorId: String,
   semanticId: String,
   builtinName: String,
-  builtinOverloadId: Number,
+  builtinOverloadId: Real64,
   resourceOperation: String,
-  index: Number,
-  args: Js.Array<Number>,
+  index: Real64,
+  args: Js.Array<Real64>,
 };
 
 record GpuSliceLoweredStatementDto = {
-  id: Number,
-  functionId: Number,
+  id: Real64,
+  functionId: Real64,
   kind: String,
-  sourceExprId: Number,
-  spanId: Number,
-  localId: Number,
-  operationId: Number,
-  atomId: Number,
-  conditionAtomId: Number,
-  thenBlockId: Number,
-  elseBlockId: Number,
-  scrutineeAtomId: Number,
-  layoutId: Number,
-  caseIds: Js.Array<Number>,
-  bodyBlockId: Number,
-  targetLocalIds: Js.Array<Number>,
-  valueAtomIds: Js.Array<Number>,
+  sourceExprId: Real64,
+  spanId: Real64,
+  localId: Real64,
+  operationId: Real64,
+  atomId: Real64,
+  conditionAtomId: Real64,
+  thenBlockId: Real64,
+  elseBlockId: Real64,
+  scrutineeAtomId: Real64,
+  layoutId: Real64,
+  caseIds: Js.Array<Real64>,
+  bodyBlockId: Real64,
+  targetLocalIds: Js.Array<Real64>,
+  valueAtomIds: Js.Array<Real64>,
   reason: String,
 };
 
 record GpuSliceLoweredBlockDto = {
-  id: Number,
-  functionId: Number,
-  statementIds: Js.Array<Number>,
+  id: Real64,
+  functionId: Real64,
+  statementIds: Js.Array<Real64>,
 };
 
 record GpuSliceLoweredCaseDto = {
-  id: Number,
-  functionId: Number,
-  constructorId: Number,
-  tag: Number,
-  blockId: Number,
-  spanId: Number,
+  id: Real64,
+  functionId: Real64,
+  constructorId: Real64,
+  tag: Real64,
+  blockId: Real64,
+  spanId: Real64,
 };
 
 record GpuSliceLoweredFunctionDto = {
-  functionId: Number,
-  physicalParamLocalIds: Js.Array<Number>,
-  loopParamLocalIds: Js.Array<Number>,
-  bodyBlockId: Number,
+  functionId: Real64,
+  physicalParamLocalIds: Js.Array<Real64>,
+  loopParamLocalIds: Js.Array<Real64>,
+  bodyBlockId: Real64,
   recursive: Bool,
-  spanId: Number,
+  spanId: Real64,
 };
 
 record GpuSliceLoweredProgramDto = {
@@ -624,7 +624,7 @@ record GpuSliceLoweredProgramDto = {
 };
 
 record GpuSliceCompilationOutputDto = {
-  schemaVersion: Number,
+  schemaVersion: Real64,
   program: GpuSliceElaborationInputDto,
   shaderTypes: Js.Array<GpuSliceTypeDto>,
   typeEvidence: Js.Array<GpuSliceTypeEvidenceDto>,

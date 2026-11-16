@@ -49,7 +49,7 @@ Deno.test("bundled Slang compiles the generated Mandelbrot module to whole-progr
 
 Deno.test("curried environment is reflection-checked and packed into a bound fragment", async () => {
   const source = `
-    record Uniforms = { resolution: (Number, Number), time: Number };
+    record Uniforms = { resolution: (Real64.Real, Real64.Real), time: Real64.Real };
     let shade = (uniforms: Uniforms) => {
       (coord) => {
         @gpu;
@@ -132,7 +132,7 @@ Deno.test("an imported shader factory materializes at a host-module selection", 
       [
         "/test/shader.wm",
         `
-          record Uniforms = { time: Number };
+          record Uniforms = { time: Real64.Real };
           let shade = (uniforms: Uniforms) => {
             (_coord) => { @gpu; (uniforms.time, 0.0, 0.0, 1.0) }
           };
@@ -177,7 +177,7 @@ Deno.test("an imported shader factory materializes at a host-module selection", 
 
 Deno.test("signed integer uniforms are reflected and packed without float coercion", async () => {
   const source = `
-    record Uniforms = { count: Number, offset: (Number, Number) };
+    record Uniforms = { count: Real64.Real, offset: (Real64.Real, Real64.Real) };
     let shade = (uniforms: Uniforms) => {
       (_coord) => {
         @gpu;
@@ -244,7 +244,7 @@ Deno.test("signed integer uniforms are reflected and packed without float coerci
 Deno.test("sampled resources are terminally reflection-checked into artifact layout", async () => {
   const source = `
     record Inputs = {
-      resolution: (Number, Number),
+      resolution: (Real64.Real, Real64.Real),
       previous: Gpu.SampledTexture2D,
       sampler: Gpu.Sampler
     };
@@ -546,7 +546,7 @@ Deno.test("boolean uniforms use a reflected i32 slot and pack host Bool values",
 
 Deno.test("signed integer uniform packing rejects host values outside i32 range", async () => {
   const source = `
-    record Uniforms = { count: Number };
+    record Uniforms = { count: Real64.Real };
     let shade = (uniforms: Uniforms) => {
       (_coord) => {
         @gpu;
@@ -585,7 +585,7 @@ Deno.test("signed integer uniform packing rejects host values outside i32 range"
 Deno.test("artifact identity includes the shader factory and nominal environment schema", async () => {
   const compile = async (path: string, recordName: string, shaderName: string) => {
     const source = `
-      record ${recordName} = { time: Number };
+      record ${recordName} = { time: Real64.Real };
       let ${shaderName} = (uniforms: ${recordName}) => {
         (_coord) => { @gpu; (uniforms.time, 0.0, 0.0, 1.0) }
       };
@@ -662,7 +662,7 @@ Deno.test("materialization attributes backend failures to the selector and shade
 
 Deno.test("materialization attributes normalized/reflected uniform disagreement", async () => {
   const source = `
-    record Uniforms = { time: Number };
+    record Uniforms = { time: Real64.Real };
     let shade = (uniforms: Uniforms) => {
       (_coord) => { @gpu; (uniforms.time, 0.0, 0.0, 1.0) }
     };
@@ -795,7 +795,7 @@ Deno.test("Gpu.slang exposes the reusable callable module without stage wrappers
 
 Deno.test("reusable Slang leaves uniform transport to its adapter", async () => {
   const source = `
-    record Inputs = { gain: Number, enabled: Bool };
+    record Inputs = { gain: Real64.Real, enabled: Bool };
     let shade = (inputs: Inputs) => {
       (coord) => {
         @gpu;
@@ -868,7 +868,7 @@ Deno.test("Gpu.glsl uses Slang to emit an exported reusable callable", async () 
 
 Deno.test("reusable GLSL keeps uniform ABI calls for a library adapter", async () => {
   const source = `
-    record Inputs = { gain: Number, enabled: Bool };
+    record Inputs = { gain: Real64.Real, enabled: Bool };
     let shade = (inputs: Inputs) => {
       (coord) => {
         @gpu;
@@ -975,8 +975,8 @@ Deno.test("Gpu.shaderSource rejects a non-target second argument", async () => {
 
 Deno.test("two reachable ADTs with Bool and tuple payloads compile to one module", async () => {
   const source = `
-    type Hit = Miss | Struck<(Number, Bool)>;
-    type Mode = Flat | Shaded<(Bool, Number)>;
+    type Hit = Miss | Struck<(Real64.Real, Bool)>;
+    type Mode = Flat | Shaded<(Bool, Real64.Real)>;
     let shade = (coord) => {
       @gpu;
       let pickMode = (x) => {
@@ -1030,8 +1030,8 @@ Deno.test("helpers return heterogeneous product tuples for multi-value shader re
 Deno.test("shared helpers with mixed uniform-driven representations retry per call site", async () => {
   const source = `
     record MixUniforms = {
-      count: Number,
-      level: Number
+      count: Real64.Real,
+      level: Real64.Real
     };
     let shade = (uniforms: MixUniforms) => {
       (coord) => {

@@ -238,7 +238,7 @@ Deno.test({
           "/test/winsock-header.wm",
           `
           from c.header("winsock2.h", lib: "ws2_32") import unsafe { htons, AF_INET, SOCK_STREAM };
-          let main = () => { print(htons(Word16.fromNumber(8080))); print(AF_INET); print(SOCK_STREAM); };
+          let main = () => { print(htons(Word16.fromReal64(8080))); print(AF_INET); print(SOCK_STREAM); };
         `,
         ]]),
       );
@@ -301,7 +301,7 @@ Deno.test({
           "/test/winsock.wm",
           `
           from c.lib("ws2_32") import unsafe { htons: Word16.Word -> Word16.Word };
-          let main = () => { print(htons(Word16.fromNumber(0))); };
+          let main = () => { print(htons(Word16.fromReal64(0))); };
         `,
         ]]),
       );

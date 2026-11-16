@@ -45,7 +45,7 @@ for await (const entry of Deno.readDir(join(repository, "std"))) {
     );
   }
 }
-const builtins = new Set([...stdNamespaces, "Js", "Text", "I32", "Gpu", "Foreign"]);
+const builtins = new Set([...stdNamespaces, "Js", "Text", "Int32.Int", "Gpu", "Foreign"]);
 function targetName(target: JsTarget, file: string): string {
   switch (target.kind) {
     case "JsGlobalRoot":

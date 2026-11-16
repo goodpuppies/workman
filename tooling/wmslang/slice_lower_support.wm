@@ -29,12 +29,12 @@ record SliceLowerContext = {
 };
 
 record SliceLowerState = {
-  nextLocalId: Number,
-  nextAtomId: Number,
-  nextOperationId: Number,
-  nextStatementId: Number,
-  nextBlockId: Number,
-  nextCaseId: Number,
+  nextLocalId: Real64,
+  nextAtomId: Real64,
+  nextOperationId: Real64,
+  nextStatementId: Real64,
+  nextBlockId: Real64,
+  nextCaseId: Real64,
   functions: List<GpuSliceLoweredFunctionDto>,
   locals: List<GpuSliceLoweredLocalDto>,
   atoms: List<GpuSliceLoweredAtomDto>,
@@ -44,7 +44,7 @@ record SliceLowerState = {
   cases: List<GpuSliceLoweredCaseDto>,
 };
 
-let numberEqual = (left: Number, right: Number) => {
+let numberEqual = (left: Real64, right: Real64) => {
   !(left < right) && !(left > right)
 };
 
@@ -195,12 +195,12 @@ let pushLocal = (local: GpuSliceLoweredLocalDto, state: SliceLowerState) => {
 };
 
 let freshLocal = (
-  functionId: Number,
+  functionId: Real64,
   kind: String,
-  typeId: Number,
-  bindingId: Number,
+  typeId: Real64,
+  bindingId: Real64,
   mutable: Bool,
-  spanId: Number,
+  spanId: Real64,
   state: SliceLowerState
 ) => {
   let local: GpuSliceLoweredLocalDto = .{
@@ -225,11 +225,11 @@ let pushAtom = (atom: GpuSliceLoweredAtomDto, state: SliceLowerState) => {
 };
 
 let localAtom = (
-  functionId: Number,
-  typeId: Number,
-  sourceExprId: Number,
-  spanId: Number,
-  localId: Number,
+  functionId: Real64,
+  typeId: Real64,
+  sourceExprId: Real64,
+  spanId: Real64,
+  localId: Real64,
   state: SliceLowerState
 ) => {
   let atom: GpuSliceLoweredAtomDto = .{
@@ -312,10 +312,10 @@ let pushStatement = (statement: GpuSliceLoweredStatementDto, state: SliceLowerSt
 };
 
 let baseStatement = (
-  functionId: Number,
+  functionId: Real64,
   kind: String,
-  sourceExprId: Number,
-  spanId: Number,
+  sourceExprId: Real64,
+  spanId: Real64,
   state: SliceLowerState
 ) => {
   let statement: GpuSliceLoweredStatementDto = .{
@@ -342,7 +342,7 @@ let baseStatement = (
 };
 
 let pushBlock = (
-  functionId: Number,
+  functionId: Real64,
   statementIds,
   state: SliceLowerState
 ) => {

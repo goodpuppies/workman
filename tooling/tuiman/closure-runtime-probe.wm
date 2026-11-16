@@ -8,7 +8,7 @@ from "./probe-environment.wm" import * as Probe;
 from "./runtime.wm" import * as Runtime;
 
 record ClosureState = {
-  selected: Number,
+  selected: Real64,
 };
 
 let update = match(count, key, state) => {

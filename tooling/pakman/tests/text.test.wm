@@ -17,7 +17,7 @@ let tests = [
       assertEqual(parseIntOr("1x", 7), 7)
     ])
   }),
-  test("SemVer components are canonical nonnegative I32 with full consumption", () => {
+  test("SemVer components are canonical nonnegative Int32 with full consumption", () => {
     checks([
       assertSome(parse("2147483647.0.0")) :> Task.map((_) => { void }),
       assertEqual(parse("2147483648.0.0"), None),

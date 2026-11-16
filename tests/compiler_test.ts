@@ -12,7 +12,7 @@ Deno.test("parses semicolons at phrase layers", async () => {
   const ast = await parse(`
     from "./std/option.wm" import * as Option;
     from js.global("Math") import { floor };
-    record Point = { x: Number, y: Number };
+    record Point = { x: Real64.Real, y: Real64.Real };
     type Flag = On | Off;
     let f = () => { print("a"); 42 };
     let g = () => { print("a"); };
@@ -214,10 +214,10 @@ Deno.test("Panic acts as an escape hatch in any type context", async () => {
         None => { Panic("Expected a value") },
       }
     };
-    let n: Number = unwrapOrPanic(Some(1));
-    let number = (): Number => { Panic "number" };
+    let n: Real64.Real = unwrapOrPanic(Some(1));
+    let number = (): Real64.Real => { Panic "number" };
     let text = (): String => { Panic "text" };
-    let computed = (detail: String): Number => { Panic ("failed: " ++ detail) };
+    let computed = (detail: String): Real64.Real => { Panic ("failed: " ++ detail) };
   `);
 });
 
@@ -228,7 +228,7 @@ Deno.test("compiled Panic emits runtime Panic failure", async () => {
 
 Deno.test("compiled manual root JS imports target global member names", async () => {
   const js = await compile(`
-    from js.global import unsafe { isFinite: Number -> Bool };
+    from js.global import unsafe { isFinite: Real64.Real -> Bool };
     let ok = isFinite(1);
   `);
 
@@ -299,15 +299,15 @@ Deno.test("inferred match function type reflects constructor payload constraints
       None => { 0 },
     };
   `);
-  expectBinding(result.env, "get", { type: "Option<Number> -> Number", vars: 0 });
+  expectBinding(result.env, "get", { type: "Option<Real64.Real> -> Real64.Real", vars: 0 });
 });
 
 Deno.test("single-item alias declarations are transparent in inferred types", async () => {
   const result = await checkSource(`
-    type MyNumber = Number;
+    type MyNumber = Real64.Real;
     let inc = (x: MyNumber) => { x + 1 };
   `);
-  expectBinding(result.env, "inc", { type: "Number -> Number", vars: 0 });
+  expectBinding(result.env, "inc", { type: "Real64.Real -> Real64.Real", vars: 0 });
 });
 
 Deno.test("rejects duplicate pattern binders", async () => {
@@ -482,22 +482,22 @@ Deno.test("rejects duplicate type parameters and constructors", async () => {
 
 Deno.test("[module update B312/B313] sequential type declarations shadow by namespace", async () => {
   const result = await checkSource(`
-    type Box = Number;
+    type Box = Real64.Real;
     let first: Box = 1;
     type Box = String;
     let second: Box = "two";
     let original = first + 1;
   `);
 
-  expectBinding(result.env, "first", { type: "Number", vars: 0 });
+  expectBinding(result.env, "first", { type: "Real64.Real", vars: 0 });
   expectBinding(result.env, "second", { type: "String", vars: 0 });
-  expectBinding(result.env, "original", { type: "Number", vars: 0 });
+  expectBinding(result.env, "original", { type: "Real64.Real", vars: 0 });
 });
 
 Deno.test("disambiguates alias and variant single-item type bodies", async () => {
-  await checkSource("type MyNumber = Number; let x: MyNumber = 1;");
+  await checkSource("type MyNumber = Real64.Real; let x: MyNumber = 1;");
   await assertRejects(
-    () => checkSource("type MyNumber = Number; let bad = MyNumber;"),
+    () => checkSource("type MyNumber = Real64.Real; let bad = MyNumber;"),
     Error,
     "unknown name MyNumber",
   );
@@ -516,7 +516,7 @@ Deno.test("statement-only blocks infer Void", async () => {
 
 Deno.test("parenthesized expression sequences infer their final result", async () => {
   await checkSource(`
-    let seqnum: Void -> Number = () => (1; 2);
+    let seqnum: Void -> Real64.Real = () => (1; 2);
     let sequnit: Void -> Void = () => (1;);
   `);
 });
@@ -565,7 +565,7 @@ Deno.test("block-local type names do not leak outward", async () => {
 
 Deno.test("supports typed lambda parameters", async () => {
   await checkSource(`
-    let inc = (x: Number) => { x + 1 };
+    let inc = (x: Real64.Real) => { x + 1 };
     let ok = inc(41);
   `);
 });
@@ -605,7 +605,7 @@ Deno.test("lambda return annotations check the inferred body", async () => {
 
 Deno.test("typed lambda parameters reject incompatible calls", async () => {
   await assertRejects(
-    () => checkSource('let inc = (x: Number) => { x + 1 }; let bad = inc("no");'),
+    () => checkSource('let inc = (x: Real64.Real) => { x + 1 }; let bad = inc("no");'),
     Error,
     "type collision",
   );

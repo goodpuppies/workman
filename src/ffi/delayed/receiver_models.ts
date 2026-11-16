@@ -39,7 +39,7 @@ export function jsArrayMember(
 ): JsMemberType | undefined {
   if (path.length !== 1) return undefined;
   const member = path[0];
-  if (member === "length") return { name: member, type: name("Number") };
+  if (member === "length") return { name: member, type: name("Real64.Real") };
   if (member === "join") {
     return {
       name: member,
@@ -53,7 +53,7 @@ export function jsArrayMember(
   if (member === "at") {
     return {
       name: member,
-      type: fn([name("Number")], option(array.element)),
+      type: fn([name("Real64.Real")], option(array.element)),
     };
   }
   if (member === "map") {
@@ -61,7 +61,7 @@ export function jsArrayMember(
     return {
       name: member,
       type: fn(
-        [fn([array.element, name("Number"), array.type], mapped)],
+        [fn([array.element, name("Real64.Real"), array.type], mapped)],
         nameArgs("Js.Array", [mapped]),
       ),
     };
@@ -335,7 +335,7 @@ export function foreignReceiver(
   const target = prune(type);
   if (
     target.tag === "prim" &&
-    (target.name === "String" || target.name === "Number" || target.name === "Bool")
+    (target.name === "String" || target.name === "Real64.Real" || target.name === "Bool")
   ) {
     return {
       ref: jsPrimitiveValueRef(target.name),

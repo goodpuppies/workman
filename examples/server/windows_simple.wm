@@ -10,7 +10,7 @@ let httpPayload =
   "Content-Length: 19\r\n" ++
   "Connection: close\r\n\r\n" ++
   "Hello from workman!";
-let i32 = number => { let Some(value) = I32.fromNumber(number); value };
+let i32 = number => { let Some(value) = Int32.fromReal64(number); value };
 
 // Native receive buffer; unchecked allocation, as in a small C sketch.
 let handleClient = (clientSock) => {

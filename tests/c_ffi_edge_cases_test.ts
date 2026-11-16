@@ -40,13 +40,13 @@ Deno.test({
       from c.header("stdlib.h") import unsafe * as Libc;
       from c.lib("c") import unsafe { llabs as authoredAbs: Int64.Int -> Int64.Int };
       from c.lib("c") import unsafe {
-        strtoull as parse: (Option<Ptr<I32>>, Option<Ptr<I32>>, I32) -> Word64.Word
+        strtoull as parse: (Option<Ptr<Int32.Int>>, Option<Ptr<Int32.Int>>, Int32.Int) -> Word64.Word
       };
       from "host/c/pointer.wm" import * as Pointer;
       let main = () => {
         print(Int64.toString(llabs(-9223372036854775807)));
         print(Libc.llabs(-1) == (1: Int64.Int));
-        print(authoredAbs(Int64.fromNumber(-7)) == (7: Int64.Int));
+        print(authoredAbs(Int64.fromReal64(-7)) == (7: Int64.Int));
         print(strtoull(Some(Pointer.fromString("18446744073709551615")), None, 10));
         print(parse(Some(Pointer.cast(Pointer.fromString("1"))), None, 10) == (1: Word64.Word));
       };
@@ -72,7 +72,7 @@ Deno.test({
         new Map([[
           "/test/main.wm",
           `from c.lib("c") import unsafe { llabs: Int64.Int -> Int64.Int };
-       let main = () => { let value: Number = 7; print(llabs(value)); };`,
+       let main = () => { let value: Real64.Real = 7; print(llabs(value)); };`,
         ]]),
       ), Error);
   },
@@ -90,8 +90,8 @@ Deno.test("C aggregate literals initialize nested structs and unions in zero-fil
     from "host/c/pointer.wm" import * as Pointer;
     let main = () => {
       let nested: CStorage<EdgeNested> = EdgeNested{
-        prefix = Word8.fromNumber(9),
-        inner = { port = Word16.fromNumber(4660), choice = { word = Word32.fromNumber(67305985) } }
+        prefix = Word8.fromReal64(9),
+        inner = { port = Word16.fromReal64(4660), choice = { word = Word32.fromReal64(67305985) } }
       };
       print(nested.size == sizeOfEdgeNested);
       print(getEdgeNested_prefix(nested.pointer));
@@ -99,10 +99,10 @@ Deno.test("C aggregate literals initialize nested structs and unions in zero-fil
       print(Pointer.getU8(nested.pointer, 1));
       print(Pointer.getU8(nested.pointer, offsetOfEdgeNested_inner));
       print(Pointer.getU32(nested.pointer, offsetOfEdgeNested_inner + 4));
-      let choice = EdgeChoice{ word = Word32.fromNumber(42) };
+      let choice = EdgeChoice{ word = Word32.fromReal64(42) };
       let copied = EdgeNested{ inner = { choice = choice } };
       print(Pointer.getU32(copied.pointer, offsetOfEdgeNested_inner + 4));
-      let named = EdgeNested{ inner = { choice = EdgeChoice{ word = Word32.fromNumber(7) } } };
+      let named = EdgeNested{ inner = { choice = EdgeChoice{ word = Word32.fromReal64(7) } } };
       print(Pointer.getU32(named.pointer, offsetOfEdgeNested_inner + 4));
       let empty = EdgeNested{};
       print(getEdgeNested_prefix(empty.pointer));
@@ -110,7 +110,7 @@ Deno.test("C aggregate literals initialize nested structs and unions in zero-fil
       print(getEdgeWide_value(wide.pointer));
       print(Int64.toString(getEdgeWide_signed_value(wide.pointer)));
       {
-        record EdgeNested = { x: Number };
+        record EdgeNested = { x: Real64.Real };
         let ordinary = EdgeNested{ x = 99 };
         print(ordinary.x);
       };
@@ -166,16 +166,16 @@ Deno.test("C integer constants and struct codecs preserve fixed-width word and s
     let main = () => {
       let storage = EdgeIntegers{
         u8 = EDGE_U8, u16 = EDGE_U16, u32 = EDGE_U32,
-        i8 = -128, i16 = -32768, i32 = I32.minimum
+        i8 = -128, i16 = -32768, i32 = Int32.minimum
       };
-      print(Word8.toNumber(getEdgeIntegers_u8(storage.pointer)));
-      print(Word16.toNumber(getEdgeIntegers_u16(storage.pointer)));
-      print(Word32.toNumber(getEdgeIntegers_u32(storage.pointer)));
-      print(I32.toNumber(getEdgeIntegers_i8(storage.pointer)));
-      print(I32.toNumber(getEdgeIntegers_i16(storage.pointer)));
-      print(I32.toNumber(getEdgeIntegers_i32(storage.pointer)));
-      setEdgeIntegers_u16(storage.pointer, Word16.fromNumber(8080));
-      print(Word16.toNumber(getEdgeIntegers_u16(storage.pointer)));
+      print(Word8.toReal64(getEdgeIntegers_u8(storage.pointer)));
+      print(Word16.toReal64(getEdgeIntegers_u16(storage.pointer)));
+      print(Word32.toReal64(getEdgeIntegers_u32(storage.pointer)));
+      print(Int32.toReal64(getEdgeIntegers_i8(storage.pointer)));
+      print(Int32.toReal64(getEdgeIntegers_i16(storage.pointer)));
+      print(Int32.toReal64(getEdgeIntegers_i32(storage.pointer)));
+      setEdgeIntegers_u16(storage.pointer, Word16.fromReal64(8080));
+      print(Word16.toReal64(getEdgeIntegers_u16(storage.pointer)));
     };
   `,
     ]]),
@@ -195,16 +195,16 @@ Deno.test({
         htons: Word16.Word -> Word16.Word, ntohs, htonl, ntohl
       };
       let main = () => {
-        print(Word16.toNumber(ntohs(htons(Word16.fromNumber(65535)))));
-        print(Word32.toNumber(ntohl(htonl(Word32.fromNumber(4294967295)))));
-        print(Word16.toNumber(ntohs(htons(8080))));
+        print(Word16.toReal64(ntohs(htons(Word16.fromReal64(65535)))));
+        print(Word32.toReal64(ntohl(htonl(Word32.fromReal64(4294967295)))));
+        print(Word16.toReal64(ntohs(htons(8080))));
       };
     `,
       ]]),
     );
     assertEquals(output, "65535\n4294967295\n8080\n");
     // Literals select the C parameter's type; already-typed values cannot change width/type.
-    for (const argument of ["number", "Word32.fromNumber(8080)"]) {
+    for (const argument of ["number", "Word32.fromReal64(8080)"]) {
       await assertRejects(() =>
         compileVirtual(
           "/test/main.wm",
@@ -212,7 +212,7 @@ Deno.test({
             "/test/main.wm",
             `
         from c.header("winsock2.h", lib: "ws2_32") import unsafe { htons };
-        let number: Number = 8080;
+        let number: Real64.Real = 8080;
         let main = () => { print(htons(${argument})); };
       `,
           ]]),
@@ -233,7 +233,7 @@ Deno.test("C header wildcard imports expose referenced values and types without 
     from c.header(${header}) import unsafe *;
     from "host/c/pointer.wm" import * as Pointer;
     let main = () => {
-      let value = EdgeNested{ prefix = Word8.fromNumber(9) };
+      let value = EdgeNested{ prefix = Word8.fromReal64(9) };
       print(value.size);
       print(Pointer.getU8(value.pointer, 0));
       print(EXACT_UNSIGNED);
@@ -303,7 +303,7 @@ Deno.test({
       from c.header("winsock2.h", lib: "ws2_32") import unsafe * as Winsock;
       let main = () => {
         let data = Winsock.WSAData{};
-        print(Winsock.WSAStartup(Word16.fromNumber(514), Some(data.pointer)));
+        print(Winsock.WSAStartup(Word16.fromReal64(514), Some(data.pointer)));
         let address = Winsock.sockaddr_in{ sin_family = Winsock.AF_INET };
         print(address.size);
         Winsock.WSACleanup();
@@ -325,7 +325,7 @@ Deno.test("C storage records preserve their fields and pointee type across modul
         "/test/storage.wm",
         `
       from c.header(${header}) import type { EdgeChoice };
-      let create = () => { EdgeChoice{ word = Word32.fromNumber(42) } };
+      let create = () => { EdgeChoice{ word = Word32.fromReal64(42) } };
       let identity = (storage: CStorage<EdgeChoice>) => { storage };
     `,
       ],
@@ -421,7 +421,7 @@ Deno.test("mutable C strings use shared pointers across Workman modules", async 
     new Map([
       [
         "/test/buffer.wm",
-        `from c.header("stdlib.h") import unsafe { malloc }; let create = () => { malloc(Word64.fromNumber(32)) };`,
+        `from c.header("stdlib.h") import unsafe { malloc }; let create = () => { malloc(Word64.fromReal64(32)) };`,
       ],
       [
         "/test/main.wm",
@@ -491,7 +491,7 @@ Deno.test("reflected annotations cannot change the C ABI", async () => {
         new Map([[
           "/test/main.wm",
           `
-    from c.header("stdio.h") import unsafe { puts: Number -> Number };
+    from c.header("stdio.h") import unsafe { puts: Real64.Real -> Real64.Real };
     let main = () => { puts(42); };
   `,
         ]]),
@@ -576,7 +576,7 @@ Deno.test("lowercase opaque C typedefs work in closed annotations without captur
       let Some(memory) = calloc(1, 8);
       let handle: Ptr<edge_handle> = Pointer.cast(memory);
       let boxed = HandleBox{ pointer = handle };
-      let generic: Generic<Number> = Generic{ value = 7 };
+      let generic: Generic<Real64.Real> = Generic{ value = 7 };
       print(Pointer.equals(boxed.pointer, memory));
       print(generic.value);
       free(Some(Pointer.cast(boxed.pointer)));
@@ -640,8 +640,8 @@ Deno.test({
         "/test/main.wm",
         `
       from c.lib("c") import unsafe {
-        getpid: Void -> I32,
-        __errno_location as location: Void -> Option<Ptr<I32>>,
+        getpid: Void -> Int32.Int,
+        __errno_location as location: Void -> Option<Ptr<Int32.Int>>,
       };
       from "host/c/pointer.wm" import * as Pointer;
       let main = () => {
@@ -666,16 +666,16 @@ Deno.test("unary native scalar imports remain callable as higher-order WM functi
       "/test/main.wm",
       `
     from c.lib("c") import unsafe {
-      abs as manualAbs: I32 -> I32,
-      strcmp: (Ptr<I32>, Ptr<I32>) -> I32
+      abs as manualAbs: Int32.Int -> Int32.Int,
+      strcmp: (Ptr<Int32.Int>, Ptr<Int32.Int>) -> Int32.Int
     };
     from "host/c/pointer.wm" import * as Pointer;
     from c.header("stdlib.h", lib: "c") import unsafe * as Lib;
-    let apply = (function: I32 -> I32, value: I32) => { function(value) };
+    let apply = (function: Int32.Int -> Int32.Int, value: Int32.Int) => { function(value) };
     let main = () => {
       print(apply(manualAbs, -17));
       print(apply(Lib.abs, -23));
-      let compare = (function: (Ptr<I32>, Ptr<I32>) -> I32) => {
+      let compare = (function: (Ptr<Int32.Int>, Ptr<Int32.Int>) -> Int32.Int) => {
         function(Pointer.fromString("alpha"), Pointer.fromString("alpha"))
       };
       print(compare(strcmp));
@@ -693,8 +693,8 @@ Deno.test("authored C string results decode according to their declared optional
       "/test/main.wm",
       `
     from c.lib("c") import unsafe {
-      strchr: (String, I32) -> String,
-      strrchr: (String, I32) -> Option<String>
+      strchr: (String, Int32.Int) -> String,
+      strrchr: (String, Int32.Int) -> Option<String>
     };
     let main = () => {
       print(strchr("alpha", 112) ++ "!");

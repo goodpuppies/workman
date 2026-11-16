@@ -3,8 +3,8 @@ from js.module("node:buffer") import { Buffer };
 from js.global("Uint8Array") import * as Uint8Array;
 
 record Header = {
-  width: Number,
-  height: Number,
+  width: Real64,
+  height: Real64,
 };
 
 record Decoded = {

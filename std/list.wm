@@ -3,7 +3,7 @@ from "basis/order.wm" import { Less, Equal, Greater };
 from "basis/list.wm" import * as SubsetList;
 
 // Functions that behave the same as the SubsetML Basis's come from SubsetList, which is
-// tail-recursive throughout. length (I32 there), foldLeft (whose callback takes the accumulator
+// tail-recursive throughout. length (Int32.Int there), foldLeft (whose callback takes the accumulator
 // second there) and the forgiving at/take/drop keep WM's own definitions.
 
 let map = SubsetList.map;
@@ -162,7 +162,7 @@ let rec findMap = match(items, f) => {
 
 let partition = SubsetList.partition;
 
-let tabulate = (count: Number, f) => {
+let tabulate = (count: Real64.Real, f) => {
   if (count < 0 || count % 1 != 0) {
     Panic("Size: List.tabulate count must be a non-negative integer")
   } else {

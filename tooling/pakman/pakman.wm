@@ -87,7 +87,7 @@ let lookup = (p) => { (name) => { Packages.load(p, name) } };
 
 -- "zig@0.14.1" -> ("zig", Some("0.14.1")); "zig" -> ("zig", None)
 let splitRequest = (arg) => {
-  match(UnicodeText.fields(arg, (scalar) => { scalar == (64: I32) })) {
+  match(UnicodeText.fields(arg, (scalar) => { scalar == (64: Int32) })) {
     Ok([name, ..rest]) => {
       if (name != "" && rest != []) { (name, Some(join(rest, "@"))) } else { (arg, None) }
     },
@@ -316,7 +316,7 @@ let update = (p, root) => {
 
 let scopeLabel = (info: Packages.PackageInfo) => { match(info.scope) { System => { "system" }, User => { "user" } } };
 
-let pad = (text, width) => { StringCvt.padTextRight(text, width, (32: I32)) :> Result.getOr(text) };
+let pad = (text, width) => { StringCvt.padTextRight(text, width, (32: Int32)) :> Result.getOr(text) };
 
 -- What upstream offers, newest first, marked with what's locked and what an
 -- automatic resolve would pick.
@@ -335,7 +335,7 @@ let listVersions = (p, info: Packages.PackageInfo) => {
         if (List.length(c.checksums) > 0) { [] } else { ["no upstream checksum"] }
       ]);
       let marker = if (c.version == lockedVersion) { "* " } else { "  " };
-      marker ++ pad(c.version, (32: I32)) ++ pad(c.channel, (9: I32)) ++ pad(UnicodeText.substring(c.published, (0: I32), (10: I32)) :> Result.getOr(c.published), (12: I32))
+      marker ++ pad(c.version, (32: Int32)) ++ pad(c.channel, (9: Int32)) ++ pad(UnicodeText.substring(c.published, (0: Int32), (10: Int32)) :> Result.getOr(c.published), (12: Int32))
         ++ join(notes, ", ")
     };
     -- An onlyLatest package holding a build upstream has replaced.

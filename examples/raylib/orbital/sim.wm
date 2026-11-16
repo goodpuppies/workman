@@ -10,19 +10,19 @@ from "./vec.wm" import { Vec2, add, sub, scale, lengthSq, sqrt };
 from "./rng.wm" import { Rng, next, between };
 
 -- A single point mass. `hue` is carried so rendering can stay a pure read.
-record Body = { pos: Vec2, vel: Vec2, hue: Number };
+record Body = { pos: Vec2, vel: Vec2, hue: Real64 };
 
 -- The whole simulation state.
-record World = { bodies: List<Body>, rng: Rng, t: Number };
+record World = { bodies: List<Body>, rng: Rng, t: Real64 };
 
 -- The force configuration for one frame: a fixed central attractor plus an
 -- optional mouse-driven one (positive g attracts, negative g repels).
-record Field = { center: Vec2, centerG: Number, mouse: Vec2, mouseG: Number };
+record Field = { center: Vec2, centerG: Real64, mouse: Vec2, mouseG: Real64 };
 
 -- Newtonian-ish acceleration toward a target. We add a softening term to the
 -- squared distance so a body sitting exactly on an attractor doesn't fling off
 -- to infinity. a = g * d / (|d|^2 * |d|).
-let accelToward = (target: Vec2, p: Vec2, g: Number) => {
+let accelToward = (target: Vec2, p: Vec2, g: Real64) => {
   let d = sub(target, p);
   let distSq = lengthSq(d) + 900;
   let dist = sqrt(distSq);
@@ -31,7 +31,7 @@ let accelToward = (target: Vec2, p: Vec2, g: Number) => {
 
 -- Advance one body with semi-implicit Euler integration and a whisper of drag
 -- so the system stays bounded over long runs.
-let stepBody = (field: Field, dt: Number, b: Body) => {
+let stepBody = (field: Field, dt: Real64, b: Body) => {
   let pull = add(
     accelToward(field.center, b.pos, field.centerG),
     accelToward(field.mouse, b.pos, field.mouseG)
@@ -41,7 +41,7 @@ let stepBody = (field: Field, dt: Number, b: Body) => {
   .{ pos = pos, vel = vel, hue = b.hue }
 };
 
-let step = (w: World, field: Field, dt: Number) => {
+let step = (w: World, field: Field, dt: Real64) => {
   let bodies = List.map(w.bodies, (b) => { stepBody(field, dt, b) });
   .{ bodies = bodies, rng = w.rng, t = w.t + dt }
 };
@@ -59,7 +59,7 @@ let vecNorm = (v: Vec2) => {
 -- Build `count` bodies scattered in a disk around `center`, each given a
 -- tangential velocity so the cloud starts as a rough orbiting swarm. The rng is
 -- threaded through every draw and handed back so callers can keep going.
-let rec spawnBodies = (count: Number, r: Rng, center: Vec2) => {
+let rec spawnBodies = (count: Real64, r: Rng, center: Vec2) => {
   match(count) {
     0 => { ([], r) },
     _ => {
@@ -85,7 +85,7 @@ let rec spawnBodies = (count: Number, r: Rng, center: Vec2) => {
   }
 };
 
-let init = (count: Number, center: Vec2) => {
+let init = (count: Real64, center: Vec2) => {
   let (bodies, r) = spawnBodies(count, .{ seed = 987654321 }, center);
   .{ bodies = bodies, rng = r, t = 0 }
 };

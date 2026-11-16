@@ -38,7 +38,7 @@ export function functionTypeFromCall(
       return syntheticCallbackTypeFromArg(checker, arg, args[index]);
     }
     if (args[index]?.kind === "string") return name("String");
-    if (args[index]?.kind === "number") return name("Number");
+    if (args[index]?.kind === "number") return name("Real64.Real");
     if (args[index]?.kind === "ref") {
       return args[index].type ??
         typeExprFromTsType(checker, checker.getTypeAtLocation(arg), "param") ??

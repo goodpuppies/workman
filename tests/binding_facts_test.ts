@@ -79,7 +79,7 @@ Deno.test("module binding facts resolve namespace imports to exporter identities
 
 Deno.test("bare constructors do not acquire same-named namespace or carrier identities", async () => {
   const files = new Map([
-    ["/test/image.wm", "record Image = { value: Number }; let carrier = 99;"],
+    ["/test/image.wm", "record Image = { value: Real64.Real }; let carrier = 99;"],
     [
       "/test/main.wm",
       `from "./image.wm" import * as Image;

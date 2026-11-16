@@ -12,7 +12,7 @@ Deno.test("[module update T102] normalized specifiers share one graph node and n
       "/test/main.wm",
       'from "./lib.wm" import * as Direct; ' +
       'from "./dir/../lib.wm" import * as Normalized; ' +
-      "let value: Direct.Box<Number> = Normalized.make(1);",
+      "let value: Direct.Box<Real64.Real> = Normalized.make(1);",
     ],
   ]);
 
@@ -78,7 +78,7 @@ Deno.test("[module update T109] every import form preserves all public namespace
     [
       "/test/lib.wm",
       "type Flag = | Flag; " +
-      "record Box = { value: Number }; " +
+      "record Box = { value: Real64.Real }; " +
       "let id = (value) => { value };",
     ],
     [
@@ -153,7 +153,7 @@ Deno.test("[module update T110] every import form preserves independent polymorp
   assertEquals(importedId.vars, exportedId.vars);
   assertEquals(main.exportedStructure.strEnv.has("Namespace"), false);
   for (const name of ["n1", "n2", "n3"]) {
-    expectBinding(main.env, name, { type: "Number", vars: 0 });
+    expectBinding(main.env, name, { type: "Real64.Real", vars: 0 });
   }
   for (const name of ["s1", "s2", "s3"]) {
     expectBinding(main.env, name, { type: "String", vars: 0 });

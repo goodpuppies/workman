@@ -10,7 +10,7 @@ import { pathToFileUri } from "../src/lsp/uri.ts";
 import { moduleId } from "../src/module_id.ts";
 
 Deno.test("lambda capture clauses survive parsing and formatting", async () => {
-  const source = "let make=(x)=>{(y): Number |x|=>{x+y}};";
+  const source = "let make=(x)=>{(y): Real64.Real |x|=>{x+y}};";
   const module = await parseCompilerModule(source, { frontend: "v2" });
   const outer = module.decls[0].kind === "LetDecl" ? module.decls[0].bindings[0].value : undefined;
   const inner = outer?.kind === "Lambda" && outer.body.kind === "Block"
@@ -23,7 +23,7 @@ Deno.test("lambda capture clauses survive parsing and formatting", async () => {
     await formatFrontendV2Source(source),
     [
       "let make = (x) => {",
-      "  (y): Number |x| => {",
+      "  (y): Real64.Real |x| => {",
       "    x + y",
       "  }",
       "};",
@@ -76,7 +76,7 @@ Deno.test("module let values may be captured explicitly", async () => {
 Deno.test("ordered record constructors are static and do not enter capture contracts", async () => {
   const module = await parseCompilerModule(
     [
-      "record Vector2 = { x: Number, y: Number };",
+      "record Vector2 = { x: Real64.Real, y: Real64.Real };",
       "let make = () || => { Raylib.Vector2(1, 2) };",
     ].join("\n"),
     { frontend: "v2" },
@@ -97,7 +97,7 @@ Deno.test("ordered record constructors are static and do not enter capture contr
 
 Deno.test("omitted capture clauses produce lambda-head inlays", async () => {
   const path = "/test/main.wm";
-  const source = "let make = (x: Number) => { (y: Number) => { x + y } };";
+  const source = "let make = (x: Real64.Real) => { (y: Real64.Real) => { x + y } };";
   const hints = await semanticInlayHints(
     pathToFileUri(path),
     {
@@ -110,13 +110,13 @@ Deno.test("omitted capture clauses produce lambda-head inlays", async () => {
 
   assertEquals(captureHints.map(({ label, position }) => ({ label, position })), [{
     label: "|x|",
-    position: { line: 0, character: source.indexOf("=>", source.indexOf("y: Number")) },
+    position: { line: 0, character: source.indexOf("=>", source.indexOf("y: Real64.Real")) },
   }]);
 });
 
 Deno.test("authored capture clauses suppress inferred capture inlays", async () => {
   const path = "/test/main.wm";
-  const source = "let make = (x: Number) => { (y: Number) |x| => { x + y } };";
+  const source = "let make = (x: Real64.Real) => { (y: Real64.Real) |x| => { x + y } };";
   const hints = await semanticInlayHints(
     pathToFileUri(path),
     {
@@ -131,13 +131,13 @@ Deno.test("authored capture clauses suppress inferred capture inlays", async () 
 
 Deno.test("authored capture names retain semantic binding identity", async () => {
   const path = "/test/main.wm";
-  const source = "let make = (x: Number) => { (y: Number) |x| => { x + y } };";
+  const source = "let make = (x: Real64.Real) => { (y: Real64.Real) |x| => { x + y } };";
   const snapshot = await analyzeDetachedVirtual(path, new Map([[path, source]]));
   const occurrences = snapshot.interfaces.get(moduleId(path))!.occurrences
     .filter((occurrence) => occurrence.name === "x");
 
   assertEquals(occurrences.map(({ role, span }) => [role, span.start]), [
-    ["declaration", source.indexOf("x: Number")],
+    ["declaration", source.indexOf("x: Real64.Real")],
     ["reference", source.indexOf("|x|") + 1],
     ["reference", source.lastIndexOf("x + y")],
   ]);

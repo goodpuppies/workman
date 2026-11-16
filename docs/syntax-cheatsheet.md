@@ -12,15 +12,15 @@ Six commonly encountered types:
 
 | Expression | Type |
 | :---: | :---: |
-| `0` | `Number` (default), or `I32` with context |
+| `0` | `Real64` (default), or `Int32` with context |
 | `"foo bar"` | `String` |
 | `' '` | `Char` |
 | `true` | `Bool` |
-| `1.0` | `Number` |
+| `1.0` | `Real64` |
 | `void` | `Void` |
 
-WM's default `Number` covers both integer-looking and fractional values. For a signed 32-bit
-integer, write `let n: I32 = 0;`. A `Char` literal contains one Unicode scalar; some Basis
+WM's default `Real64` covers both integer-looking and fractional values. For a signed 32-bit
+integer, write `let n: Int32 = 0;`. A `Char` literal contains one Unicode scalar; some Basis
 character and string operations separately restrict their inputs to byte or ASCII domains.
 `void` is the unit-like value. `()` is used for empty function parameter and argument lists.
 See [numeric literals](numbers.md) for other numeric types and contextual literal typing.
@@ -31,12 +31,12 @@ Tuples and lists can contain basic values or other tuples and lists.
 
 | Expression | Type |
 | :---: | :---: |
-| `(15, 150)` | `(Number, Number)` |
-| `[1, 2, 3, 4]` | `List<Number>` |
+| `(15, 150)` | `(Real64, Real64)` |
+| `[1, 2, 3, 4]` | `List<Real64>` |
 | `[["foo", "bar"], ["baz"]]` | `List<List<String>>` |
-| `((true, 1), (false, 0, void))` | `((Bool, Number), (Bool, Number, Void))` |
-| `[(0, 1), (1, 0)]` | `List<(Number, Number)>` |
-| `(['a', 'b'], [3.14])` | `(List<Char>, List<Number>)` |
+| `((true, 1), (false, 0, void))` | `((Bool, Real64), (Bool, Real64, Void))` |
+| `[(0, 1), (1, 0)]` | `List<(Real64, Real64)>` |
+| `(['a', 'b'], [3.14])` | `(List<Char>, List<Real64>)` |
 
 A list's elements all have one type. There are no one-element tuples: `(x)` groups `x`.
 
@@ -47,12 +47,12 @@ these operators, not SML fixity declarations. WM has no user-defined fixity decl
 
 | Operator or equivalent | Meaning | Priority | Example expression | Evaluates to | Notes |
 | :---: | :--- | :---: | :--- | :--- | :--- |
-| `*` | Multiplication | 7 | `8 * 3` | `24` | `Number` or `I32` |
-| `/` | Division | 7 | `3.0 / 2.0` | `1.5` | Example uses `Number` |
+| `*` | Multiplication | 7 | `8 * 3` | `24` | `Real64` or `Int32` |
+| `/` | Division | 7 | `3.0 / 2.0` | `1.5` | Example uses `Real64` |
 | `Number.div` | Flooring division | Call | `Number.div(3, 2)` | `1` | Equivalent of SML `div` on integer-valued numbers |
 | `Number.mod` | Flooring modulo | Call | `Number.mod(8, 3)` | `2` | Equivalent of SML `mod` on integer-valued numbers |
 | `%` | Truncating remainder | 7 | `8 % 3` | `2` | Differs from flooring modulo for negative operands |
-| `+` | Addition | 6 | `3 + 4` | `7` | `Number` or `I32` |
+| `+` | Addition | 6 | `3 + 4` | `7` | `Real64` or `Int32` |
 | `-` | Subtraction | 6 | `3 - -2` | `5` | Unary `-` negates a number; parentheses are optional |
 | `++` | String concatenation | 6 | `"foo" ++ "bar"` | `"foobar"` | Both operands must be strings |
 | `[head, ..tail]` | List construction | Delimited | `[1, ..[2, 3, 4]]` | `[1, 2, 3, 4]` | Equivalent of SML `::` |
@@ -89,7 +89,7 @@ Equality uses `==` and `!=`.
 | `==` | Equal | 4 | `1 + 2 == 4 - 1` | `true` |
 | `!=` | Not equal | 4 | `"a" != "b"` | `true` |
 
-Tuples and lists compare by their contents. `Number` equality is allowed, including fractional
+Tuples and lists compare by their contents. `Real64` equality is allowed, including fractional
 values; function equality is rejected. **MISSING: SML's explicit equality-type notation `''a`
 and its full equality-type discipline.**
 
@@ -118,7 +118,7 @@ Use the comparison functions below for those domains.
 
 #### Comparison Functions
 
-`Real.compare(x, y)` is already available without imports through the preloaded `Real`
+`Real64.compare(x, y)` is already available without imports through the preloaded `Real`
 namespace. It returns `Result<Order, Basis.Error>` and reports NaN as `Err(Basis.Unordered)`.
 This is namespace availability, rather than an unqualified pervasive `compare` function.
 `Order`, `Less`, `Equal`, and `Greater` are pervasive: no import is needed for the type or
@@ -139,9 +139,9 @@ from "basis/char.wm" import * as Char;
 | `Less` | `Order` |
 | `Equal` | `Order` |
 | `Greater` | `Order` |
-| `compareInt` | `(I32, I32) -> Order` |
+| `compareInt` | `(Int32, Int32) -> Order` |
 | `Text.compare` | `(String, String) -> Result<Order, Unicode.Error>` |
-| `compareReal` | `(Number, Number) -> Result<Order, Error>` (`Error` from `basis/order.wm`) |
+| `compareReal` | `(Real64, Real64) -> Result<Order, Error>` (`Error` from `basis/order.wm`) |
 
 `Text.compare` checks Unicode text and returns its ordering in a `Result`. `basis/string.wm` also provides byte-string comparison,
 returning a `Result` because input may contain non-byte characters. `Char.compareAscii` returns
@@ -181,9 +181,9 @@ Use line comments or nested block comments:
 Type annotations are optional.
 
 ```wm
-let x: Number = 5;
-let (a, b): (Number, Number) = (1, 2);
-let l: List<Number> = [3, 4];
+let x: Real64 = 5;
+let (a, b): (Real64, Real64) = (1, 2);
+let l: List<Real64> = [3, 4];
 ```
 
 | Expression | Evaluates to |
@@ -203,9 +203,9 @@ expression supplies its value. A semicolon after that final expression instead y
 
 ```wm
 let answer = {
-  let x: Number = 25;
-  let x: Number = x + 25; -- Shadows the earlier binding.
-  let y: Number = x + 50;
+  let x: Real64 = 25;
+  let x: Real64 = x + 25; -- Shadows the earlier binding.
+  let y: Real64 = x + 50;
   x + y
 }; -- answer = 150
 ```
@@ -214,11 +214,11 @@ Blocks can nest; each block introduces a scope:
 
 ```wm
 let nestedAnswer = {
-  let x: Number = 25;
+  let x: Real64 = 25;
   {
-    let x: Number = x + 25;
+    let x: Real64 = x + 25;
     {
-      let y: Number = x + 50;
+      let y: Real64 = x + 50;
       x + y
     }
   }
@@ -232,9 +232,9 @@ local declarations or multiple statements. Function types use `->`, which associ
 
 | Expression | Evaluates to | Type |
 | :--- | :--- | :--- |
-| `(x: Number, y: Number) => x + y` | A function | `(Number, Number) -> Number` |
-| `(3, 4)` | `(3, 4)` | `(Number, Number)` |
-| `((x: Number, y: Number) => x + y)(3, 4)` | `7` | `Number` |
+| `(x: Real64, y: Real64) => x + y` | A function | `(Real64, Real64) -> Real64` |
+| `(3, 4)` | `(3, 4)` | `(Real64, Real64)` |
+| `((x: Real64, y: Real64) => x + y)(3, 4)` | `7` | `Real64` |
 
 `f(3, 4)` passes one tuple-shaped argument. Curried application is `f(3)(4)` or `f 3 4`.
 
@@ -243,24 +243,24 @@ local declarations or multiple statements. Function types use `->`, which associ
 Name a lambda with `let`. The `=` belongs to the declaration, and `=>` belongs to the lambda.
 
 ```wm
-let add: (Number, Number) -> Number = (x, y) => x + y;
+let add: (Real64, Real64) -> Real64 = (x, y) => x + y;
 ```
 
 Alternatively, annotate the parameters and result:
 
 ```wm
-let addAnnotated = (x: Number, y: Number): Number => { x + y };
+let addAnnotated = (x: Real64, y: Real64): Real64 => { x + y };
 ```
 
-Both have type `(Number, Number) -> Number`. **MISSING: a separate SML-style `fun` declaration.**
+Both have type `(Real64, Real64) -> Real64`. **MISSING: a separate SML-style `fun` declaration.**
 Use `let rec` when the function refers to itself.
 
 | Expression | Value | Type |
 | :--- | :--- | :--- |
-| `add` | A function adding its tuple components | `(Number, Number) -> Number` |
-| `(x: Number, y: Number) => x + y` | A function adding its tuple components | `(Number, Number) -> Number` |
-| `add(3, 4)` | `7` | `Number` |
-| `((x: Number, y: Number) => x + y)(3, 4)` | `7` | `Number` |
+| `add` | A function adding its tuple components | `(Real64, Real64) -> Real64` |
+| `(x: Real64, y: Real64) => x + y` | A function adding its tuple components | `(Real64, Real64) -> Real64` |
+| `add(3, 4)` | `7` | `Real64` |
+| `((x: Real64, y: Real64) => x + y)(3, 4)` | `7` | `Real64` |
 
 #### Patterns and Case Expressions
 
@@ -346,7 +346,7 @@ patterns bind their components; `let` and lambda parameter patterns also bind no
 | `Equal` | Yes, with the constructor in scope |
 | `3 + 4`, `":" ++ ")"`, `3 < 4` | No: expressions |
 | `compareInt(0, 0)`, `compareInt` | No: ordinary functions are not constructors or equality-comparable values |
-| `0.0` | Yes: a `Number` literal pattern |
+| `0.0` | Yes: a `Real64` literal pattern |
 | `x => x` | No: a lambda is not a pattern |
 | `x` | Yes if an equality-comparable `x` is already in scope; pins its value |
 | `Var(x)` | Yes: binds a fresh name |
@@ -368,12 +368,12 @@ The following table describes coverage; deliberately incomplete examples may pro
 | `match { Less => -1 }` | `Order` | No |
 | `match { Less => -1, Equal => 0 }` | `Order` | No |
 | `match { Less => -1, Equal => 0, Greater => 1 }` | `Order` | Yes |
-| `match { 0 => true }` | `Number` | No |
-| `match { 0 => true, _ => false }` | `Number` | Yes |
-| `match { [x, .._] => x + 1 }` | `List<Number>` | No |
-| `match { [] => 0, [x, .._] => x + 1 }` | `List<Number>` | Yes |
-| `match { (0, b) => true && b }` | `(Number, Bool)` | No |
-| `match { (0, b) => true && b, (n, _) => false }` | `(Number, Bool)` | Yes |
+| `match { 0 => true }` | `Real64` | No |
+| `match { 0 => true, _ => false }` | `Real64` | Yes |
+| `match { [x, .._] => x + 1 }` | `List<Real64>` | No |
+| `match { [] => 0, [x, .._] => x + 1 }` | `List<Real64>` | Yes |
+| `match { (0, b) => true && b }` | `(Real64, Bool)` | No |
+| `match { (0, b) => true && b, (n, _) => false }` | `(Real64, Bool)` | Yes |
 
 A wildcard covering an entire arm pattern makes that arm accept every remaining value.
 If placed first, it makes later arms unreachable.
@@ -383,7 +383,7 @@ If placed first, it makes later arms unreachable.
 `let rec` makes the binding available inside its own function body. Ordinary `let` does not.
 
 ```wm
-let rec length: List<Number> -> Number = match {
+let rec length: List<Real64> -> Real64 = match {
   [] => 0,
   [_, ..xs] => 1 + length(xs)
 };
@@ -392,7 +392,7 @@ let rec length: List<Number> -> Number = match {
 The named-subject form is equivalent:
 
 ```wm
-let rec lengthNamed: List<Number> -> Number = match(items) => {
+let rec lengthNamed: List<Real64> -> Real64 = match(items) => {
   [] => 0,
   [_, ..xs] => 1 + lengthNamed(xs)
 };
@@ -400,9 +400,9 @@ let rec lengthNamed: List<Number> -> Number = match(items) => {
 
 | Expression | Value | Type |
 | :--- | :--- | :--- |
-| `length` | The recursive function above | `List<Number> -> Number` |
-| `length([])` | `0` | `Number` |
-| `length([1, 2, 3, 4])` | `4` | `Number` |
+| `length` | The recursive function above | `List<Real64> -> Real64` |
+| `length([])` | `0` | `Real64` |
+| `length([1, 2, 3, 4])` | `4` | `Real64` |
 
 Mutually recursive functions use `let rec ... and ...;`.
 
@@ -437,7 +437,7 @@ Wrap the operation in a lambda instead:
 bind its components separately:
 
 ```wm
-let tuple: (Number, Number) = (1, 2);
+let tuple: (Real64, Real64) = (1, 2);
 let (a, b) = tuple;
 ```
 
@@ -448,7 +448,7 @@ let (a, b) = tuple;
 | `tuple` | `(1, 2)` |
 
 ```wm
-let outer: ((Number, Number), Number) = ((1, 2), 3);
+let outer: ((Real64, Real64), Real64) = ((1, 2), 3);
 let (inner, c) = outer;
 let (a, b) = inner;
 ```
@@ -462,7 +462,7 @@ let (a, b) = inner;
 | `c` | `3` |
 
 ```wm
-let l1: List<Number> = [1, 2, 3];
+let l1: List<Real64> = [1, 2, 3];
 let [x1, ..l2] = l1;
 let [x2, ..l3] = l2;
 let [x3, ..l4] = l3;

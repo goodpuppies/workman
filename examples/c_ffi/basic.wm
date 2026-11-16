@@ -1,5 +1,5 @@
 from c.lib("libc") import unsafe {
-  printf: String -> Number,
+  printf: String -> Real64,
 };
 
 let main = () => {

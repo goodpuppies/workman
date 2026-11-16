@@ -23,8 +23,8 @@ let tests = [
     checks([assertContains("hello world", "lo w"), failsWith(assertContains("hello", "bye"), "containing")])
   }),
   test("assertOk gives the value, assertErr the error", () => {
-    let ok: Result<Number, String> = Ok(3);
-    let err: Result<Number, String> = Err("no");
+    let ok: Result<Real64.Real, String> = Ok(3);
+    let err: Result<Real64.Real, String> = Err("no");
     checks([
       assertOk(ok) :> Task.andThen((v) => { assertEqual(v, 3) }),
       assertErr(err) :> Task.andThen((e) => { assertEqual(e, "no") }),

@@ -17,7 +17,7 @@ Bare `Result` selects that record when used as a value:
 Monad.via Result transform
 ```
 
-Not every type with operations is a monad. A `Number` module might expose
+Not every type with operations is a monad. A `Real64` module might expose
 `compare`, `minimum`, and `maximum`, but that does not provide the `succeed` and
 `andThen` composition required by a monad.
 
@@ -291,8 +291,8 @@ let triple = Result|Ok(1), Ok("a"), Ok(true)|;
 These infer as:
 
 ```txt
-pair   : Result<(Number, String), E>
-triple : Result<(Number, String, Bool), E>
+pair   : Result<(Real64, String), E>
+triple : Result<(Real64, String, Bool), E>
 ```
 
 This is useful when a function created with `via` expects one tuple argument:
@@ -365,7 +365,7 @@ let args = Result|message, centerX, Ok(170), Ok(32), accent|;
 ```
 
 If `message` is already `Result<String, Js.Error>` and `centerX` is already
-`Result<Number, Js.Error>`, they can be used directly. If either is pure, wrap it with `Ok(...)`.
+`Result<Real64, Js.Error>`, they can be used directly. If either is pure, wrap it with `Ok(...)`.
 
 The sugar supports arbitrary arity because it lowers to nested `andThen` calls with one final `map`.
 A single item is returned unchanged:
@@ -411,10 +411,10 @@ let b = !Ok(false);
 These infer as:
 
 ```txt
-x : Result<Number, E>
-y : Result<Number, E>
-z : Result<Number, E>
-n : Result<Number, E>
+x : Result<Real64, E>
+y : Result<Real64, E>
+z : Result<Real64, E>
+n : Result<Real64, E>
 b : Result<Bool, E>
 ```
 
@@ -472,7 +472,7 @@ Result.map(Ok(4), (value) => {
 ```
 
 This coercion is only for primitive operators. Ordinary functions still keep their declared argument
-types. For example, a JS function such as `Math.floor` still receives `Result<Number, Js.Error>`
+types. For example, a JS function such as `Math.floor` still receives `Result<Real64, Js.Error>`
 unless it is adapted with `via`:
 
 ```wm
@@ -503,9 +503,9 @@ those by exporting `succeed`, `map`, and `map2` together with a `carrier`
 record, which registers the type `succeed` returns:
 
 ```wm
-record Vec2 = { x: Number, y: Number };
+record Vec2 = { x: Real64, y: Real64 };
 
-let succeed = (s: Number) => {
+let succeed = (s: Real64) => {
   Vec2(s, s)
 };
 
@@ -551,16 +551,16 @@ operators without `via Vec2 f` or `Vec2|...|`.
 
 `Carrier|...|` needs `andThen` for a further reason: it builds a tuple, so the
 payload type changes as it goes. `Result|Ok(1), Ok("a")|` is
-`Result<(Number, String), E>`. The equivalent for `Vec2` would be a vector whose
+`Result<(Real64, String), E>`. The equivalent for `Vec2` would be a vector whose
 lanes each hold a tuple.
 
 ### What lifts and what does not
 
-`Vec2` is monomorphic: its payload is always `Number`, in and out. Nothing
+`Vec2` is monomorphic: its payload is always `Real64`, in and out. Nothing
 restricts which operators may lift; unification decides:
 
 - `a + b`, `a - b`, `a * 3`, `2 * a`, `-a` all lift, because the operator answers
-  in `Number`;
+  in `Real64`;
 - `a < b` does not, because `<` answers in `Bool`, which is not `Vec2`'s payload.
   The error points at the comparison.
 
@@ -590,7 +590,7 @@ instance - is unified across the two operands. Unwrap the outer carrier with
 
 Two carriers whose payloads still disagree report that mismatch:
 `Ok(1) + Task.succeed(2)` is `operator + mixes carriers Result and Task`, while
-`Result<Vec2, E> + Vec2` reports `Number` against `Vec2`, because the operator is
+`Result<Vec2, E> + Vec2` reports `Real64` against `Vec2`, because the operator is
 checked against the peeled payloads before the carriers are compared.
 
 A module's own declarations do not see its carrier, since registration completes

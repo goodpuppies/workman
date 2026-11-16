@@ -1,13 +1,13 @@
 from "./basis.wm" import * as Basis;
 from "basis/order.wm" import { Less, Equal, Greater };
 from js.module("./js/vector.js") import unsafe {
-  length as vectorLength: Vector.Vector<a> -> Number,
-  uncheckedSub: (Vector.Vector<a>, Number) -> a,
-  uncheckedSlice: (Vector.Vector<a>, Number, Number) -> VectorSlice.Slice<a>,
-  sliceBase: VectorSlice.Slice<a> -> (Vector.Vector<a>, Number, Number),
+  length as vectorLength: Vector.Vector<a> -> Real64.Real,
+  uncheckedSub: (Vector.Vector<a>, Real64.Real) -> a,
+  uncheckedSlice: (Vector.Vector<a>, Real64.Real, Real64.Real) -> VectorSlice.Slice<a>,
+  sliceBase: VectorSlice.Slice<a> -> (Vector.Vector<a>, Real64.Real, Real64.Real),
   sliceToVector: VectorSlice.Slice<a> -> Vector.Vector<a>,
   sliceConcatArray: Js.Array<VectorSlice.Slice<a>> -> Vector.Vector<a>,
-  tabulate as vectorTabulate: (Number, Number -> a) -> Vector.Vector<a>,
+  tabulate as vectorTabulate: (Real64.Real, Real64.Real -> a) -> Vector.Vector<a>,
   newArray: Void -> Js.Array<a>,
   push: (Js.Array<a>, a) -> Void
 };
@@ -21,7 +21,7 @@ let length = (slice) => {
   count
 };
 
-let sub = (slice, index: Number) => {
+let sub = (slice, index: Real64.Real) => {
   let (vector, offset, count) = sliceBase(slice);
   if (index >= 0 && index % 1 == 0 && index < count) {
     Ok(uncheckedSub(vector, offset + index))
@@ -32,7 +32,7 @@ let sub = (slice, index: Number) => {
 
 let full = (vector) => { uncheckedSlice(vector, 0, vectorLength(vector)) };
 
-let slice = (vector, start: Number, count: Option<Number>) => {
+let slice = (vector, start: Real64.Real, count: Option<Real64.Real>) => {
   let available = vectorLength(vector);
   let resolved = match(count) {
     Some(requested) => { requested },
@@ -48,7 +48,7 @@ let slice = (vector, start: Number, count: Option<Number>) => {
   }
 };
 
-let subslice = (parent, start: Number, count: Option<Number>) => {
+let subslice = (parent, start: Real64.Real, count: Option<Real64.Real>) => {
   let (vector, offset, available) = sliceBase(parent);
   let resolved = match(count) {
     Some(requested) => { requested },

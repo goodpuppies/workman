@@ -6,7 +6,7 @@
 -- pure, so it is trivial to reason about and test, and only `main.wm` ever
 -- touches the impure raylib boundary.
 
-record Vec2 = { x: Number, y: Number };
+record Vec2 = { x: Real64, y: Real64 };
 
 let add = (a: Vec2, b: Vec2) => {
   .{ x = a.x + b.x, y = a.y + b.y }
@@ -16,7 +16,7 @@ let sub = (a: Vec2, b: Vec2) => {
   .{ x = a.x - b.x, y = a.y - b.y }
 };
 
-let scale = (v: Vec2, s: Number) => {
+let scale = (v: Vec2, s: Real64) => {
   .{ x = v.x * s, y = v.y * s }
 };
 
@@ -31,14 +31,14 @@ let lengthSq = (v: Vec2) => {
 -- Square root via Newton's method. We have no math FFI in the pure core, so we
 -- grow our own: x_{n+1} = (x_n + value / x_n) / 2. Twenty iterations is plenty
 -- for the magnitudes we deal with here.
-let rec sqrtIter = (value: Number, guess: Number, steps: Number) => {
+let rec sqrtIter = (value: Real64, guess: Real64, steps: Real64) => {
   match(steps) {
     0 => { guess },
     _ => { sqrtIter(value, (guess + value / guess) / 2, steps - 1) }
   }
 };
 
-let sqrt = (value: Number) => {
+let sqrt = (value: Real64) => {
   if (value <= 0) {
     0
   } else {

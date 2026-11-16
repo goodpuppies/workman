@@ -55,10 +55,10 @@ Deno.test("content mapper exposes inferred exports, generics, positional ABI, an
   const result = await projectWorkman(
     path,
     `
-let double = (x: Number) => x + x;
+let double = (x: Real64.Real) => x + x;
 let identity = (x) => x;
-let sum = (a: Number, b: Number) => a + b;
-let curried = (x: Number) => (y: Number) => x + y;
+let sum = (a: Real64.Real, b: Real64.Real) => a + b;
+let curried = (x: Real64.Real) => (y: Real64.Real) => x + y;
 let zero = () => 0;
 let pair = (1, true);
 `,
@@ -124,11 +124,11 @@ Deno.test("content mapper uses current unsaved content on every transform", asyn
 
 Deno.test("content mapper presents source function and parameter names, including curried stages", async () => {
   const source = `
-let double = (value: Number) => value + value;
+let double = (value: Real64.Real) => value + value;
 let identity = (item) => item;
-let sum = (left: Number, right: Number) => left + right;
-let curried = (first: Number) => { (second: Number) => first + second };
-let shadow = (oldName: Number) => oldName;
+let sum = (left: Real64.Real, right: Real64.Real) => left + right;
+let curried = (first: Real64.Real) => { (second: Real64.Real) => first + second };
+let shadow = (oldName: Real64.Real) => oldName;
 let shadow = (currentName: String) => currentName;
 `;
   const result = await projectWorkman(path, source);
@@ -158,7 +158,7 @@ Deno.test("content mapper gives primed names readable, collision-free TS spellin
     `
 let id' = (value') => value';
 let id_prime = (original) => original;
-let named = (value': Number, value_prime: Number) => value' + value_prime;
+let named = (value': Real64.Real, value_prime: Real64.Real) => value' + value_prime;
 `,
   );
   assertEquals(result.diagnostics, []);
@@ -197,7 +197,7 @@ Deno.test("content mapper preserves valid declarations alongside WM syntax and t
 });
 
 Deno.test("content mapper rejects unsupported exported type declarations without any", async () => {
-  const result = await projectWorkman(path, "type Custom = | Custom<Number>;");
+  const result = await projectWorkman(path, "type Custom = | Custom<Real64.Real>;");
   assert(result.diagnostics.length > 0);
   assert(result.diagnostics.every((d) => d.code === 1001));
   assert(!result.text.includes("any"));
@@ -230,7 +230,7 @@ Deno.test("content mapper keeps a module usable when some values have no TS form
 Deno.test("content mapper marks only the record fields that have no TS form", async () => {
   const result = await projectWorkman(
     path,
-    "record Model = { items: List<Number>, selected: Number }; let start = Model([], 0);",
+    "record Model = { items: List<Real64.Real>, selected: Real64.Real }; let start = Model([], 0);",
   );
   assertStringIncludes(result.text, 'readonly "items": import("@goodpuppies/workman/interop")');
   const diagnostics = checkConsumer(
@@ -380,10 +380,10 @@ Deno.test("content mapper shares the positional ABI through callbacks, factories
   const result = await projectWorkman(
     path,
     `
-    let invoke = (function, left: Number, right: Number) => function(left, right);
-    let make = (offset: Number) => (left: Number, right: Number) => offset + left + right;
-    let nested = (pair, extra: Number) => { let (a, b) = pair; a + b + extra };
-    let totals = (a: Number, b: Number) => (a + b, a - b);
+    let invoke = (function, left: Real64.Real, right: Real64.Real) => function(left, right);
+    let make = (offset: Real64.Real) => (left: Real64.Real, right: Real64.Real) => offset + left + right;
+    let nested = (pair, extra: Real64.Real) => { let (a, b) = pair; a + b + extra };
+    let totals = (a: Real64.Real, b: Real64.Real) => (a + b, a - b);
     let apply = (function, argument) => function(argument);
   `,
   );
@@ -415,10 +415,10 @@ Deno.test("content mapper exposes typed Result and Task discriminated unions", a
   const result = await projectWorkman(
     path,
     `
-    let checkout: Number -> Task<Number, String> = quantity => {
+    let checkout: Real64.Real -> Task<Real64.Real, String> = quantity => {
       if (quantity > 0) { Task.succeed(quantity * 2) } else { Task.fail("quantity") }
     };
-    let validate: Number -> Result<Number, String> = quantity => {
+    let validate: Real64.Real -> Result<Real64.Real, String> = quantity => {
       if (quantity > 0) { Ok(quantity) } else { Err("quantity") }
     };
   `,
@@ -456,7 +456,7 @@ Deno.test("content mapper exposes typed Result and Task discriminated unions", a
 Deno.test("content mapper projects Option as the opaque interop type", async () => {
   const result = await projectWorkman(
     path,
-    `let optional = (value: Option<Option<Number>>) => value;`,
+    `let optional = (value: Option<Option<Real64.Real>>) => value;`,
   );
   assertStringIncludes(result.text, `import("@goodpuppies/workman/interop").Option<`);
   assertEquals(
@@ -483,13 +483,13 @@ Deno.test("content mapper projects records as TS types and host JS types structu
   const result = await projectWorkman(
     path,
     `
-    record Point = { x: Number, y: Number };
+    record Point = { x: Real64.Real, y: Real64.Real };
     record Box<t> = { value: t, label: String };
     let origin: Point = .{ x = 0, y = 0 };
-    let boxed = (value: Number) => Box(value, "n");
-    let shift = (point: Point, dx: Number) => .{ x = point.x + dx, y = point.y };
+    let boxed = (value: Real64.Real) => Box(value, "n");
+    let shift = (point: Point, dx: Real64.Real) => .{ x = point.x + dx, y = point.y };
     let points = (u: Void) => Js.Array.fromList([origin]);
-    let failure: Result<Number, Js.Error> = Err(Js.Error("no"));
+    let failure: Result<Real64.Real, Js.Error> = Err(Js.Error("no"));
   `,
   );
   assertStringIncludes(result.text, `export type Point = {`);

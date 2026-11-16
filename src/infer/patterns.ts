@@ -11,7 +11,7 @@ import {
   instantiateRecordFields,
   knownTypeInfos,
   named,
-  NumberTy,
+  Real64Ty,
   prune,
   StringTy,
   tuple,

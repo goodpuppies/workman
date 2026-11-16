@@ -41,7 +41,7 @@ let taskExamples = () => {
 --#endregion
 
 --#region a monomorphic user carrier
--- Vec2 carries Number, so every lifted operator must answer in Number.
+-- Vec2 carries Real64, so every lifted operator must answer in Number.
 let vecExamples = () => {
   header("Vec2");
   let a = Vec2(1, 2);
@@ -69,8 +69,8 @@ let vecExamples = () => {
 
 --#region a generic user carrier
 -- Pair<T> has a payload argument, so an operator may change the payload type.
--- Comparing two Pair<Number> gives a Pair<Bool>, the way comparing two
--- Result<Number, E> gives a Result<Bool, E>.
+-- Comparing two Pair<Real64> gives a Pair<Bool>, the way comparing two
+-- Result<Real64, E> gives a Result<Bool, E>.
 let pairExamples = () => {
   header("Pair");
   let a = Pair(1, 2);

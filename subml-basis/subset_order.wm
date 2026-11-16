@@ -11,12 +11,12 @@ from "./subset_result.wm" import * as SubsetResult;
 type Order = Less | Equal | Greater;
 type Error = | Unordered;
 
-let compareInt = (left: I32, right: I32) => {
+let compareInt = (left: Int32.Int, right: Int32.Int) => {
   if (left < right) { Less } else { if (left > right) { Greater } else { Equal } }
 };
 
 // IEEE comparisons are unordered when either operand is NaN.
-let compareReal = (left: Number, right: Number) => {
+let compareReal = (left: Real64.Real, right: Real64.Real) => {
   if (left < right) { SubsetResult.Ok(Less) } else {
     if (left > right) { SubsetResult.Ok(Greater) } else {
       if (left <= right) { SubsetResult.Ok(Equal) } else { SubsetResult.Err(Unordered) }

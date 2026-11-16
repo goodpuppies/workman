@@ -8,7 +8,7 @@ from "./types.wm" import {
   GpuSliceTypeDto
 };
 
-let numberEqual = (left: Number, right: Number) => {
+let numberEqual = (left: Real64, right: Real64) => {
   !(left < right) && !(left > right)
 };
 

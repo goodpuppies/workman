@@ -2,12 +2,12 @@ from "./basis.wm" import * as Basis;
 from js.module("./js/byte_vector.js") import unsafe {
   empty as primEmpty: Word8Vector.Vector,
   fromArray: Js.Array<Word8.Word> -> Word8Vector.Vector,
-  length as primLength: Word8Vector.Vector -> Number,
-  sub as primSub: (Word8Vector.Vector, Number) -> Word8.Word,
-  update as primUpdate: (Word8Vector.Vector, Number, Word8.Word) -> Word8Vector.Vector,
+  length as primLength: Word8Vector.Vector -> Real64.Real,
+  sub as primSub: (Word8Vector.Vector, Real64.Real) -> Word8.Word,
+  update as primUpdate: (Word8Vector.Vector, Real64.Real, Word8.Word) -> Word8Vector.Vector,
   concatArray: Js.Array<Word8Vector.Vector> -> Word8Vector.Vector,
-  tabulate as primTabulate: (Number, Number -> Word8.Word) -> Word8Vector.Vector,
-  unfoldN as primUnfoldN: (Number, state, state -> (Word8.Word, state)) -> (Word8Vector.Vector, state),
+  tabulate as primTabulate: (Real64.Real, Real64.Real -> Word8.Word) -> Word8Vector.Vector,
+  unfoldN as primUnfoldN: (Real64.Real, state, state -> (Word8.Word, state)) -> (Word8Vector.Vector, state),
   newArray: Void -> Js.Array<a>,
   push: (Js.Array<a>, a) -> Void
 };
@@ -38,7 +38,7 @@ let toList = (vector) => {
 
 let length = (vector) => { primLength(vector) };
 
-let sub = (vector, index: Number) => {
+let sub = (vector, index: Real64.Real) => {
   if (index >= 0 && index % 1 == 0 && index < primLength(vector)) {
     Ok(primSub(vector, index))
   } else {
@@ -46,7 +46,7 @@ let sub = (vector, index: Number) => {
   }
 };
 
-let update = (vector, index: Number, value) => {
+let update = (vector, index: Real64.Real, value) => {
   if (index >= 0 && index % 1 == 0 && index < primLength(vector)) {
     Ok(primUpdate(vector, index, value))
   } else {

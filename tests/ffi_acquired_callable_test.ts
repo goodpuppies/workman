@@ -17,7 +17,7 @@ Deno.test("acquired callable tuple entries specialize replacement and updater ca
   `);
   expectBinding(result.env, "replace", { type: "Result<Void, Js.Error>!", vars: 0 });
   expectBinding(result.env, "update", { type: "Result<Void, Js.Error>!", vars: 0 });
-  expectBinding(result.env, "read", { type: "Number!", vars: 0 });
+  expectBinding(result.env, "read", { type: "Real64.Real!", vars: 0 });
 });
 
 Deno.test("unsafe imports preserve raw acquired setter calls with full reflection", async () => {
@@ -90,7 +90,7 @@ Deno.test("unsafe acquired functions propagate raw calls to their returned calla
   `);
   expectBinding(result.env, "replacement", { type: "Void!", vars: 0 });
   expectBinding(result.env, "updater", { type: "Void!", vars: 0 });
-  expectBinding(result.env, "number", { type: "Number!", vars: 0 });
+  expectBinding(result.env, "number", { type: "Real64.Real!", vars: 0 });
   expectBinding(result.env, "text", { type: "String!", vars: 0 });
 });
 
@@ -200,7 +200,7 @@ Deno.test("acquired setters resolve after HM establishes a computed initial valu
       get()
     };
   `);
-  expectBinding(result.env, "example", { type: "Void -> Number!", vars: 0 });
+  expectBinding(result.env, "example", { type: "Void -> Real64.Real!", vars: 0 });
 });
 
 Deno.test("acquired callable restrictions survive aliases", async () => {
@@ -232,7 +232,7 @@ Deno.test("acquired callables retain scalar unions, optional arities, and rest p
     expectBinding(result.env, name, { type: "Result<String, Js.Error>!", vars: 0 });
   }
   for (const name of ["c", "d", "e", "f"]) {
-    expectBinding(result.env, name, { type: "Result<Number, Js.Error>!", vars: 0 });
+    expectBinding(result.env, name, { type: "Result<Real64.Real, Js.Error>!", vars: 0 });
   }
   // A result TS declares as one of several Workman types is dynamic: it reads as Js.Value.
   const ambiguous = await checkSource(`
@@ -254,8 +254,8 @@ Deno.test("returned overloads and generic functions specialize each call indepen
     let b = identity("hello");
   `);
   expectBinding(result.env, "text", { type: "Result<String, Js.Error>!", vars: 0 });
-  expectBinding(result.env, "number", { type: "Result<Number, Js.Error>!", vars: 0 });
-  expectBinding(result.env, "a", { type: "Result<Number, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "number", { type: "Result<Real64.Real, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "a", { type: "Result<Real64.Real, Js.Error>!", vars: 0 });
   expectBinding(result.env, "b", { type: "Result<String, Js.Error>!", vars: 0 });
 });
 

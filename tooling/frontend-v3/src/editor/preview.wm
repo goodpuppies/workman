@@ -8,21 +8,21 @@ from "../lexer/reader.wm" import * as Reader;
 // stage; explicit insertion fixtures are not parser output. Whitespace is ordinary
 // insertion content here, including whitespace-only labels.
 record Insertion = {
-  insertionId: I32,
-  anchor: I32,
+  insertionId: Int32,
+  anchor: Int32,
   content: Text.Source,
 };
 record Placement = {
   insertion: Insertion,
   position: Source.Position,
-  previewStart: I32,
-  previewEnd: I32,
+  previewStart: Int32,
+  previewEnd: Int32,
 };
 record Preview = {
   rendered: Text.Source,
   placements: List<Placement>,
 };
-type Error = | InvalidAnchor<I32, I32>;
+type Error = | InvalidAnchor<Int32, Int32>;
 
 // Stable bottom-up merge sort. Equal anchors keep input order, independent of IDs.
 let ordered = (insertions) => {

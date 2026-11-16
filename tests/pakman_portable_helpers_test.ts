@@ -5,22 +5,21 @@ Deno.test("portable pakman helpers agree with Unicode ordering, checked parsing 
   const filename = "/test/pakman-portable.wm";
   const source = `
     from "basis/text.wm" import * as T;
-    from "basis/int.wm" import * as Int;
     from "basis/string_cvt.wm" import * as Cvt;
     from "basis/path.wm" import * as Path;
     from "basis/order.wm" import * as O;
     from "basis/result.wm" import * as R;
     from "std/string.wm" import * as Strings;
     from "pakman/number.wm" import * as Numbers;
-    let natural = (value) => { R.getOr(R.map(Int.parseNatural(value), I32.toNumber), -1) };
-    let prefix = (value) => { R.getOr(R.map(Int.fromString(value), I32.toNumber), -999) };
+    let natural = (value) => { R.getOr(R.map(Int32.parseNatural(value), Int32.toReal64), -1) };
+    let prefix = (value) => { R.getOr(R.map(Int32.fromString(value), Int32.toReal64), -999) };
     let legacy = (value) => { Numbers.parseIntOr(value, -1) };
     let order = (left: String, right: String) => {
       match(T.compare(left, right)) {
         R.Ok(O.Less) => { -1 }, R.Ok(O.Equal) => { 0 }, R.Ok(O.Greater) => { 1 }, R.Err(_) => { 99 }
       }
     };
-    let pad = (text: String, width: I32) => { R.getOr(Cvt.padTextRight(text, width, (32: I32)), "FAILED") };
+    let pad = (text: String, width: Int32.Int) => { R.getOr(Cvt.padTextRight(text, width, (32: Int32.Int)), "FAILED") };
     let parent = (text: String) => { R.getOr(Path.dir(text), "FAILED") };
     let subsequence = (text: String, pattern: String) => { R.getOr(Strings.isSubsequence(text, pattern), false) };
   `;

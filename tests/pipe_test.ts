@@ -171,13 +171,13 @@ Deno.test("parenthesized pipe stages suppress UFCS insertion explicitly", async 
 
 Deno.test("pipe preserves FFI receiver reflection in inline functions", async () => {
   await checkSource(`
-    let text = 16 :> ((byte: Number) => { byte :> .toString(16) });
+    let text = 16 :> ((byte: Real64.Real) => { byte :> .toString(16) });
   `);
 });
 
 Deno.test("pipe member segments elaborate to FFI receiver calls", async () => {
   await checkSource(`
-    let hex = (byte: Number) => {
+    let hex = (byte: Real64.Real) => {
       byte :> .toString(16)
     };
     let joined = (items: Js.Array<String>) => {
@@ -194,7 +194,7 @@ Deno.test("pipe member chains continue through HM-typed primitive results", asyn
         Err(_) => { Panic("ffi") },
       }
     };
-    let hex = (byte: Number) => {
+    let hex = (byte: Real64.Real) => {
       let text: String = byte :> .toString(16) :> try;
       text :> .padStart(2, "0")
     };
@@ -206,7 +206,7 @@ Deno.test("pipe task error mismatch points at both origin slots", async () => {
       let scanAll: Void -> Task<Void, Js.Error> = () => {
         void :> Task.succeed
       };
-      let left: Result<Number, String> = Err("cli");
+      let left: Result<Real64.Real, String> = Err("cli");
       let bad = left
         :> Task.fromResult
         :> Task.andThen((n) => {
@@ -265,16 +265,16 @@ Deno.test("shared application inference preserves polymorphic reuse and nominal 
 record A<t> = { value: t };
 record B<t> = { value: t };
 let apply = (input, callback) => { callback(input) };
-let number: Number = apply(B(1), (item) => { item.value });
+let number: Real64.Real = apply(B(1), (item) => { item.value });
 let text: String = B("hi") :> apply((item) => { item.value });
 let identity = (x) => { x };
-let n: Number = identity(1);
+let n: Real64.Real = identity(1);
 let s: String = "hi" :> identity;
 `);
   for (
     const invocation of [
-      "apply(B(1), (item: A<Number>) => { item.value })",
-      "B(1) :> apply((item: A<Number>) => { item.value })",
+      "apply(B(1), (item: A<Real64.Real>) => { item.value })",
+      "B(1) :> apply((item: A<Real64.Real>) => { item.value })",
     ]
   ) {
     await assertRejects(() =>
@@ -295,7 +295,7 @@ Deno.test("early argument collisions retain authored call and pipe diagnostics",
   ) {
     const error = await assertRejects(() =>
       checkSource(`
-let combine = (left: Number, right: Number) => { left + right };
+let combine = (left: Real64.Real, right: Real64.Real) => { left + right };
 let bad = ${invocation};`), FrontendDiagnosticError);
     assertEquals(error.diagnostic.code, code);
   }

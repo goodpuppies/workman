@@ -7,7 +7,7 @@ const sources = [
   "let identity = (x) => { x }; let answer = identity(42);",
   "type Option<T> = None | Some<T>; let value = Some(42);",
   "let rec factorial = (n) => { if (n == 0) { 1 } else { factorial(n - 1) * n } };",
-  "record Point = { x: Number, y: Number }; let add = (x) => (y) => { x + y };",
+  "record Point = { x: Real64.Real, y: Real64.Real }; let add = (x) => (y) => { x + y };",
   'let value = "hello"; // comment\nlet pair = (1, true);',
   "let answer = ;",
   "let main = (x => { x };",

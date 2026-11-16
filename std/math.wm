@@ -1,23 +1,23 @@
-// Basis `MATH` over `Number`, the JavaScript double. Each function is the matching `Math` member:
+// Basis `MATH` over `Real64.Real`, the JavaScript double. Each function is the matching `Math` member:
 // out-of-domain arguments give NaN and never raise, as the spec says.
 from js.global("Math") import unsafe {
-  PI: Number,
-  E: Number,
-  sqrt as primSqrt: Number -> Number,
-  sin as primSin: Number -> Number,
-  cos as primCos: Number -> Number,
-  tan as primTan: Number -> Number,
-  asin as primAsin: Number -> Number,
-  acos as primAcos: Number -> Number,
-  atan as primAtan: Number -> Number,
-  atan2 as primAtan2: (Number, Number) -> Number,
-  exp as primExp: Number -> Number,
-  pow as primPow: (Number, Number) -> Number,
-  log as primLog: Number -> Number,
-  log10 as primLog10: Number -> Number,
-  sinh as primSinh: Number -> Number,
-  cosh as primCosh: Number -> Number,
-  tanh as primTanh: Number -> Number
+  PI: Real64.Real,
+  E: Real64.Real,
+  sqrt as primSqrt: Real64.Real -> Real64.Real,
+  sin as primSin: Real64.Real -> Real64.Real,
+  cos as primCos: Real64.Real -> Real64.Real,
+  tan as primTan: Real64.Real -> Real64.Real,
+  asin as primAsin: Real64.Real -> Real64.Real,
+  acos as primAcos: Real64.Real -> Real64.Real,
+  atan as primAtan: Real64.Real -> Real64.Real,
+  atan2 as primAtan2: (Real64.Real, Real64.Real) -> Real64.Real,
+  exp as primExp: Real64.Real -> Real64.Real,
+  pow as primPow: (Real64.Real, Real64.Real) -> Real64.Real,
+  log as primLog: Real64.Real -> Real64.Real,
+  log10 as primLog10: Real64.Real -> Real64.Real,
+  sinh as primSinh: Real64.Real -> Real64.Real,
+  cosh as primCosh: Real64.Real -> Real64.Real,
+  tanh as primTanh: Real64.Real -> Real64.Real
 };
 
 let pi = PI;

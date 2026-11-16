@@ -71,7 +71,7 @@ Deno.test("wmsml accepts SML-style lowercase type constructors", async () => {
       "get",
       "wmsml",
     ),
-    { type: "option<Number> -> Number", vars: 0 },
+    { type: "option<Real64.Real> -> Real64.Real", vars: 0 },
   );
 });
 
@@ -117,7 +117,7 @@ Deno.test("wmsml pattern identifiers are constructor-sensitive through the datat
       "f",
       "wmsml",
     ),
-    { type: "color -> Number", vars: 0 },
+    { type: "color -> Real64.Real", vars: 0 },
   );
 });
 
@@ -204,7 +204,7 @@ Deno.test("wmsml val rec can overwrite constructor identifier status", async () 
       "value",
       "wmsml",
     ),
-    { type: "Number", vars: 0 },
+    { type: "Real64.Real", vars: 0 },
   );
   assertEquals(
     await inferred(
@@ -218,7 +218,7 @@ Deno.test("wmsml val rec can overwrite constructor identifier status", async () 
       "choose",
       "wmsml",
     ),
-    { type: "'a -> Number", vars: 1 },
+    { type: "'a -> Real64.Real", vars: 1 },
   );
 });
 

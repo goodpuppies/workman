@@ -7,7 +7,7 @@ import type { BindingId } from "../ids.ts";
 import type { ModuleGraph } from "../module_graph.ts";
 import type { ModuleId, ModuleMap } from "../module_id.ts";
 import type { SourceSpan } from "../source.ts";
-import { NumberTy, prune, type Ty } from "../types.ts";
+import { Real64Ty, prune, type Ty } from "../types.ts";
 import {
   GPU_ELABORATION_SCHEMA_VERSION,
   type GpuBindingDto,
@@ -428,7 +428,7 @@ class NormalizationState {
         const width = Number(gpuShape.at(-1));
         const items = Array.from(
           { length: width },
-          (_item, index) => this.type(NumberTy, hint, `${identity}:gpu-item:${index}`),
+          (_item, index) => this.type(Real64Ty, hint, `${identity}:gpu-item:${index}`),
         );
         return this.internType(`vector:${identity}:${items.join(",")}`, () => ({
           ...baseType("vector"),
@@ -443,7 +443,7 @@ class NormalizationState {
       }));
     }
     if (target.tag === "prim") {
-      if (target.name === "Number") {
+      if (target.name === "Real64.Real") {
         const representation = hint || "abstract";
         return this.internType(`number:${identity}`, () => ({
           ...baseType("number"),
@@ -468,7 +468,7 @@ class NormalizationState {
       const vector = target.items.length >= 2 && target.items.length <= 4 &&
         target.items.every((item) => {
           const resolved = prune(item);
-          return resolved.tag === "prim" && resolved.name === "Number";
+          return resolved.tag === "prim" && resolved.name === "Real64.Real";
         });
       const kind = vector ? "vector" : "tuple";
       return this.internType(`${kind}:${identity}:${itemIds.join(",")}`, () => ({
@@ -543,12 +543,12 @@ function topLevelLambdaBindings(
 
 function h0GpuShape(type: Ty): GpuOperationShape | undefined {
   const target = prune(type);
-  if (target.tag === "prim" && target.name === "Number") return "f32";
+  if (target.tag === "prim" && target.name === "Real64.Real") return "f32";
   if (
     target.tag === "tuple" && target.items.length >= 2 && target.items.length <= 4 &&
     target.items.every((item) => {
       const component = prune(item);
-      return component.tag === "prim" && component.name === "Number";
+      return component.tag === "prim" && component.name === "Real64.Real";
     })
   ) {
     return `f32x${target.items.length}` as GpuOperationShape;

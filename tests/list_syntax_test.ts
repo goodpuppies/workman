@@ -13,8 +13,8 @@ Deno.test("list literals lower to the algebraic list model", async () => {
   `);
 
   expectBinding(result.env, "empty", { type: "List<'a>", vars: 1 });
-  expectBinding(result.env, "nums", { type: "List<Number>", vars: 0 });
-  expectBinding(result.env, "more", { type: "List<Number>", vars: 0 });
+  expectBinding(result.env, "nums", { type: "List<Real64.Real>", vars: 0 });
+  expectBinding(result.env, "more", { type: "List<Real64.Real>", vars: 0 });
 });
 
 Deno.test("list patterns lower to constructor patterns", async () => {
@@ -30,9 +30,9 @@ Deno.test("list patterns lower to constructor patterns", async () => {
     };
   `);
 
-  expectBinding(result.env, "sum", { type: "List<Number> -> Number", vars: 0 });
+  expectBinding(result.env, "sum", { type: "List<Real64.Real> -> Real64.Real", vars: 0 });
   expectBinding(result.env, "first_two", {
-    type: "List<Number> -> (Number, Number)",
+    type: "List<Real64.Real> -> (Real64.Real, Real64.Real)",
     vars: 0,
   });
 });
@@ -54,5 +54,5 @@ Deno.test("list pattern binder duplicates are rejected", async () => {
 
 Deno.test("list syntax works with basis list model", async () => {
   const result = await checkSource("let nums = [1, 2, 3];");
-  expectBinding(result.env, "nums", { type: "List<Number>", vars: 0 });
+  expectBinding(result.env, "nums", { type: "List<Real64.Real>", vars: 0 });
 });

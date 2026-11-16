@@ -16,14 +16,14 @@ Deno.test("persistent Map infers generic key and value types", async () => {
     let total = Map.fold(numbers, 0, (sum, key, _) => { sum + key });
   `);
 
-  expectBinding(result.env, "numbers", { type: "Map<Number, String>", vars: 0 });
+  expectBinding(result.env, "numbers", { type: "Map<Real64.Real, String>", vars: 0 });
   expectBinding(result.env, "found", { type: "Option<String>", vars: 0 });
   expectBinding(result.env, "present", { type: "Bool", vars: 0 });
   expectBinding(result.env, "pairs", {
-    type: "List<(Number, String)>",
+    type: "List<(Real64.Real, String)>",
     vars: 0,
   });
-  expectBinding(result.env, "total", { type: "Number", vars: 0 });
+  expectBinding(result.env, "total", { type: "Real64.Real", vars: 0 });
 });
 
 Deno.test("persistent Map preserves old versions and ordered semantics", async () => {

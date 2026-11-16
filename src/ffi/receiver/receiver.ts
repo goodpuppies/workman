@@ -428,7 +428,7 @@ function objectAccessForType(
 ): ObjectAccess | undefined {
   if (isJsObjectType(type)) return { kind: "dynamic" };
   if (type?.kind !== "TName" || type.args.length !== 0) return undefined;
-  if (type.name === "String" || type.name === "Number" || type.name === "Bool") {
+  if (type.name === "String" || type.name === "Real64.Real" || type.name === "Bool") {
     return { kind: "ref", ref: jsPrimitiveValueRef(type.name), receiverType: type };
   }
   const ref = importedTypeRefs.get(type.name);
@@ -442,7 +442,7 @@ function isJsObjectType(type: TypeExpr | undefined): boolean {
 function knownReceiverType(type: TypeExpr | undefined): TypeExpr | undefined {
   if (
     type?.kind === "TName" && type.args.length === 0 &&
-    (type.name === "String" || type.name === "Number" || type.name === "Bool")
+    (type.name === "String" || type.name === "Real64.Real" || type.name === "Bool")
   ) {
     return type;
   }

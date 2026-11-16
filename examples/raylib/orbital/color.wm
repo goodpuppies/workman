@@ -5,18 +5,18 @@
 -- record lines up with it field-for-field. We compute colors from a hue angle
 -- with no FFI at all -- standard HSV sextant math.
 
-record Color = { r: Number, g: Number, b: Number, a: Number };
+record Color = { r: Real64, g: Real64, b: Real64, a: Real64 };
 
-let floorI = (n: Number) => {
+let floorI = (n: Real64) => {
   n - (n % 1)
 };
 
-let absf = (n: Number) => {
+let absf = (n: Real64) => {
   if (n < 0) { 0 - n } else { n }
 };
 
 -- hue in [0, 360), saturation and value in [0, 1].
-let hsv = (hue: Number, saturation: Number, value: Number) => {
+let hsv = (hue: Real64, saturation: Real64, value: Real64) => {
   let c = value * saturation;
   let hp = hue / 60;
   let x = c * (1 - absf((hp % 2) - 1));
@@ -48,6 +48,6 @@ let hsv = (hue: Number, saturation: Number, value: Number) => {
 };
 
 -- A copy of a color with a different alpha channel (for glow halos).
-let withAlpha = (color: Color, alpha: Number) => {
+let withAlpha = (color: Color, alpha: Real64) => {
   .{ r = color.r, g = color.g, b = color.b, a = alpha }
 };

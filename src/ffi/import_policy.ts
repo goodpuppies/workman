@@ -2,7 +2,7 @@ import type { Decl, JsImportSpec, TypeExpr } from "../ast.ts";
 
 /**
  * An authored `unsafe` import spec with a manual type, such as
- * `from js.module("./x.js") import unsafe { f: Number -> Number }`. Its type is the declaration and
+ * `from js.module("./x.js") import unsafe { f: Real64.Real -> Real64.Real }`. Its type is the declaration and
  * its calls are direct, so it is an ordinary typed binding: no reflection, no overload selection, no
  * delayed resolution, and calls to it don't count as an FFI boundary for generalization.
  */

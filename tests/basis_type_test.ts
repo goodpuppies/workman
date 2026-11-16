@@ -41,7 +41,7 @@ Deno.test("a @basis-type declaration is the built-in type and constructors", asy
 print(R.map(Ok(1), (x) => { x + 1 }));
 print(match(R.Ok(2)) { Ok(n) => { n }, Err(_) => { 0 } });
 print(match(Err("e")) { R.Ok(_) => { "ok" }, R.Err(e) => { e } });
-let typed = (value: R.Result<Number, String>) => { value };
+let typed = (value: R.Result<Real64.Real, String>) => { value };
 print(typed(Ok(3)));
 from js.global("JSON") import { parse };
 print(match(parse("1")) { R.Ok(_) => { "parsed" }, R.Err(_) => { "failed" } });`,
@@ -58,7 +58,7 @@ from "basis/option_value.wm" import * as O;
 from "basis/option.wm" import * as Options;
 from "basis/result.wm" import * as Results;
 from "basis/list.wm" import * as Lists;
-let typed = (value: O.Option<Number>) => { Options.getOr(value, 0) };
+let typed = (value: O.Option<Real64.Real>) => { Options.getOr(value, 0) };
 print(typed(Some(42)));
 print(match(Results.toOption(Ok("yes"))) { O.Some(s) => { s }, O.None => { "no" } });
 print(match(Results.toOption(Err("missing"))) { Some(_) => { false }, None => { true } });
@@ -98,7 +98,7 @@ Deno.test("without the directive a Result declaration is a new type", async () =
     await typeError({
       "/test/result.wm": "type Result<a, e> = Ok<a> | Err<e>;\n",
       "/test/main.wm": `from "./result.wm" import * as R;
-let typed = (value: R.Result<Number, String>) => { value };
+let typed = (value: R.Result<Real64.Real, String>) => { value };
 print(typed(Ok(1)));`,
     }),
     "Result",

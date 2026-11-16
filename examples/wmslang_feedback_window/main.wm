@@ -20,12 +20,12 @@ from "../wmslang_window/src/webgpu_present.wm" import {
 type AppError = NativeFailure<NativeError> | HostFailure<Js.Error>;
 
 record UpdateInputs = {
-  frame: Number,
+  frame: Real64,
   previous: Gpu.SampledTexture2D
 };
 
 record DisplayInputs = {
-  resolution: (Number, Number),
+  resolution: (Real64, Real64),
   image: Gpu.SampledTexture2D,
   sampler: Gpu.Sampler
 };
@@ -43,10 +43,10 @@ record FeedbackPair = {
 
 record FrameState = {
   quit: Bool,
-  frame: Number,
-  width: Number,
-  height: Number,
-  pendingResize: Option<(Number, Number)>,
+  frame: Real64,
+  width: Real64,
+  height: Real64,
+  pendingResize: Option<(Real64, Real64)>,
   pair: FeedbackPair
 };
 
@@ -125,8 +125,8 @@ let displayFragmentFor = (inputs: DisplayInputs) => {
 
 let makeFeedbackTexture = (
   renderer: FragmentRenderer,
-  textureWidth: Number,
-  textureHeight: Number
+  textureWidth: Real64,
+  textureHeight: Real64
 ) => {
   createFeedbackTexture2D(renderer, textureWidth, textureHeight)
     :> Result.andThen((physical) => {
@@ -147,8 +147,8 @@ let makeFeedbackTexture = (
 
 let makeFeedbackPair = (
   renderer: FragmentRenderer,
-  textureWidth: Number,
-  textureHeight: Number
+  textureWidth: Real64,
+  textureHeight: Real64
 ) => {
   let assemble = Monad.via Result (read, write) => {
     let pair: FeedbackPair = .{ read = read, write = write };
@@ -205,7 +205,7 @@ let applyNativeEvent = (state: FrameState, event) => {
   }
 };
 
-let rec drainEvents = (native: NativeRuntime, state: FrameState, remaining: Number) => {
+let rec drainEvents = (native: NativeRuntime, state: FrameState, remaining: Real64) => {
   if (remaining <= 0) {
     Ok(state)
   } else {
@@ -232,8 +232,8 @@ let resizeFrame = (
   native: NativeRuntime,
   renderer: FragmentRenderer,
   state: FrameState,
-  nextWidth: Number,
-  nextHeight: Number
+  nextWidth: Real64,
+  nextHeight: Real64
 ) => {
   match(makeFeedbackPair(renderer, nextWidth, nextHeight)) {
     Err(error) => { Err(HostFailure(error)) },

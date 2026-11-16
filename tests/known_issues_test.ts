@@ -187,7 +187,7 @@ issue(
   async () => {
     const result = await wm("check", {
       "m.wm": `
-        record State = { n: Number };
+        record State = { n: Real64.Real };
         let rec loop = Monad.via Task (state: State) => {
           let continue = Monad.via Task (_) => {
             state :> loop
@@ -325,8 +325,8 @@ Deno.test("fixed: a parameter annotation through List resolves a shared field", 
   runs(
     {
       "m.wm": `
-        record A = { s: String, n: Number };
-        record B = { s: String, k: Number };
+        record A = { s: String, n: Real64.Real };
+        record B = { s: String, k: Real64.Real };
         let first = (rows: List<B>) => {
           match(rows) {
             [] => { "" },

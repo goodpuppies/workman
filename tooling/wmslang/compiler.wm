@@ -25,14 +25,14 @@ from "./types.wm" import {
 from "./slice_ir.wm" import { compileSliceProgram, elaborateSliceProgramTypes };
 
 record SpecializationRegistryEntry = {
-  specializationId: Number,
+  specializationId: Real64,
   paramRepresentations: Js.Array<String>,
   resultRepresentation: String,
 };
 
 record SpecializationBuildState = {
-  nextId: Number,
-  registry: Map.Map<Number, List<SpecializationRegistryEntry>>,
+  nextId: Real64,
+  registry: Map.Map<Real64, List<SpecializationRegistryEntry>>,
   specializations: List<GpuSpecializationDto>,
   rootSpecializations: List<GpuRootSpecializationDto>,
   calls: List<GpuSpecializedCallDto>,
@@ -40,9 +40,9 @@ record SpecializationBuildState = {
 };
 
 record IrBuildState = {
-  nextExpressionId: Number,
-  functions: Map.Map<Number, GpuIrFunctionDto>,
-  expressions: Map.Map<Number, GpuIrExprDto>,
+  nextExpressionId: Real64,
+  functions: Map.Map<Real64, GpuIrFunctionDto>,
+  expressions: Map.Map<Real64, GpuIrExprDto>,
 };
 
 let typedExpression = (expression: GpuExprDto) => {

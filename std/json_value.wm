@@ -7,9 +7,9 @@ type Value =
   | Text<List<Char>>
   | Array<List<Value>>
   | Object<List<(List<Char>, Value)>>;
-record Error = {byteOffset: I32, message: String};
+record Error = {byteOffset: Int32.Int, message: String};
 let error = (offset, message) => { (.{ byteOffset = offset, message = message }: Error) };
-type Step = Key<List<Char>> | Index<I32>;
+type Step = Key<List<Char>> | Index<Int32.Int>;
 record Node = {steps: List<Step>, data: Value};
 let node = (path, value) => { (.{ steps = path, data = value }: Node) };
 type Problem = Malformed<Error> | Missing<List<Step>> | Mismatch<List<Step>, String>;

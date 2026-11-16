@@ -351,8 +351,8 @@ export function jsGlobalValueMember(name: string): JsMemberType | undefined {
   return reflected;
 }
 
-export function jsPrimitiveValueRef(name: "String" | "Number" | "Bool"): JsTypeRef {
-  const tsType = name === "String" ? "string" : name === "Number" ? "number" : "boolean";
+export function jsPrimitiveValueRef(name: "String" | "Real64.Real" | "Bool"): JsTypeRef {
+  const tsType = name === "String" ? "string" : name === "Real64.Real" ? "number" : "boolean";
   const suffix = `primitive_${tsType}`;
   return {
     key: `primitive:${tsType}`,
@@ -412,7 +412,7 @@ export function instantiateJsTypeRef(
     }
     // Only built-in shapes have names which are meaningful without a TS ref.
     if (
-      ["String", "Number", "Bool", "Void", "Js.Value", "Js.Object", "JsNever"].includes(arg.name)
+      ["String", "Real64.Real", "Bool", "Void", "Js.Value", "Js.Object", "JsNever"].includes(arg.name)
     ) {
       return tsTypeFromTypeExpr(arg);
     }

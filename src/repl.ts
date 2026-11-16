@@ -172,7 +172,6 @@ export const REPL_SESSION_HEADER = [
   `from "./${REPL_PERVASIVES_FILE}" import { quit };`,
   `from "basis/bool.wm" import * as Bool;`,
   `from "basis/char.wm" import * as Char;`,
-  `from "basis/int.wm" import * as Int;`,
   `from "basis/io.wm" import * as Io;`,
   `from "basis/os.wm" import * as OS;`,
   `from "basis/string_cvt.wm" import * as StringCvt;`,

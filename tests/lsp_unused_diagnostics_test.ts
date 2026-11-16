@@ -92,7 +92,7 @@ Deno.test("lsp recognizes called, bare and piped uses of a reflected JS namespac
      from js.global("Math") import * as Spare;
      let called = () => { Called.random() };
      let bare = Bare.random;
-     let piped = (x: Number) => { x :> Piped.floor };`,
+     let piped = (x: Real64.Real) => { x :> Piped.floor };`,
   );
 
   assertEquals(await compactDiagnostics(main), [
@@ -105,7 +105,7 @@ Deno.test("lsp does not warn for unused public nominal APIs", async () => {
   const main = `${dir}/main.wm`;
   await Deno.writeTextFile(
     main,
-    `record Point = { x: Number };
+    `record Point = { x: Real64.Real };
      type Choice = First | Second;
      let main = () => { void };`,
   );
@@ -119,7 +119,7 @@ Deno.test("lsp does not warn for an unused implicit record constructor", async (
   await Deno.writeTextFile(
     main,
     `let main = () => {
-       record Mates = { stack: Number };
+       record Mates = { stack: Real64.Real };
        let mates: Mates = .{ stack = 1 };
        mates.stack
      };`,

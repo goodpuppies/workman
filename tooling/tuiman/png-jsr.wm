@@ -7,8 +7,8 @@ from js.global("Uint8Array") import unsafe {
 } as Uint8ArrayConstructor;
 
 record Header = {
-  width: Number,
-  height: Number,
+  width: Real64,
+  height: Real64,
 };
 
 record Decoded = {

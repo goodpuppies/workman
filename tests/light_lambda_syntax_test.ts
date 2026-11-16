@@ -30,10 +30,10 @@ Deno.test("lightweight lambdas are strict syntax with no synthesized punctuation
       "let value = apply(x => x+1, 2);",
       "let f = [head, ..tail] => head;",
       "let f = _ => 42;",
-      "let f = x:Number => x*x;",
-      "let f = x : Number => x*x;",
-      "let f = (x : Number) => x*x;",
-      "let f = (x):Number => x*x;",
+      "let f = x:Real64.Real => x*x;",
+      "let f = x : Real64.Real => x*x;",
+      "let f = (x : Real64.Real) => x*x;",
+      "let f = (x):Real64.Real => x*x;",
       "let f = x |offset| => x+offset;",
       "let f = flag => if (flag) { 1 } else { 2 };",
       "let f = x => match(x) { true => { 1 }, false => { 2 } };",
@@ -261,12 +261,12 @@ Deno.test("an expression lambda leaves the phrase semicolon outside its body", a
     let answer = square(5);
   `);
   for (const name of ["square", "grouped", "explicitBlock"]) {
-    expectBinding(result.env, name, { type: "Number -> Number", vars: 0 });
+    expectBinding(result.env, name, { type: "Real64.Real -> Real64.Real", vars: 0 });
   }
   for (const name of ["explicitVoid", "sequenceVoid"]) {
-    expectBinding(result.env, name, { type: "Number -> Void", vars: 0 });
+    expectBinding(result.env, name, { type: "Real64.Real -> Void", vars: 0 });
   }
-  expectBinding(result.env, "answer", { type: "Number", vars: 0 });
+  expectBinding(result.env, "answer", { type: "Real64.Real", vars: 0 });
   assertEquals(
     await formatFrontendV2Source("let square=x=>x*x;", "<test>", true),
     "let square = x => x * x;",
@@ -280,7 +280,7 @@ Deno.test("bare and expression lambdas execute across calls, captures and blocks
     let call = f => f(5);
     let offset = 2;
     let captured = x |offset| => x+offset;
-    let typed = x:Number => x*x;
+    let typed = x:Real64.Real => x*x;
     let first = [head, ..tail] => head;
     let checks = (
       add 2 3 == 5,

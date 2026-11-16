@@ -325,7 +325,7 @@ Deno.test("reflects Deno WebGPU globals", async () => {
     type: "Task<Option<GPUAdapter>, Js.Error>!",
     vars: 0,
   });
-  expectBinding(result.env, "storage", { type: "Result<Number, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "storage", { type: "Result<Real64.Real, Js.Error>!", vars: 0 });
 });
 
 Deno.test("reflects constructor-valued Deno members through new member", async () => {
@@ -360,7 +360,7 @@ Deno.test("reflects constructor-valued Deno members through new member", async (
     type: "Result<Option<Js.Object>, Js.Error>!",
     vars: 0,
   });
-  expectBinding(result.env, "readNumber", { type: "Result<Number, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "readNumber", { type: "Result<Real64.Real, Js.Error>!", vars: 0 });
   expectBinding(result.env, "present", {
     type: "UnsafeWindowSurface -> Result<Void, Js.Error>!",
     vars: 0,
@@ -683,10 +683,10 @@ Deno.test("recursive FFI receiver helpers stay monomorphic across downstream con
   `);
 
   expectBinding(result.env, "readLoop", {
-    type: "(UnsafePointerView, Number) -> Result<Number, Js.Error>!",
+    type: "(UnsafePointerView, Real64.Real) -> Result<Real64.Real, Js.Error>!",
     vars: 0,
   });
-  expectBinding(result.env, "value", { type: "Result<Number, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "value", { type: "Result<Real64.Real, Js.Error>!", vars: 0 });
 });
 
 Deno.test("delayed foreign methods provide callback parameter refs", async () => {
@@ -885,11 +885,11 @@ Deno.test("reflects fixed TypeScript tuples from functions and foreign members",
   `);
 
   expectBinding(result.env, "pair", {
-    type: "Result<(Number, String), Js.Error>!",
+    type: "Result<(Real64.Real, String), Js.Error>!",
     vars: 0,
   });
   expectBinding(result.env, "create", {
-    type: "TupleForeign -> Result<(Number, TupleHandle), Js.Error>!",
+    type: "TupleForeign -> Result<(Real64.Real, TupleHandle), Js.Error>!",
     vars: 0,
   });
 });
@@ -949,13 +949,13 @@ Deno.test("call-specific reflection maps each supplied rest argument to its elem
       TupleForeign
     };
 
-    let add = (foreign: TupleForeign, value: Number) => {
+    let add = (foreign: TupleForeign, value: Real64.Real) => {
       foreign :> .add(value)
     };
   `);
 
   expectBinding(result.env, "add", {
-    type: "(TupleForeign, Number) -> Result<Void, Js.Error>!",
+    type: "(TupleForeign, Real64.Real) -> Result<Void, Js.Error>!",
     vars: 0,
   });
 });
@@ -967,13 +967,13 @@ Deno.test("extra arguments do not inherit the final non-rest parameter type", as
     };
     from js.global import type { Request };
 
-    let call = (foreign: TupleForeign, value: Number, extra: Request) => {
+    let call = (foreign: TupleForeign, value: Real64.Real, extra: Request) => {
       foreign :> .fixed(value, extra)
     };
   `);
 
   expectBinding(result.env, "call", {
-    type: "(TupleForeign, Number, Request) -> Result<Void, Js.Error>!",
+    type: "(TupleForeign, Real64.Real, Request) -> Result<Void, Js.Error>!",
     vars: 0,
   });
 });
@@ -1058,7 +1058,7 @@ Deno.test("named JS properties retain foreign types when nominal labels overlap"
   for (const name of ["dotted", "piped", "aliased"]) {
     expectBinding(result.env, name, { type: "Result<Bool, Js.Error>!", vars: 0 });
   }
-  expectBinding(result.env, "length", { type: "Result<Number, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "length", { type: "Result<Real64.Real, Js.Error>!", vars: 0 });
 });
 
 Deno.test("computed receivers require explicit pipe-member syntax", async () => {
@@ -1071,7 +1071,7 @@ Deno.test("computed receivers require explicit pipe-member syntax", async () => 
     assertStringIncludes(String(error), ":> .");
   }
   const result = await checkSource('let length = "hello" :> .length;');
-  expectBinding(result.env, "length", { type: "Result<Number, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "length", { type: "Result<Real64.Real, Js.Error>!", vars: 0 });
 });
 
 Deno.test("dotted JS calls preserve this and property getters retain safe errors", async () => {
@@ -1201,7 +1201,7 @@ Deno.test("a generic parameter written without arguments accepts a subclass", as
     `from js.module("./lib.ts") import { make, take };
      let taken = make() :> Result.andThen((derived) => { take(derived) });`,
   );
-  expectBinding(result.env, "taken", { type: "Result<Number, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "taken", { type: "Result<Real64.Real, Js.Error>!", vars: 0 });
 });
 
 Deno.test("a generic named only by an instantiated parameter declares its arity", async () => {
@@ -1212,7 +1212,7 @@ Deno.test("a generic named only by an instantiated parameter declares its arity"
      let reader = read;`,
   );
   expectBinding(result.env, "reader", {
-    type: "Tagged<Number> -> Result<Number, Js.Error>!",
+    type: "Tagged<Real64.Real> -> Result<Real64.Real, Js.Error>!",
     vars: 0,
   });
 });

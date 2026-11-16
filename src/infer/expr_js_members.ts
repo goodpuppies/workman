@@ -3,7 +3,7 @@ import {
   fn,
   fresh,
   named,
-  NumberTy,
+  Real64Ty,
   prune,
   show,
   StringTy,
@@ -38,9 +38,9 @@ export function ffiCallbackParamHints(
   if (member === "reduce") {
     const accumulator = args[1];
     if (!accumulator) return undefined;
-    return [accumulator, element, NumberTy, arrayTy];
+    return [accumulator, element, Real64Ty, arrayTy];
   }
-  return [element, NumberTy, arrayTy];
+  return [element, Real64Ty, arrayTy];
 }
 
 function jsValueTy(typeEnv: TypeEnv): Ty {
@@ -52,7 +52,7 @@ function jsValueTy(typeEnv: TypeEnv): Ty {
 export function jsArrayFfiGetValue(typeEnv: TypeEnv, receiver: Ty, path: string[]): Ty | undefined {
   const array = jsArrayElement(typeEnv, receiver);
   if (!array || path.length !== 1) return undefined;
-  if (path[0] === "length") return NumberTy;
+  if (path[0] === "length") return Real64Ty;
   return undefined;
 }
 
@@ -70,7 +70,7 @@ export function jsArrayFfiCallValue(
   if (member === "join") return StringTy;
   if (member === "at") {
     if (args.length !== 1) return undefined;
-    constrainMember(args[0], NumberTy, "JsArray.at index", "argument matches array index type");
+    constrainMember(args[0], Real64Ty, "JsArray.at index", "argument matches array index type");
     return optionTy(typeEnv, element);
   }
   if (member === "includes") {
@@ -82,7 +82,7 @@ export function jsArrayFfiCallValue(
     if (args.length !== 1) return undefined;
     constrainMember(
       args[0],
-      fn([tuple([element, NumberTy, jsArrayTy(typeEnv, element)])], BoolTy),
+      fn([tuple([element, Real64Ty, jsArrayTy(typeEnv, element)])], BoolTy),
       "JsArray.filter callback",
       "callback matches filter signature",
     );
@@ -93,7 +93,7 @@ export function jsArrayFfiCallValue(
     const accumulator = args[1];
     constrainMember(
       args[0],
-      fn([tuple([accumulator, element, NumberTy, jsArrayTy(typeEnv, element)])], accumulator),
+      fn([tuple([accumulator, element, Real64Ty, jsArrayTy(typeEnv, element)])], accumulator),
       "JsArray.reduce callback",
       "callback matches reduce signature",
     );
@@ -103,7 +103,7 @@ export function jsArrayFfiCallValue(
   const mapped = fresh("mapped");
   constrainMember(
     args[0],
-    fn([tuple([element, NumberTy, jsArrayTy(typeEnv, element)])], mapped),
+    fn([tuple([element, Real64Ty, jsArrayTy(typeEnv, element)])], mapped),
     "JsArray.map callback",
     "callback matches map signature",
   );
@@ -144,7 +144,7 @@ function jsArrayElement(typeEnv: TypeEnv, receiver: Ty): Ty | undefined {
 export function jsPrimitiveFfiGetValue(receiver: Ty, path: string[]): Ty | undefined {
   const target = prune(receiver);
   if (path.length !== 1 || target.tag !== "prim") return undefined;
-  if (target.name === "String" && path[0] === "length") return NumberTy;
+  if (target.name === "String" && path[0] === "length") return Real64Ty;
   return undefined;
 }
 
@@ -154,19 +154,19 @@ export function jsPrimitiveFfiCallValue(receiver: Ty, path: string[], args: Ty[]
   const target = prune(receiver);
   if (target.tag !== "prim") return undefined;
   const primitive = target.name;
-  if (primitive === "Number" && member === "toString") {
+  if (primitive === "Real64.Real" && member === "toString") {
     if (args.length > 1) return undefined;
     if (args[0]) {
-      constrainMember(args[0], NumberTy, "Number.toString radix", "argument matches numeric radix");
+      constrainMember(args[0], Real64Ty, "Number.toString radix", "argument matches numeric radix");
     }
     return StringTy;
   }
-  if (primitive === "Number" && member === "toFixed") {
+  if (primitive === "Real64.Real" && member === "toFixed") {
     if (args.length > 1) return undefined;
     if (args[0]) {
       constrainMember(
         args[0],
-        NumberTy,
+        Real64Ty,
         "Number.toFixed digits",
         "argument matches numeric digits",
       );
@@ -175,9 +175,9 @@ export function jsPrimitiveFfiCallValue(receiver: Ty, path: string[], args: Ty[]
   }
   if (primitive === "String" && member === "slice") {
     if (args.length < 1 || args.length > 2) return undefined;
-    constrainMember(args[0], NumberTy, "String.slice start", "argument matches numeric start");
+    constrainMember(args[0], Real64Ty, "String.slice start", "argument matches numeric start");
     if (args[1]) {
-      constrainMember(args[1], NumberTy, "String.slice end", "argument matches numeric end");
+      constrainMember(args[1], Real64Ty, "String.slice end", "argument matches numeric end");
     }
     return StringTy;
   }
@@ -185,7 +185,7 @@ export function jsPrimitiveFfiCallValue(receiver: Ty, path: string[], args: Ty[]
     if (args.length !== 2) return undefined;
     constrainMember(
       args[0],
-      NumberTy,
+      Real64Ty,
       `String.${member} length`,
       "argument matches numeric length",
     );
@@ -194,7 +194,7 @@ export function jsPrimitiveFfiCallValue(receiver: Ty, path: string[], args: Ty[]
   }
   if (primitive === "String" && member === "repeat") {
     if (args.length !== 1) return undefined;
-    constrainMember(args[0], NumberTy, "String.repeat count", "argument matches numeric count");
+    constrainMember(args[0], Real64Ty, "String.repeat count", "argument matches numeric count");
     return StringTy;
   }
   if (primitive === "String" && (member === "startsWith" || member === "endsWith")) {
@@ -210,8 +210,8 @@ export function jsPrimitiveFfiCallValue(receiver: Ty, path: string[], args: Ty[]
 }
 
 const PRIMITIVE_RECEIVER_DEFAULTS: Readonly<Record<string, Ty>> = {
-  toString: NumberTy,
-  toFixed: NumberTy,
+  toString: Real64Ty,
+  toFixed: Real64Ty,
   slice: StringTy,
   padStart: StringTy,
   padEnd: StringTy,

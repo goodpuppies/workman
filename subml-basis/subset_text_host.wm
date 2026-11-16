@@ -1,23 +1,23 @@
 // Synced from subm/SubsetML by scripts/sync_subml_basis.ts. Do not edit here.
 // Workman/JS implementation of the native-text primitives.
 // Raw host units are validated by SubsetString before entering portable byte storage.
-// charCodeAt returns an integer from 0 to 65535, which is already a valid I32 value.
+// charCodeAt returns an integer from 0 to 65535, which is already a valid Int32 value.
 // A Workman Char is a one-unit JS string, so the same host calls convert characters.
 from js.global("String.prototype.charCodeAt") import unsafe {
-  call as charCodeAt: (String, Number) -> I32
+  call as charCodeAt: (String, Real64.Real) -> Int32.Int
 };
 // FFI signatures cannot name Char, so the character calls are imported at a type
 // variable and fixed by the wrappers below.
 from js.global("String.prototype.charCodeAt") import unsafe {
-  call as unitCode: (a, Number) -> I32
+  call as unitCode: (a, Real64.Real) -> Int32.Int
 };
 from js.global("String") import unsafe {
-  fromCharCode as codeUnit: I32 -> a,
-  fromCharCode as codeString: I32 -> String
+  fromCharCode as codeUnit: Int32.Int -> a,
+  fromCharCode as codeString: Int32.Int -> String
 };
 // `lastIndexOf("")` is the string's length. It is a call, so this import needs no reflection.
 from js.global("String.prototype.lastIndexOf") import unsafe {
-  call as lastIndexOf: (String, String) -> Number
+  call as lastIndexOf: (String, String) -> Real64.Real
 };
 let codes = (value: String) => {
   let size = lastIndexOf(value, "");
@@ -27,8 +27,8 @@ let codes = (value: String) => {
   go(size - 1, [])
 };
 let charCode = (c: Char) => { unitCode(c, 0) };
-let codeChar = (code: I32) => { (codeUnit(code): Char) };
-let fromCodes = (values: List<I32>) => {
+let codeChar = (code: Int32.Int) => { (codeUnit(code): Char) };
+let fromCodes = (values: List<Int32.Int>) => {
   let rec go = (rest, acc) => {
     match(rest) {
       [] => { acc },

@@ -18,20 +18,20 @@ from "./trig.wm" import { sin, cos, floorReal };
 -- An agent's current task. A sum type keeps the state machine honest.
 type Job =
   | Idle
-  | ToRes<Number>     -- walking to resource tile (carries the tile index)
-  | Mining<Number>    -- harvesting tile index
+  | ToRes<Real64>     -- walking to resource tile (carries the tile index)
+  | Mining<Real64>    -- harvesting tile index
   | ToHome;           -- hauling cargo back to the stockpile
 
-record Tile  = { h: Number, res: Number, fertile: Bool };
-record Agent = { pos: Vec2, job: Job, carry: Number };
+record Tile  = { h: Real64, res: Real64, fertile: Bool };
+record Agent = { pos: Vec2, job: Job, carry: Real64 };
 
 record Sim = {
   tiles: List<Tile>,
   agents: List<Agent>,
-  stockpile: Number,
-  threshold: Number,
+  stockpile: Real64,
+  threshold: Real64,
   rng: Rng,
-  t: Number
+  t: Real64
 };
 
 -- ---- constants ------------------------------------------------------------
@@ -47,7 +47,7 @@ let home = .{ x = 8, y = 8 };
 
 -- ---- small pure helpers ---------------------------------------------------
 
-let clamp = (v: Number, lo: Number, hi: Number) => {
+let clamp = (v: Real64, lo: Real64, hi: Real64) => {
   if (v < lo) { lo } else { if (v > hi) { hi } else { v } }
 };
 
@@ -57,16 +57,16 @@ let rec count = match(xs) => {
 };
 
 -- World position of tile `i`'s cell (y holds the world z coordinate).
-let tileCenter = (i: Number) => {
+let tileCenter = (i: Real64) => {
   .{ x = i % gridN, y = floorReal(i / gridN) }
 };
 
-let terrainH = (x: Number, z: Number) => {
+let terrainH = (x: Real64, z: Real64) => {
   let h = 1.6 + 1.2 * sin(x * 0.55) + 1.0 * cos(z * 0.5) + 0.6 * sin((x + z) * 0.4);
   if (h < 0.4) { 0.4 } else { h }
 };
 
-let moveToward = (pos: Vec2, target: Vec2, dt: Number) => {
+let moveToward = (pos: Vec2, target: Vec2, dt: Real64) => {
   let d = sub(target, pos);
   let len = length(d);
   if (len < 0.0001) {
@@ -77,7 +77,7 @@ let moveToward = (pos: Vec2, target: Vec2, dt: Number) => {
   }
 };
 
-let rec tileRes = (tiles: List<Tile>, i: Number) => {
+let rec tileRes = (tiles: List<Tile>, i: Real64) => {
   match(tiles) {
     [] => { 0 },
     [t, ..rest] => { if (i == 0) { t.res } else { tileRes(rest, i - 1) } }
@@ -85,7 +85,7 @@ let rec tileRes = (tiles: List<Tile>, i: Number) => {
 };
 
 -- Nearest fertile, non-empty tile to `from`; returns its index, or -1.
-let rec nearestFrom = (tiles: List<Tile>, i: Number, origin: Vec2, bestIdx: Number, bestD: Number) => {
+let rec nearestFrom = (tiles: List<Tile>, i: Real64, origin: Vec2, bestIdx: Real64, bestD: Real64) => {
   match(tiles) {
     [] => { bestIdx },
     [t, ..rest] => {
@@ -107,7 +107,7 @@ let nearestResource = (tiles: List<Tile>, origin: Vec2) => {
 -- Returns (agent, harvestTileIdx, harvestAmount, depositAmount).
 -- harvestTileIdx == -1 means "no harvest this frame".
 
-let stepAgent = (tiles: List<Tile>, ag: Agent, dt: Number) => {
+let stepAgent = (tiles: List<Tile>, ag: Agent, dt: Real64) => {
   match(ag.job) {
     Idle => {
       let idx = nearestResource(tiles, ag.pos);
@@ -170,19 +170,19 @@ let rec collectHarvests = match(results) => {
   }
 };
 
-let rec harvestedAt = (harvests, i: Number) => {
+let rec harvestedAt = (harvests, i: Real64) => {
   match(harvests) {
     [] => { 0 },
     [h, ..rest] => {
       let (idx, amt) = h;
-      -- `idx - i` forces both to Number, sidestepping equality on a generic var
+      -- `idx - i` forces both to Real64, sidestepping equality on a generic var
       if (idx - i == 0) { amt + harvestedAt(rest, i) } else { harvestedAt(rest, i) }
     }
   }
 };
 
 -- Regrow fertile tiles and subtract everything harvested this frame.
-let rec rebuildTiles = (tiles: List<Tile>, i: Number, harvests, dt: Number) => {
+let rec rebuildTiles = (tiles: List<Tile>, i: Real64, harvests, dt: Real64) => {
   match(tiles) {
     [] => { [] },
     [t, ..rest] => {
@@ -197,7 +197,7 @@ let rec rebuildTiles = (tiles: List<Tile>, i: Number, harvests, dt: Number) => {
 
 -- ---- the frame step -------------------------------------------------------
 
-let stepSim = (sim: Sim, dt: Number) => {
+let stepSim = (sim: Sim, dt: Real64) => {
   let results = List.map(sim.agents, (a) => { stepAgent(sim.tiles, a, dt) });
   let agents = agentsOf(results);
   let deposits = sumDeposits(results);
@@ -220,7 +220,7 @@ let stepSim = (sim: Sim, dt: Number) => {
 
 -- ---- world generation -----------------------------------------------------
 
-let rec buildTiles = (i: Number, total: Number, r: Rng) => {
+let rec buildTiles = (i: Real64, total: Real64, r: Rng) => {
   if (i >= total) {
     ([], r)
   } else {
@@ -236,7 +236,7 @@ let rec buildTiles = (i: Number, total: Number, r: Rng) => {
   }
 };
 
-let rec initialAgents = (n: Number) => {
+let rec initialAgents = (n: Real64) => {
   match(n) {
     0 => { [] },
     _ => {
@@ -246,7 +246,7 @@ let rec initialAgents = (n: Number) => {
   }
 };
 
-let initSim = (seed: Number) => {
+let initSim = (seed: Real64) => {
   let (tiles, r) = buildTiles(0, gridN * gridN, .{ seed = seed });
   .{
     tiles = tiles,

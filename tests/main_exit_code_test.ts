@@ -71,7 +71,7 @@ Deno.test("only the outermost Err fails main", () =>
 
 Deno.test("a user constructor named Err isn't a failure", () =>
   succeeds(`
-    type Mine = | Oops<Number>;
+    type Mine = | Oops<Real64.Real>;
     let main = () => { Oops(1) };
   `));
 
@@ -83,15 +83,15 @@ Deno.test("a whole number returned from main is the exit code", async () => {
   }
 });
 
-Deno.test("an I32 from main is the exit code, and a Task's Ok(n) is a success", async () => {
-  const typed = await run(`let main = () => { let code: I32 = 4; code };`);
+Deno.test("an Int32.Int from main is the exit code, and a Task's Ok(n) is a success", async () => {
+  const typed = await run(`let main = () => { let code: Int32.Int = 4; code };`);
   assertEquals(typed.code, 4, typed.stderr);
   const task = await run(`let main = () => { Task.succeed(3) };`);
   assertEquals(task.code, 0, task.stderr);
 });
 
-Deno.test("main's exit code works in a program that uses the Number module", async () => {
-  const result = await run(`let main = () => { Number.div(7, 2) };`);
+Deno.test("main's exit code works in a program that uses the Int32 module", async () => {
+  const result = await run(`let main = () => { Int32.toReal64(Int32.div(7, 2)) };`);
   assertEquals(result.code, 3, result.stderr);
   assertEquals(result.stderr, "");
 });

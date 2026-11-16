@@ -23,8 +23,8 @@ type AppError = NativeFailure<NativeError> | HostFailure<Js.Error>;
 
 record JellyFrame = {
   quit: Bool,
-  resolution: (Number, Number),
-  time: Number
+  resolution: (Real64, Real64),
+  time: Real64
 };
 
 type PollStep = PollAgain<JellyFrame> | PollDone<JellyFrame>;
@@ -59,7 +59,7 @@ let applyNativeEvent = (state: JellyFrame, event) => {
 let rec drainEvents = (
   native: NativeRuntime,
   state: JellyFrame,
-  remaining: Number
+  remaining: Real64
 ) => {
   if (remaining <= 0) {
     Ok(state)

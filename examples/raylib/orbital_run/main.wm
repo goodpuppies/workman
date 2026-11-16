@@ -36,13 +36,13 @@ type Scene =
   | Over<Game>;
 
 -- `zoom` is carried in the app so mouse-wheel zoom persists across frames.
-record App = { scene: Scene, rng: Rng, zoom: Number };
+record App = { scene: Scene, rng: Rng, zoom: Real64 };
 
 -- Records that mirror raylib structs field-for-field. The FFI matches them
 -- structurally, so a Workman record flows straight into a `Vector2`/`Camera2D`/
 -- `Rectangle` parameter.
-record Camera2D = { offset: Vec2, target: Vec2, rotation: Number, zoom: Number };
-record Rectangle = { x: Number, y: Number, width: Number, height: Number };
+record Camera2D = { offset: Vec2, target: Vec2, rotation: Real64, zoom: Real64 };
+record Rectangle = { x: Real64, y: Real64, width: Real64, height: Real64 };
 
 let raylibpath = "./examples/raylib/raylib.dll";
 let screenW = 960;
@@ -88,12 +88,12 @@ let bit = (b: Bool) => {
   if (b) { 1 } else { 0 }
 };
 
-let clamp = (v: Number, lo: Number, hi: Number) => {
+let clamp = (v: Real64, lo: Real64, hi: Real64) => {
   if (v < lo) { lo } else { if (v > hi) { hi } else { v } }
 };
 
 -- fractional part (t is always >= 0 here, so floorI's truncation == floor).
-let frac = (x: Number) => {
+let frac = (x: Real64) => {
   x - floorI(x)
 };
 
@@ -129,7 +129,7 @@ let readInput = () => {
 
 -- ---- pure scene transitions ----------------------------------------------
 
-let advance = (app: App, input: Input, dt: Number) => {
+let advance = (app: App, input: Input, dt: Real64) => {
   let zoom = clamp(app.zoom + input.wheel * 0.1, 0.65, 2.4);
   match(app.scene) {
     Title => {
@@ -163,7 +163,7 @@ let advance = (app: App, input: Input, dt: Number) => {
 
 -- ---- drawing --------------------------------------------------------------
 
-let drawCenteredText = (text: String, y: Number, size: Number, color: Color) => {
+let drawCenteredText = (text: String, y: Real64, size: Real64, color: Color) => {
   match(Raylib.H.MeasureText(text, size)) {
     Ok(w) => { Raylib.H.DrawText(text, floorI((screenW - w) / 2), y, size, color) },
     Err(e) => { Err(e) }
@@ -175,7 +175,7 @@ let drawBackground = () => {
 };
 
 -- Additive-blended corona: a soft radial glow plus two counter-rotating rings.
-let drawSunCorona = (t: Number) => {
+let drawSunCorona = (t: Real64) => {
   let a = (t * 32) % 360;
   Result|
     Raylib.H.DrawCircleGradient(480, 270, 95, withAlpha(sunHalo, 120), withAlpha(sunHalo, 0)),
@@ -290,7 +290,7 @@ let renderTitle = () => {
   |
 };
 
-let renderGame = (g: Game, zoom: Number) => {
+let renderGame = (g: Game, zoom: Real64) => {
   let ship = g.ship;
   -- proximity screen-shake: the closer to the sun, the harder it rattles.
   let dist = length(sub(ship.pos, center));
@@ -346,7 +346,7 @@ let renderOver = (g: Game) => {
   |
 };
 
-let renderScene = (scene: Scene, zoom: Number) => {
+let renderScene = (scene: Scene, zoom: Real64) => {
   let drawn =
     match(scene) {
       Title => { renderTitle() :> Result.map((_) => { void }) },

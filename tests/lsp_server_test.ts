@@ -387,7 +387,7 @@ Deno.test("lsp server returns type definitions and document highlights", async (
   const dir = await Deno.makeTempDir();
   const main = nativeJoin(dir, "main.wm");
   const uri = pathToFileUri(main);
-  const source = "record Point = { x: Number }; let point = Point(1); let use = point;";
+  const source = "record Point = { x: Real64.Real }; let point = Point(1); let use = point;";
   const position = { line: 0, character: source.lastIndexOf("point") + 1 };
   const messages = await runLsp([
     { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
@@ -463,7 +463,7 @@ Deno.test("lsp server returns standard signature help", async () => {
   const main = nativeJoin(dir, "main.wm");
   const uri = pathToFileUri(main);
   const source =
-    'let format = (count: Number, label: String) => { label }; let result = format(1, "x");';
+    'let format = (count: Real64.Real, label: String) => { label }; let result = format(1, "x");';
   const messages = await runLsp([
     { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
     {
@@ -486,9 +486,9 @@ Deno.test("lsp server returns standard signature help", async () => {
 
   assertEquals(messages.find((message) => message.id === 2)?.result, {
     signatures: [{
-      label: "format(count: Number, label: String) -> String",
+      label: "format(count: Real64.Real, label: String) -> String",
       parameters: [
-        { label: "count: Number" },
+        { label: "count: Real64.Real" },
         { label: "label: String" },
       ],
     }],
@@ -653,18 +653,18 @@ Deno.test("lsp server returns ordinary inferred-type inlays", async () => {
   assertEquals(hints, [
     {
       position: { line: 0, character: "let increment = (value".length },
-      label: ": Number",
+      label: ": Real64.Real",
       kind: 1,
-      tooltip: { kind: "markdown", value: "```workman\nNumber\n```" },
+      tooltip: { kind: "markdown", value: "```workman\nReal64.Real\n```" },
       paddingLeft: false,
       paddingRight: true,
       data: { kind: "workman.inferred-type", category: "parameter" },
     },
     {
       position: { line: 0, character: "let increment = (value)".length },
-      label: ": Number",
+      label: ": Real64.Real",
       kind: 1,
-      tooltip: { kind: "markdown", value: "```workman\nNumber\n```" },
+      tooltip: { kind: "markdown", value: "```workman\nReal64.Real\n```" },
       paddingLeft: false,
       paddingRight: true,
       data: { kind: "workman.inferred-type", category: "result" },
@@ -765,7 +765,7 @@ Deno.test("an open module keeps its own error when the head it's analyzed under 
   // An error recovery can't get past, unlike a type mismatch.
   await Deno.writeTextFile(
     lib,
-    'from js.global("Math") import { floor: Number -> Number };\nlet value = floor(1);',
+    'from js.global("Math") import { floor: Real64.Real -> Real64.Real };\nlet value = floor(1);',
   );
   // Sorted first, so it's the head chosen for lib.wm. Its missing import stops analysis early.
   await Deno.writeTextFile(
@@ -1481,7 +1481,7 @@ for (const enabled of [false, true]) {
               uri,
               languageId: "wm",
               version: 1,
-              text: "let id: Number -> Number = (x) => { x };",
+              text: "let id: Real64.Real -> Real64.Real = (x) => { x };",
             },
           },
         },
@@ -1498,8 +1498,8 @@ for (const enabled of [false, true]) {
         contents: {
           kind: "markdown",
           value: enabled
-            ? "```wm\nid: Number -> Number\nunannotated: 'a -> 'a\n```"
-            : "```wm\nid: Number -> Number\n```",
+            ? "```wm\nid: Real64.Real -> Real64.Real\nunannotated: 'a -> 'a\n```"
+            : "```wm\nid: Real64.Real -> Real64.Real\n```",
         },
       });
     } finally {
@@ -1535,7 +1535,7 @@ Deno.test("lsp server returns constructor hover types", async () => {
   };
   assertEquals(
     hover.contents.value,
-    "```wm\nSome\ntype: Number -> Option<Number>\ngeneral: T -> Option<T>\n```",
+    "```wm\nSome\ntype: Real64.Real -> Option<Real64.Real>\ngeneral: T -> Option<T>\n```",
   );
 });
 

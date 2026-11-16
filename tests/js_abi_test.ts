@@ -18,7 +18,7 @@ async function library(source: string, files: Record<string, string> = {}) {
 
 Deno.test("JS ABI exports positional fast implementations and preserves aliases", async () => {
   const m = await library(`
-    let add = (left: Number, right: Number) => left + right;
+    let add = (left: Real64.Real, right: Real64.Real) => left + right;
     let alias = add;
     let identity = item => item;
     let zero = () => 42;
@@ -38,10 +38,10 @@ Deno.test("JS ABI exports positional fast implementations and preserves aliases"
 
 Deno.test("JS ABI converts positional callbacks in both directions", async () => {
   const m = await library(`
-    let invoke = (function, left: Number, right: Number) => function(left, right);
-    let add = (left: Number, right: Number) => left + right;
-    let make = (offset: Number) => (left: Number, right: Number) => offset + left + right;
-    let roundTrip = (function: (Number, Number) -> Number) => function;
+    let invoke = (function, left: Real64.Real, right: Real64.Real) => function(left, right);
+    let add = (left: Real64.Real, right: Real64.Real) => left + right;
+    let make = (offset: Real64.Real) => (left: Real64.Real, right: Real64.Real) => offset + left + right;
+    let roundTrip = (function: (Real64.Real, Real64.Real) -> Real64.Real) => function;
     let apply = (function, argument) => function(argument);
   `);
   const host = (a: number, b: number) => a * b;
@@ -57,9 +57,9 @@ Deno.test("JS ABI converts positional callbacks in both directions", async () =>
 
 Deno.test("JS ABI converts callback factories and callbacks accepting callbacks", async () => {
   const m = await library(`
-    let factory = (make, value: Number) => { let function = make(value); function(20, 12) };
-    let nested = (consume, a: Number, b: Number) => consume((x: Number, y: Number) => x + y, a, b);
-    let curried = (offset: Number) => (a: Number, b: Number) => offset + a + b;
+    let factory = (make, value: Real64.Real) => { let function = make(value); function(20, 12) };
+    let nested = (consume, a: Real64.Real, b: Real64.Real) => consume((x: Real64.Real, y: Real64.Real) => x + y, a, b);
+    let curried = (offset: Real64.Real) => (a: Real64.Real, b: Real64.Real) => offset + a + b;
   `);
   assertEquals(m.factory((offset: number) => (a: number, b: number) => offset + a + b, 10), 42);
   assertEquals(
@@ -71,9 +71,9 @@ Deno.test("JS ABI converts callback factories and callbacks accepting callbacks"
 
 Deno.test("JS ABI preserves inner tuple values and tuple results", async () => {
   const m = await library(`
-    let nested = (pair, extra: Number) => { let (a, b) = pair; a + b + extra };
-    let totals = (a: Number, b: Number) => (a + b, a - b);
-    let pack = () => ((a: Number, b: Number) => a + b, 10);
+    let nested = (pair, extra: Real64.Real) => { let (a, b) = pair; a + b + extra };
+    let totals = (a: Real64.Real, b: Real64.Real) => (a + b, a - b);
+    let pack = () => ((a: Real64.Real, b: Real64.Real) => a + b, 10);
     let unpack = pair => { let (function, value) = pair; function(value, 2) };
   `);
   assertEquals(m.nested([20, 12], 10), 42);
@@ -92,7 +92,7 @@ Deno.test("JS ABI exports nested namespace functions with stable identity", asyn
     export from "./other.wm" import * as Outer;
   `,
     {
-      "/test/base.wm": "let add = (a: Number, b: Number) => a + b;",
+      "/test/base.wm": "let add = (a: Real64.Real, b: Real64.Real) => a + b;",
       "/test/other.wm": 'export from "./base.wm" import * as Inner;',
     },
   );
@@ -104,7 +104,7 @@ Deno.test("JS ABI exports nested namespace functions with stable identity", asyn
 
 Deno.test("JS ABI supports tuple functions without a simple fast entry", async () => {
   const m = await library(`
-    let nested = ((left, right), extra: Number) => left + right + extra;
+    let nested = ((left, right), extra: Real64.Real) => left + right + extra;
     let fromGeneric = (function, arg) => function(arg);
     let one = pair => { let (left, right) = pair; left + right };
   `);
@@ -115,10 +115,10 @@ Deno.test("JS ABI supports tuple functions without a simple fast entry", async (
 });
 
 Deno.test("JS ABI works across independently compiled libraries", async () => {
-  const producer = await library("let add = (a: Number, b: Number) => a + b;");
+  const producer = await library("let add = (a: Real64.Real, b: Real64.Real) => a + b;");
   const consumer = await library(`
-    let invoke = (function, a: Number, b: Number) => function(a, b);
-    let roundTrip = (function: (Number, Number) -> Number) => function;
+    let invoke = (function, a: Real64.Real, b: Real64.Real) => function(a, b);
+    let roundTrip = (function: (Real64.Real, Real64.Real) -> Real64.Real) => function;
   `);
   assertEquals(consumer.invoke(producer.add, 20, 22), 42);
   assertEquals(consumer.roundTrip(producer.add), producer.add);
@@ -126,7 +126,7 @@ Deno.test("JS ABI works across independently compiled libraries", async () => {
 
 Deno.test("JS ABI refreshes mutable tuple inputs and ignores host callback arity", async () => {
   const m = await library(`
-    let consume = (pair, offset: Number) => { let (function, value) = pair; function(value, offset) };
+    let consume = (pair, offset: Real64.Real) => { let (function, value) = pair; function(value, offset) };
   `);
   // Defaults/rest change Function.length; inferred signatures, not JS reflection, decide arity.
   const callback = (a = 0, ...rest: number[]) => a + rest[0];
@@ -139,14 +139,14 @@ Deno.test("JS ABI refreshes mutable tuple inputs and ignores host callback arity
 
 Deno.test("JS ABI projects Result and Task values and nested positional callbacks", async () => {
   const m = await library(`
-    let good: Number -> Result<Number, String> = value => Ok(value + 1);
-    let bad: String -> Result<Number, String> = error => Err(error);
-    let later: Number -> Task<Number, String> = value => Task.succeed(value + 1);
-    let failed: String -> Task<Number, String> = error => Task.fail(error);
-    let consume = (result: Result<Number, String>) => match(result) { Ok(value) => value, Err(_) => 0 };
-    let consumeTask = (task: Task<Number, String>) => Task.map(task, value => value + 1);
-    let callback: Void -> Task<(Number, Number) -> Number, String> = () => Task.succeed((a, b) => a + b);
-    let useCallback = (result: Result<(Number, Number) -> Number, String>) => {
+    let good: Real64.Real -> Result<Real64.Real, String> = value => Ok(value + 1);
+    let bad: String -> Result<Real64.Real, String> = error => Err(error);
+    let later: Real64.Real -> Task<Real64.Real, String> = value => Task.succeed(value + 1);
+    let failed: String -> Task<Real64.Real, String> = error => Task.fail(error);
+    let consume = (result: Result<Real64.Real, String>) => match(result) { Ok(value) => value, Err(_) => 0 };
+    let consumeTask = (task: Task<Real64.Real, String>) => Task.map(task, value => value + 1);
+    let callback: Void -> Task<(Real64.Real, Real64.Real) -> Real64.Real, String> = () => Task.succeed((a, b) => a + b);
+    let useCallback = (result: Result<(Real64.Real, Real64.Real) -> Real64.Real, String>) => {
       match(result) { Ok(f) => f(20, 22), Err(_) => 0 }
     };
   `);
@@ -168,16 +168,16 @@ Deno.test("JS ABI projects Result and Task values and nested positional callback
 
 Deno.test("JS ABI passes Options as opaque values, keeping nesting and Some(undefined)", async () => {
   const m = await library(`
-    let echo = (value: Option<Option<Number>>) => value;
+    let echo = (value: Option<Option<Real64.Real>>) => value;
     let missing: Option<Void> = None;
     let present: Option<Void> = Some(void);
-    let apply = (value: Option<(Number, Number) -> Number>) => {
+    let apply = (value: Option<(Real64.Real, Real64.Real) -> Real64.Real>) => {
       match(value) { Some(f) => f(20, 22), None => 0 }
     };
-    let depth = (value: Option<Option<Number>>) => {
+    let depth = (value: Option<Option<Real64.Real>>) => {
       match(value) { None => 0, Some(None) => 1, Some(Some(_)) => 2 }
     };
-    let adder: Option<(Number, Number) -> Number> = Some((a, b) => a + b);
+    let adder: Option<(Real64.Real, Real64.Real) -> Real64.Real> = Some((a, b) => a + b);
   `);
   assertEquals(interop.isNone(m.missing), true);
   assertEquals(m.missing, interop.None);
@@ -205,12 +205,12 @@ Deno.test("JS ABI passes Options as opaque values, keeping nesting and Some(unde
 
 Deno.test("JS ABI shares nullary basis constructors across separately compiled libraries", async () => {
   const producer = await library(`
-    let none: Void -> Option<Number> = () => None;
-    let nested: Option<Option<Number>> = Some(None);
+    let none: Void -> Option<Real64.Real> = () => None;
+    let nested: Option<Option<Real64.Real>> = Some(None);
   `);
   const consumer = await library(`
-    let read = (value: Option<Number>) => match(value) { None => -1, Some(n) => n };
-    let depth = (value: Option<Option<Number>>) => {
+    let read = (value: Option<Real64.Real>) => match(value) { None => -1, Some(n) => n };
+    let depth = (value: Option<Option<Real64.Real>>) => {
       match(value) { None => 0, Some(None) => 1, Some(Some(_)) => 2 }
     };
   `);
@@ -227,8 +227,8 @@ Deno.test("interop helpers use the basis constructor ids", () => {
 
 Deno.test("JS ABI does not treat user types named Option or Result as basis constructors", async () => {
   const m = await library(`
-    type Option = | CustomOption<Number>;
-    type Result = | CustomResult<Number>;
+    type Option = | CustomOption<Real64.Real>;
+    type Result = | CustomResult<Real64.Real>;
     let option = CustomOption(42);
     let result = CustomResult(21);
   `);
@@ -240,7 +240,7 @@ Deno.test("JS ABI does not treat user types named Option or Result as basis cons
 
 Deno.test("JS ABI adapts function fields of nominal records", async () => {
   const m = await library(`
-    record Op = { name: String, apply: (Number, Number) -> Number };
+    record Op = { name: String, apply: (Real64.Real, Real64.Real) -> Real64.Real };
     let add: Op = .{ name = "add", apply = (a, b) => a + b };
     let run = (op: Op) => op.apply(20, 22);
   `);

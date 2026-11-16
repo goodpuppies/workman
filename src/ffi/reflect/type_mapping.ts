@@ -124,7 +124,7 @@ export function typeExprFromTsType(
   if (isAnyOrUnknown(type)) return name("Js.Value");
   if (type.flags & ts.TypeFlags.Never) return name("JsNever");
   if (type.flags & ts.TypeFlags.Conditional) return name("Js.Value");
-  if (isTsType(checker, type, "number")) return name("Number");
+  if (isTsType(checker, type, "number")) return name("Real64.Real");
   if (isTsType(checker, type, "string")) return name("String");
   if (isTsType(checker, type, "boolean")) return name("Bool");
   const enumType = enumTypeExpr(type);
@@ -181,7 +181,7 @@ export function typeExprFromTsType(
     return name("Js.Value");
   }
   if (type.flags & ts.TypeFlags.StringLiteral) return name("String");
-  if (type.flags & ts.TypeFlags.NumberLiteral) return name("Number");
+  if (type.flags & ts.TypeFlags.NumberLiteral) return name("Real64.Real");
   if (type.flags & ts.TypeFlags.BooleanLiteral) return name("Bool");
   if (type.flags & (ts.TypeFlags.Void | ts.TypeFlags.Undefined)) return name("Void");
   const promised = promiseElementType(checker, type, position);
@@ -190,7 +190,7 @@ export function typeExprFromTsType(
   }
   if (position === "param" && isNumericTypedArray(checker, type)) {
     // Typed arrays carry their own storage and host identity. Erasing one to
-    // Js.Array<Number> leaks that discovery type into ordinary WM helpers,
+    // Js.Array<Real64.Real> leaks that discovery type into ordinary WM helpers,
     // which can no longer accept the actual view returned by another module.
     const nominal = nominalObjectTypeName(checker, type);
     if (nominal) return name(nominal);
@@ -297,7 +297,7 @@ function enumTypeExpr(type: ts.Type): TypeExpr | undefined {
     ),
   );
   if (kinds.size !== 1) return undefined;
-  return name(kinds.has("string") ? "String" : "Number");
+  return name(kinds.has("string") ? "String" : "Real64.Real");
 }
 
 function promisedOrValueUnionType(

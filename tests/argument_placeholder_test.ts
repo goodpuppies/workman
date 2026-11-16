@@ -62,9 +62,9 @@ Deno.test("placeholder lambdas infer generically without capturing authored name
     let ignored = List.map([1, 2], _ => 5);
     let pattern = Some(4) :> match { Some(_) => 7, None => 0 };
   `);
-  expectBinding(result.env, "n", { type: "Number", vars: 0 });
+  expectBinding(result.env, "n", { type: "Real64.Real", vars: 0 });
   expectBinding(result.env, "s", { type: "String", vars: 0 });
-  expectBinding(result.env, "n2", { type: "Number", vars: 0 });
+  expectBinding(result.env, "n2", { type: "Real64.Real", vars: 0 });
 });
 
 Deno.test("placeholder formatting preserves call scope and wildcard lambdas", async () => {
@@ -134,7 +134,7 @@ Deno.test("placeholder lambdas defer callee and fixed-argument effects until eac
 
 Deno.test("argument placeholders work with foreign functions", async () => {
   const runtime = await library(`
-    from js.global("Math") import unsafe { pow: (Number, Number) -> Number };
+    from js.global("Math") import unsafe { pow: (Real64.Real, Real64.Real) -> Real64.Real };
     let square = pow(_, 2);
     let squared = square(3);
     let power = 3 :> pow(2, _);
@@ -147,7 +147,7 @@ Deno.test("placeholder calls retain ordinary arity and type checks", async () =>
   for (
     const source of [
       "let f = (a, b) => a + b; let result = 1 :> f(_, _);",
-      'let f = (a: Number, b: Bool) => a; let result = "text" :> f(_, true);',
+      'let f = (a: Real64.Real, b: Bool) => a; let result = "text" :> f(_, true);',
       "let f = (a, b) => a + b; let result = f(_, 1)(2, 3);",
       "let f = x => x; let result = f(_ + 1);",
       "let f = x => x; let result = f((_));",

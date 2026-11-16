@@ -2,7 +2,7 @@
 //
 // Mapping rules (documented in docs/cffi.md):
 // - Unsigned C integers use Word8/16/32/64.Word, selected by reflected width.
-// - Signed integers through 32 bits use I32; 64-bit values use Int64.Int.
+// - Signed integers through 32 bits use Int32.Int; 64-bit values use Int64.Int.
 // - Every C pointer is `Option<Ptr<T>>`, uniformly: Deno.PointerValue is
 //   `null | PointerObject` at runtime, and C has no nullability signal.
 // - `anyopaque`/`void*` map to `Option<Ptr<Opaque>>`; known-name C types keep
@@ -36,15 +36,15 @@ export function mapTypeDesc(
     case "int": {
       const bits = desc.bits ?? 32;
       if (bits > INT_MAX_BITS) {
-        return { ...plain("Number"), unsupported: `C integer width ${desc.bits} exceeds 64 bits` };
+        return { ...plain("Real64.Real"), unsupported: `C integer width ${desc.bits} exceeds 64 bits` };
       }
       if (![8, 16, 32, 64].includes(bits)) {
-        return { ...plain("Number"), unsupported: `C integer width ${bits} is not supported` };
+        return { ...plain("Real64.Real"), unsupported: `C integer width ${bits} is not supported` };
       }
-      return plain(desc.signed ? bits <= 32 ? "I32" : "Int64.Int" : `Word${bits}.Word`);
+      return plain(desc.signed ? bits <= 32 ? "Int32.Int" : "Int64.Int" : `Word${bits}.Word`);
     }
     case "float":
-      return plain("Number");
+      return plain("Real64.Real");
     case "pointer": {
       const child = desc.child;
       if (!child) return unknownType(desc);
@@ -110,7 +110,7 @@ export function mapValueDesc(
     return plain(cTypeName(desc.name ?? "Opaque"));
   }
   if (desc.kind === "int") return mapTypeDesc(desc, types, "value");
-  if (desc.kind === "float") return plain("Number");
+  if (desc.kind === "float") return plain("Real64.Real");
   if (desc.kind === "bool") return plain("Bool");
   return unknownType(desc);
 }

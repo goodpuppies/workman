@@ -31,25 +31,25 @@ type AsteroidSize = Large | Medium | Small;
 
 type Status = Playing | GameOver;
 
-record Ship = { pos: Vec2, vel: Vec2, rotation: Number, alive: Bool, invuln: Number };
-record Bullet = { pos: Vec2, vel: Vec2, life: Number };
-record Asteroid = { pos: Vec2, vel: Vec2, size: AsteroidSize, rotation: Number, spin: Number };
+record Ship = { pos: Vec2, vel: Vec2, rotation: Real64, alive: Bool, invuln: Real64 };
+record Bullet = { pos: Vec2, vel: Vec2, life: Real64 };
+record Asteroid = { pos: Vec2, vel: Vec2, size: AsteroidSize, rotation: Real64, spin: Real64 };
 
 record Game = {
   ship: Ship,
   bullets: List<Bullet>,
   asteroids: List<Asteroid>,
-  score: Number,
-  lives: Number,
-  wave: Number,
-  cooldown: Number,
-  respawn: Number,
+  score: Real64,
+  lives: Real64,
+  wave: Real64,
+  cooldown: Real64,
+  respawn: Real64,
   status: Status,
   rng: Rng.Seed,
-  t: Number
+  t: Real64
 };
 
-record Input = { turn: Number, thrust: Bool, fire: Bool, restart: Bool };
+record Input = { turn: Real64, thrust: Bool, fire: Bool, restart: Bool };
 
 let radiusOf = match(size) => {
   Large => { 40 },
@@ -69,11 +69,11 @@ let smallerThan = match(size) => {
   Small => { None },
 };
 
-let maxf = (a: Number, b: Number) => {
+let maxf = (a: Real64, b: Real64) => {
   if (a > b) { a } else { b }
 };
 
-let fmod = (a: Number, m: Number) => {
+let fmod = (a: Real64, m: Real64) => {
   let r = a % m;
   if (r < 0) { r + m } else { r }
 };
@@ -86,7 +86,7 @@ let onScreen = (p: Vec2) => {
   p.x >= 0 && p.x <= screenW && p.y >= 0 && p.y <= screenH
 };
 
-let facing = (rotation: Number) => {
+let facing = (rotation: Real64) => {
   Vec2(Trig.sin(rotation), 0 - Trig.cos(rotation))
 };
 
@@ -107,7 +107,7 @@ let spawnAsteroid = (pos: Vec2, size: AsteroidSize, r: Rng.Seed) => {
   (rock, Rng.next(rd))
 };
 
-let rec spawnFragments = (n: Number, pos: Vec2, size: AsteroidSize, r: Rng.Seed) => {
+let rec spawnFragments = (n: Real64, pos: Vec2, size: AsteroidSize, r: Rng.Seed) => {
   match(n) {
     0 => { ([], r) },
     _ => {
@@ -139,7 +139,7 @@ let edgePosition = (r: Rng.Seed) => {
   (pos, Rng.next(rc))
 };
 
-let rec spawnWave = (n: Number, r: Rng.Seed) => {
+let rec spawnWave = (n: Real64, r: Rng.Seed) => {
   match(n) {
     0 => { ([], r) },
     _ => {
@@ -170,7 +170,7 @@ let newGame = (r: Rng.Seed) => {
   }
 };
 
-let stepShip = (s: Ship, input: Input, dt: Number) => {
+let stepShip = (s: Ship, input: Input, dt: Real64) => {
   let rotation = s.rotation + input.turn * shipRotationSpeed * dt;
   let pushed =
     if (input.thrust) {
@@ -191,7 +191,7 @@ let stepShip = (s: Ship, input: Input, dt: Number) => {
   }
 };
 
-let stepBullet = (b: Bullet, dt: Number) => {
+let stepBullet = (b: Bullet, dt: Real64) => {
   Bullet(b.pos + b.vel * dt, b.vel, b.life - dt)
 };
 
@@ -199,7 +199,7 @@ let bulletLives = (b: Bullet) => {
   b.life > 0 && onScreen(b.pos)
 };
 
-let stepAsteroid = (a: Asteroid, dt: Number) => {
+let stepAsteroid = (a: Asteroid, dt: Real64) => {
   Asteroid(
     wrap(a.pos + a.vel * dt),
     a.vel,
@@ -236,7 +236,7 @@ let takeHit = (bullets, target, radius) => {
 record Impact = {
   rocks: List<Asteroid>,
   shots: List<Bullet>,
-  gained: Number,
+  gained: Real64,
   seed: Rng.Seed
 };
 
@@ -281,7 +281,7 @@ let strikesShip = (s: Ship, asteroids: List<Asteroid>) => {
   s.alive && s.invuln <= 0 && List.any(asteroids, (a) => { hitsShip(s, a) })
 };
 
-let stepPlaying = (g: Game, input: Input, dt: Number) => {
+let stepPlaying = (g: Game, input: Input, dt: Real64) => {
   let waiting = g.respawn > 0;
   let respawn = maxf(g.respawn - dt, 0);
   let ship =
@@ -329,7 +329,7 @@ let stepPlaying = (g: Game, input: Input, dt: Number) => {
   }
 };
 
-let stepGame = (g: Game, input: Input, dt: Number) => {
+let stepGame = (g: Game, input: Input, dt: Real64) => {
   match(g.status) {
     Playing => { stepPlaying(g, input, dt) },
     GameOver => {
@@ -342,12 +342,12 @@ type Tone = Loud | Plain | Faint;
 
 type Shape =
   | Hull<Vec2, Vec2, Vec2>
-  | Rock<Vec2, AsteroidSize, Number>
+  | Rock<Vec2, AsteroidSize, Real64>
   | Shot<Vec2>
-  | Readout<String, Number, Number, Tone>
-  | Banner<String, Number, Number, Tone>;
+  | Readout<String, Real64, Real64, Tone>
+  | Banner<String, Real64, Real64, Tone>;
 
-let shipVisible = (s: Ship, t: Number) => {
+let shipVisible = (s: Ship, t: Real64) => {
   s.alive && (s.invuln <= 0 || (Trig.floorReal(t * 10) % 2 != 0))
 };
 

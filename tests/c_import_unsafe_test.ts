@@ -8,7 +8,7 @@ import { parseCompilerModule as parse } from "../src/compiler_frontend.ts";
 Deno.test("C value imports without unsafe are rejected", async () => {
   for (
     const source of [
-      `from c.lib("libc") import { printf: String -> Number };`,
+      `from c.lib("libc") import { printf: String -> Real64.Real };`,
       `from c.lib("libc") import * as Libc;`,
     ]
   ) {
@@ -23,5 +23,5 @@ Deno.test("C value imports without unsafe are rejected", async () => {
 
 Deno.test("unsafe C value imports are accepted", async () => {
   resetCExtractions();
-  await prepareCImports(await parse(`from c.lib("libc") import unsafe { printf: String -> Number };`));
+  await prepareCImports(await parse(`from c.lib("libc") import unsafe { printf: String -> Real64.Real };`));
 });

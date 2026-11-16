@@ -5,7 +5,7 @@
 
 from "basis/text.wm" import * as UnicodeText;
 
-let smaller = (a: Number, b: Number) => if (a < b) { a } else { b };
+let smaller = (a: Real64, b: Real64) => if (a < b) { a } else { b };
 
 -- Edit distance (insertions, deletions and substitutions) between two lists of characters,
 -- computed one row of the dynamic-programming table at a time.

@@ -27,9 +27,9 @@ Deno.test("foreign generic instances keep their arguments regardless of import o
       let numberValue = number :> .value;
       let textValue = text :> .value;
     `);
-    expectBinding(result.env, "number", { type: "Box<Number>!", vars: 0 });
+    expectBinding(result.env, "number", { type: "Box<Real64.Real>!", vars: 0 });
     expectBinding(result.env, "text", { type: "Box<String>!", vars: 0 });
-    expectBinding(result.env, "numberValue", { type: "Number!", vars: 0 });
+    expectBinding(result.env, "numberValue", { type: "Real64.Real!", vars: 0 });
     expectBinding(result.env, "textValue", { type: "String!", vars: 0 });
   }
 });
@@ -50,10 +50,10 @@ Deno.test("generic foreign calls preserve scalar and tuple callback results", as
     };
   `;
   const result = await checkSource(source);
-  expectBinding(result.env, "number", { type: "Number!", vars: 0 });
+  expectBinding(result.env, "number", { type: "Real64.Real!", vars: 0 });
   expectBinding(result.env, "text", { type: "String!", vars: 0 });
-  expectBinding(result.env, "grouped", { type: "Box<(Number, String)>!", vars: 0 });
-  expectBinding(result.env, "pair", { type: "(Number, String)!", vars: 0 });
+  expectBinding(result.env, "grouped", { type: "Box<(Real64.Real, String)>!", vars: 0 });
+  expectBinding(result.env, "pair", { type: "(Real64.Real, String)!", vars: 0 });
   const runtimeSource = source.replaceAll(
     fixture,
     absoluteFixture,
@@ -80,10 +80,10 @@ Deno.test("type-only foreign imports retain generic arity and reject wrong argum
     from js.module("${fixture}") import unsafe { numberBox };
   `;
   const result = await checkSource(`${header}
-    let boxed: Container<Number> = numberBox();
+    let boxed: Container<Real64.Real> = numberBox();
     let value = boxed :> .value;
   `);
-  expectBinding(result.env, "value", { type: "Number!", vars: 0 });
+  expectBinding(result.env, "value", { type: "Real64.Real!", vars: 0 });
   await assertRejects(() =>
     checkSource(`${header}
     let boxed: Container<String> = numberBox();
@@ -96,7 +96,7 @@ Deno.test("concrete foreign generic parameters reject incompatible payloads", as
   const result = await checkSource(`${header}
     let size = Box.textLength(Box.stringBox());
   `);
-  expectBinding(result.env, "size", { type: "Number!", vars: 0 });
+  expectBinding(result.env, "size", { type: "Real64.Real!", vars: 0 });
   await assertRejects(() =>
     checkSource(`${header}
     let size = Box.textLength(Box.numberBox());
@@ -112,9 +112,9 @@ Deno.test("generic overload specialization preserves discriminator literals", as
     let numberValue = number :> .value;
     let textValue = text :> .value;
   `);
-  expectBinding(result.env, "number", { type: "Box<Number>!", vars: 0 });
+  expectBinding(result.env, "number", { type: "Box<Real64.Real>!", vars: 0 });
   expectBinding(result.env, "text", { type: "Box<String>!", vars: 0 });
-  expectBinding(result.env, "numberValue", { type: "Number!", vars: 0 });
+  expectBinding(result.env, "numberValue", { type: "Real64.Real!", vars: 0 });
   expectBinding(result.env, "textValue", { type: "String!", vars: 0 });
 });
 
@@ -129,7 +129,7 @@ Deno.test("generic callback captures resolve before their result is materialized
     });
     let (value, text) = Box.run(grouped);
   `);
-  expectBinding(result.env, "value", { type: "Number!", vars: 0 });
+  expectBinding(result.env, "value", { type: "Real64.Real!", vars: 0 });
   expectBinding(result.env, "text", { type: "String!", vars: 0 });
 });
 
@@ -141,9 +141,9 @@ Deno.test("safe imports retain foreign generic arguments inside Result", async (
     let numberValue = number :> Result.andThen((box) => { box :> .value });
     let textValue = text :> Result.andThen((box) => { box :> .value });
   `);
-  expectBinding(result.env, "number", { type: "Result<Box<Number>, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "number", { type: "Result<Box<Real64.Real>, Js.Error>!", vars: 0 });
   expectBinding(result.env, "text", { type: "Result<Box<String>, Js.Error>!", vars: 0 });
-  expectBinding(result.env, "numberValue", { type: "Result<Number, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "numberValue", { type: "Result<Real64.Real, Js.Error>!", vars: 0 });
   expectBinding(result.env, "textValue", { type: "Result<String, Js.Error>!", vars: 0 });
 });
 
@@ -171,7 +171,7 @@ Deno.test("foreign generic arguments survive Workman module interfaces", async (
   );
   const result = results.get("/test/main.wm");
   assertExists(result);
-  expectBinding(result.env, "numberValue", { type: "Number!", vars: 0 });
+  expectBinding(result.env, "numberValue", { type: "Real64.Real!", vars: 0 });
   expectBinding(result.env, "textValue", { type: "String!", vars: 0 });
 });
 
@@ -183,7 +183,7 @@ Deno.test("concrete generic call refs retain distinct payload types in TS reflec
     const succeed = jsModuleMemberValueRef(fixture, "succeed");
     const run = jsModuleMemberValueRef(fixture, "run");
     const cases: [JsCallArgHint, string][] = [
-      [{ kind: "number", value: 20 }, "Number"],
+      [{ kind: "number", value: 20 }, "Real64.Real"],
       [{ kind: "string", value: "hello" }, "String"],
     ];
     // Keep both refs alive before consuming either; the shared Box name must not
@@ -215,7 +215,7 @@ Deno.test("concrete tuple callback results survive local generic TS reflection",
     const run = jsModuleMemberValueRef(fixture, "run");
     const input = jsRefCall(succeed, [{ kind: "number", value: 20 }])?.variants?.[0].resultRef;
     assertExists(input);
-    const tuple = { kind: "TTuple" as const, items: [name("Number"), name("String")] };
+    const tuple = { kind: "TTuple" as const, items: [name("Real64.Real"), name("String")] };
     const mapped = jsRefCall(map, [
       { kind: "ref", ref: input },
       { kind: "function", arity: 1, resultType: tuple },
@@ -225,7 +225,7 @@ Deno.test("concrete tuple callback results survive local generic TS reflection",
     const output = jsRefCall(run, [{ kind: "ref", ref }]);
     if (output?.type.kind !== "TFn") throw new Error("missing call signature");
     assertEquals(output.type.result, tuple);
-    assertEquals(mapped?.variants?.[0].callbackParamRefs?.[0].params[0].type, name("Number"));
+    assertEquals(mapped?.variants?.[0].callbackParamRefs?.[0].params[0].type, name("Real64.Real"));
   } finally {
     setActiveJsReflectionBasePath(previous);
   }

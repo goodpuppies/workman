@@ -2,9 +2,9 @@ import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import { checkVirtual, compileVirtual } from "../src/compiler.ts";
 
 const VEC = `
-  record Vec2 = { x: Number, y: Number };
+  record Vec2 = { x: Real64.Real, y: Real64.Real };
 
-  let succeed = (s: Number) => {
+  let succeed = (s: Real64.Real) => {
     Vec2(s, s)
   };
 

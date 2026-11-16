@@ -1628,7 +1628,7 @@ export function validateGpuSliceElaborationInput(
       reference(typeIds, constructor.payloadTypeId, "GPU slice constructor payloadTypeId");
       const payload = types.find((type) => type.id === constructor.payloadTypeId);
       if (payload?.kind !== "number" && payload?.kind !== "bool" && payload?.kind !== "tuple") {
-        throw new Error("GPU slice constructor payload must be Number, Bool, or tuple");
+        throw new Error("GPU slice constructor payload must be Real64.Real, Bool, or tuple");
       }
     }
     spanReference(spanIds, constructor.spanId, "GPU slice constructor spanId");

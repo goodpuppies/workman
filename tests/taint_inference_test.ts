@@ -10,7 +10,7 @@ import {
   generalize,
   instantiate,
   named,
-  NumberTy,
+  Real64Ty,
   prune,
   show,
   solveFfi,
@@ -44,10 +44,10 @@ Deno.test("discarded effects taint a local sequence, while top-level declaration
     let scar = effect();
     let clean = outer + 1;
   `);
-  assertEquals(show(result.exports.get("effect")!.type), "Void -> Number!");
-  assertEquals(show(result.exports.get("scar")!.type), "Number!");
-  assertEquals(show(result.exports.get("outer")!.type), "Number");
-  assertEquals(show(result.exports.get("clean")!.type), "Number");
+  assertEquals(show(result.exports.get("effect")!.type), "Void -> Real64.Real!");
+  assertEquals(show(result.exports.get("scar")!.type), "Real64.Real!");
+  assertEquals(show(result.exports.get("outer")!.type), "Real64.Real");
+  assertEquals(show(result.exports.get("clean")!.type), "Real64.Real");
   const decl = module.decls[1];
   assert(decl.kind === "LetDecl");
   const lambda = decl.bindings[0].value;
@@ -69,9 +69,9 @@ Deno.test("HM instantiation preserves taint without contaminating clean uses", a
   `),
     {
       id: "'a -> 'a",
-      effect: "Void -> Number!",
-      tainted: "Number!",
-      cleanNumber: "Number",
+      effect: "Void -> Real64.Real!",
+      tainted: "Real64.Real!",
+      cleanNumber: "Real64.Real",
       cleanString: "String",
     },
   );
@@ -80,7 +80,7 @@ Deno.test("HM instantiation preserves taint without contaminating clean uses", a
 Deno.test("concrete functions and higher-order functions preserve independent call taints", async () => {
   assertEquals(
     await bindings(`
-    let increment = (x: Number) => { x + 1 };
+    let increment = (x: Real64.Real) => { x + 1 };
     let apply = (f, x) => { f(x) };
     let effect = () => { print("hello"); 1 };
     let tainted = apply(effect, void);
@@ -88,12 +88,12 @@ Deno.test("concrete functions and higher-order functions preserve independent ca
     let clean = apply(increment, 2);
   `),
     {
-      increment: "Number -> Number",
+      increment: "Real64.Real -> Real64.Real",
       apply: "('a -> 'b, 'a) -> 'b",
-      effect: "Void -> Number!",
-      tainted: "Number!",
-      derived: "Number!",
-      clean: "Number",
+      effect: "Void -> Real64.Real!",
+      tainted: "Real64.Real!",
+      derived: "Real64.Real!",
+      clean: "Real64.Real",
     },
   );
 });
@@ -105,9 +105,9 @@ Deno.test("branches join effects and tainted conditions taint clean branch resul
     let selected = if(condition()) { 1 } else { 2 };
     let clean = 3;
   `);
-  assertEquals(types.choose, "Bool -> Number!");
-  assertEquals(types.selected, "Number!");
-  assertEquals(types.clean, "Number");
+  assertEquals(types.choose, "Bool -> Real64.Real!");
+  assertEquals(types.selected, "Real64.Real!");
+  assertEquals(types.clean, "Real64.Real");
 });
 
 Deno.test("latent lambda bodies do not execute during creation", async () => {
@@ -120,18 +120,18 @@ Deno.test("latent lambda bodies do not execute during creation", async () => {
     let scar = captured();
   `),
     {
-      factory: "Void -> Number",
-      clean: "Number",
-      outer: "Void -> (Void -> Number)!",
-      captured: "(Void -> Number)!",
-      scar: "Number!",
+      factory: "Void -> Real64.Real",
+      clean: "Real64.Real",
+      outer: "Void -> (Void -> Real64.Real)!",
+      captured: "(Void -> Real64.Real)!",
+      scar: "Real64.Real!",
     },
   );
 });
 
 Deno.test("destructuring and projection cannot wash taint out of an aggregate", async () => {
   const types = await bindings(`
-    record Pair = { first: Number, second: String };
+    record Pair = { first: Real64.Real, second: String };
     let list = () => { print("hello"); [1, 2] };
     let values = list();
     let [head, ..tail] = values;
@@ -141,26 +141,26 @@ Deno.test("destructuring and projection cannot wash taint out of an aggregate", 
     let tuple = () => { print("hello"); (1, "two") };
     let (left, right) = tuple();
   `);
-  assertEquals(types.head, "Number!");
-  assertEquals(types.tail, "List<Number>!");
-  assertEquals(types.field, "Number!");
-  assertEquals(types.left, "Number!");
+  assertEquals(types.head, "Real64.Real!");
+  assertEquals(types.tail, "List<Real64.Real>!");
+  assertEquals(types.field, "Real64.Real!");
+  assertEquals(types.left, "Real64.Real!");
   assertEquals(types.right, "String!");
 });
 
 Deno.test("foreign calls stay effectful through aliases and ordinary annotations", async () => {
   const types = await bindings(`
-    from js.global("Deno") import unsafe { clock: Void -> Number };
+    from js.global("Deno") import unsafe { clock: Void -> Real64.Real };
     let alias = clock;
-    let effect: Void -> Number = () => { clock() };
+    let effect: Void -> Real64.Real = () => { clock() };
     let direct = alias();
     let annotated = effect();
     let clean = 1;
   `);
-  assertEquals(types.alias, "Void -> Number!");
-  assertEquals(types.direct, "Number!");
-  assertEquals(types.annotated, "Number!");
-  assertEquals(types.clean, "Number");
+  assertEquals(types.alias, "Void -> Real64.Real!");
+  assertEquals(types.direct, "Real64.Real!");
+  assertEquals(types.annotated, "Real64.Real!");
+  assertEquals(types.clean, "Real64.Real");
 });
 
 Deno.test("recursive taint propagation terminates and reaches callers", async () => {
@@ -171,13 +171,13 @@ Deno.test("recursive taint propagation terminates and reaches callers", async ()
     let tainted = loop(2);
     let clean = 1;
   `);
-  assertEquals(types.tainted, "Number!");
-  assertEquals(types.clean, "Number");
+  assertEquals(types.tainted, "Real64.Real!");
+  assertEquals(types.clean, "Real64.Real");
 });
 
 Deno.test("tainting one primitive occurrence does not mutate the shared primitive", () => {
-  assertEquals(show(taintedType(NumberTy)), "Number!");
-  assertEquals(show(NumberTy), "Number");
+  assertEquals(show(taintedType(Real64Ty)), "Real64.Real!");
+  assertEquals(show(Real64Ty), "Real64.Real");
 });
 
 Deno.test("discarded callback results remain connected to HM substitutions", async () => {
@@ -187,8 +187,8 @@ Deno.test("discarded callback results remain connected to HM substitutions", asy
     let scar = run(effect);
     let clean = run(() => { 5 });
   `);
-  assertEquals(types.scar, "Number!");
-  assertEquals(types.clean, "Number");
+  assertEquals(types.scar, "Real64.Real!");
+  assertEquals(types.clean, "Real64.Real");
 });
 
 Deno.test("element taint and sequence taint occupy separate list type positions", async () => {
@@ -198,32 +198,32 @@ Deno.test("element taint and sequence taint occupy separate list type positions"
     let elements = () => { [1, effect()] };
     let reversed = () => { [effect(), 1] };
   `);
-  assertEquals(types.sequence, "Void -> List<Number!>!");
-  assertEquals(types.elements, "Void -> List<Number!>");
-  assertEquals(types.reversed, "Void -> List<Number!>");
+  assertEquals(types.sequence, "Void -> List<Real64.Real!>!");
+  assertEquals(types.elements, "Void -> List<Real64.Real!>");
+  assertEquals(types.reversed, "Void -> List<Real64.Real!>");
 });
 
 Deno.test("function arguments hide taint while callback return types retain it", () => {
-  const scar = taintedType(NumberTy);
-  assertEquals(show(fn([scar], NumberTy)), "Number -> Number");
-  assertEquals(show(fn([fn([VoidTy], scar)], scar)), "(Void -> Number!) -> Number!");
+  const scar = taintedType(Real64Ty);
+  assertEquals(show(fn([scar], Real64Ty)), "Real64.Real -> Real64.Real");
+  assertEquals(show(fn([fn([VoidTy], scar)], scar)), "(Void -> Real64.Real!) -> Real64.Real!");
 });
 
 Deno.test("HM substitution preserves the symbolic summary of a discarded result", () => {
   const source = fresh();
-  const result = sequenceType([source], NumberTy);
+  const result = sequenceType([source], Real64Ty);
   const alias = fresh();
   unify(alias, result);
   prune(alias);
-  unify(source, taintedType(NumberTy));
-  assertEquals(show(alias), "Number!");
+  unify(source, taintedType(Real64Ty));
+  assertEquals(show(alias), "Real64.Real!");
 });
 
 Deno.test("concrete callback annotations and captured callbacks retain sequencing taint", async () => {
   const types = await bindings(`
     let effect = () => { print("hello"); 5 };
-    let run = (f: Void -> Number) => { f(); 1 };
-    let make = (f: Void -> Number) => {
+    let run = (f: Void -> Real64.Real) => { f(); 1 };
+    let make = (f: Void -> Real64.Real) => {
       let inner = () => { f(); 1 };
       inner
     };
@@ -232,9 +232,9 @@ Deno.test("concrete callback annotations and captured callbacks retain sequencin
     let captured = closure();
     let clean = run(() => { 5 });
   `);
-  assertEquals(types.direct, "Number!");
-  assertEquals(types.captured, "Number!");
-  assertEquals(types.clean, "Number");
+  assertEquals(types.direct, "Real64.Real!");
+  assertEquals(types.captured, "Real64.Real!");
+  assertEquals(types.clean, "Real64.Real");
 });
 
 Deno.test("discarded tuples and nested lists propagate contained taint into a sequence", async () => {
@@ -248,13 +248,13 @@ Deno.test("discarded tuples and nested lists propagate contained taint into a se
     let nestedValue = nested();
     let clean = 1;
   `);
-  assertEquals(types.tuple, "Void -> Number!");
-  assertEquals(types.list, "Void -> Number!");
-  assertEquals(types.nested, "Void -> Number!");
-  assertEquals(types.tupleValue, "Number!");
-  assertEquals(types.listValue, "Number!");
-  assertEquals(types.nestedValue, "Number!");
-  assertEquals(types.clean, "Number");
+  assertEquals(types.tuple, "Void -> Real64.Real!");
+  assertEquals(types.list, "Void -> Real64.Real!");
+  assertEquals(types.nested, "Void -> Real64.Real!");
+  assertEquals(types.tupleValue, "Real64.Real!");
+  assertEquals(types.listValue, "Real64.Real!");
+  assertEquals(types.nestedValue, "Real64.Real!");
+  assertEquals(types.clean, "Real64.Real");
 });
 
 Deno.test("contained lambdas stay latent but tainted function values propagate", async () => {
@@ -266,10 +266,10 @@ Deno.test("contained lambdas stay latent but tainted function values propagate",
     let produced ==> { let y = (factory(), 1); 1 };
     let invoked ==> { let y = (() => { effect() }, 1); let (f, _) = y; f(); 1 };
   `);
-  assertEquals(types.tuple, "Void -> Number");
-  assertEquals(types.list, "Void -> Number");
-  assertEquals(types.produced, "Void -> Number!");
-  assertEquals(types.invoked, "Void -> Number!");
+  assertEquals(types.tuple, "Void -> Real64.Real");
+  assertEquals(types.list, "Void -> Real64.Real");
+  assertEquals(types.produced, "Void -> Real64.Real!");
+  assertEquals(types.invoked, "Void -> Real64.Real!");
 });
 
 Deno.test("higher-order sequencing follows tainted data without evaluating callback bodies", async () => {
@@ -279,8 +279,8 @@ Deno.test("higher-order sequencing follows tainted data without evaluating callb
     let eager = discard(() => { (effect(), 1) });
     let latent = discard(() => { (() => { effect() }, 1) });
   `);
-  assertEquals(types.eager, "Number!");
-  assertEquals(types.latent, "Number");
+  assertEquals(types.eager, "Real64.Real!");
+  assertEquals(types.latent, "Real64.Real");
 });
 
 Deno.test("substitution resolves nested returned closures before they are called", async () => {
@@ -293,10 +293,10 @@ Deno.test("substitution resolves nested returned closures before they are called
     let values = boxed(effect);
     let cleanValues = boxed(() => { 1 });
   `);
-  assertEquals(types.closure, "Void -> Number!");
-  assertEquals(types.clean, "Void -> Number");
-  assertEquals(types.values, "List<Void -> Number!>");
-  assertEquals(types.cleanValues, "List<Void -> Number>");
+  assertEquals(types.closure, "Void -> Real64.Real!");
+  assertEquals(types.clean, "Void -> Real64.Real");
+  assertEquals(types.values, "List<Void -> Real64.Real!>");
+  assertEquals(types.cleanValues, "List<Void -> Real64.Real>");
 });
 
 Deno.test("mutually recursive bindings resolve taint after the entire group is inferred", async () => {
@@ -304,14 +304,14 @@ Deno.test("mutually recursive bindings resolve taint after the entire group is i
     let rec first = () => { second(); 1 }
     and second = () => { print("x"); 1 };
   `);
-  assertEquals(types.first, "Void -> Number!");
-  assertEquals(types.second, "Void -> Number!");
+  assertEquals(types.first, "Void -> Real64.Real!");
+  assertEquals(types.second, "Void -> Real64.Real!");
 });
 
 Deno.test("ordinary tuple positions stay independent while sequence tuple members share taint", () => {
-  const scar = taintedType(NumberTy);
+  const scar = taintedType(Real64Ty);
   const ordinary = tuple([scar, StringTy]);
-  assertEquals(show(ordinary), "(Number!, String)");
+  assertEquals(show(ordinary), "(Real64.Real!, String)");
   assertEquals(isTainted(ordinary), false);
   assertEquals(show(sequenceType([scar], StringTy)), "String!");
   assertEquals(show(StringTy), "String");
@@ -325,48 +325,48 @@ Deno.test("late sequence taint preserves a returned ordinary tuple's shape", asy
     let clean = run(() => { 1 });
     let (number, text, flag) = value;
   `);
-  assertEquals(types.value, "(Number, String, Bool)!");
-  assertEquals(types.clean, "(Number, String, Bool)");
-  assertEquals(types.number, "Number!");
+  assertEquals(types.value, "(Real64.Real, String, Bool)!");
+  assertEquals(types.clean, "(Real64.Real, String, Bool)");
+  assertEquals(types.number, "Real64.Real!");
   assertEquals(types.text, "String!");
   assertEquals(types.flag, "Bool!");
 });
 
 Deno.test("unification joins scars by replacing what a variable holds, without touching a sibling", () => {
   const number = fresh();
-  unify(number, NumberTy);
-  unify(number, taintedType(NumberTy));
-  assertEquals(show(number), "Number!");
+  unify(number, Real64Ty);
+  unify(number, taintedType(Real64Ty));
+  assertEquals(show(number), "Real64.Real!");
   const ordinary = tuple([number, StringTy]);
-  assertEquals(show(ordinary), "(Number!, String)");
+  assertEquals(show(ordinary), "(Real64.Real!, String)");
   assertEquals(show(StringTy), "String");
-  assertEquals(show(unify(NumberTy, taintedType(NumberTy))!), "Number!");
-  assertEquals(show(NumberTy), "Number");
+  assertEquals(show(unify(Real64Ty, taintedType(Real64Ty))!), "Real64.Real!");
+  assertEquals(show(Real64Ty), "Real64.Real");
 });
 
 Deno.test("a sequence summary observes late source unification", () => {
   const source = fresh();
   const sequence = sequenceType([source], StringTy);
   const firstView = sequenceView(sequence, source);
-  unify(source, taintedType(NumberTy));
+  unify(source, taintedType(Real64Ty));
   // No extra unification or type-reading traversal is needed to resolve the sequence.
   assertEquals(isTainted(sequence), true);
   assertEquals(show(sequence), "String!");
-  assertEquals(show(firstView), "Number!");
+  assertEquals(show(firstView), "Real64.Real!");
   assertEquals(show(StringTy), "String");
 });
 
 Deno.test("unifying a sequence alias spreads an incoming scar to all sequence views", () => {
   const source = fresh();
-  const sequence = sequenceType([source], NumberTy);
+  const sequence = sequenceType([source], Real64Ty);
   const firstView = sequenceView(sequence, source);
   const alias = fresh();
   unify(alias, sequence);
   prune(alias);
-  unify(alias, taintedType(NumberTy));
+  unify(alias, taintedType(Real64Ty));
   assertEquals(isTainted(firstView), true);
-  assertEquals(show(alias), "Number!");
-  assertEquals(show(NumberTy), "Number");
+  assertEquals(show(alias), "Real64.Real!");
+  assertEquals(show(Real64Ty), "Real64.Real");
 });
 
 Deno.test("eliminators preserve effects in evaluated inputs whose values are discarded", async () => {
@@ -382,11 +382,11 @@ Deno.test("eliminators preserve effects in evaluated inputs whose values are dis
     let selected = if(condition()) { 1 } else { 2 };
     let clean = constant(1, 2);
   `);
-  assertEquals(types.projected, "Number!");
-  assertEquals(types.discarded, "Number!");
+  assertEquals(types.projected, "Real64.Real!");
+  assertEquals(types.discarded, "Real64.Real!");
   assertEquals(types.ignored, "Void!");
-  assertEquals(types.selected, "Number!");
-  assertEquals(types.clean, "Number");
+  assertEquals(types.selected, "Real64.Real!");
+  assertEquals(types.clean, "Real64.Real");
 });
 
 Deno.test("late substitutions summarize nested containers and retain independent siblings", async () => {
@@ -398,17 +398,17 @@ Deno.test("late substitutions summarize nested containers and retain independent
     let scar = discard(effect);
     let clean = discard(() => { 1 });
   `);
-  assertEquals(types.value, "(((Number!, String), Bool), Number)");
-  assertEquals(types.scar, "Number!");
-  assertEquals(types.clean, "Number");
+  assertEquals(types.value, "(((Real64.Real!, String), Bool), Real64.Real)");
+  assertEquals(types.scar, "Real64.Real!");
+  assertEquals(types.clean, "Real64.Real");
 });
 
 Deno.test("nested tuple construction summarizes contained scars separately from outer scars", () => {
-  const inner = tuple([taintedType(NumberTy), StringTy]);
+  const inner = tuple([taintedType(Real64Ty), StringTy]);
   const outer = tuple([tuple([inner, StringTy]), StringTy]);
-  assertEquals(show(outer), "(((Number!, String), String), String)");
+  assertEquals(show(outer), "(((Real64.Real!, String), String), String)");
   assertEquals(isTainted(outer), false);
-  assertEquals(show(sequenceType([outer], NumberTy)), "Number!");
+  assertEquals(show(sequenceType([outer], Real64Ty)), "Real64.Real!");
 });
 
 Deno.test("late taint reaches branching container summaries without merging their tuple positions", () => {
@@ -416,12 +416,12 @@ Deno.test("late taint reaches branching container summaries without merging thei
   const left = tuple([source, StringTy]);
   const right = tuple([tuple([source, StringTy]), StringTy]);
   const leftResult = sequenceType([left], StringTy);
-  const rightResult = sequenceType([right], NumberTy);
-  unify(source, taintedType(NumberTy));
-  assertEquals(show(left), "(Number!, String)");
-  assertEquals(show(right), "((Number!, String), String)");
+  const rightResult = sequenceType([right], Real64Ty);
+  unify(source, taintedType(Real64Ty));
+  assertEquals(show(left), "(Real64.Real!, String)");
+  assertEquals(show(right), "((Real64.Real!, String), String)");
   assertEquals(show(leftResult), "String!");
-  assertEquals(show(rightResult), "Number!");
+  assertEquals(show(rightResult), "Real64.Real!");
 });
 
 Deno.test("symbolic summaries terminate across alias cycles and a deep chain of joins", () => {
@@ -430,8 +430,8 @@ Deno.test("symbolic summaries terminate across alias cycles and a deep chain of 
   unify(source, alias);
   unify(alias, source);
   let result = source;
-  for (let i = 0; i < 10000; i++) result = sequenceType([result], { ...NumberTy });
-  unify(alias, taintedType(NumberTy));
+  for (let i = 0; i < 10000; i++) result = sequenceType([result], { ...Real64Ty });
+  unify(alias, taintedType(Real64Ty));
   assertEquals(isTainted(result), true);
 });
 
@@ -447,7 +447,7 @@ Deno.test("instantiation preserves late links through unified variables", () => 
   const scar = instantiate(scheme);
   const clean = instantiate(scheme);
   assert(scar.tag === "fn" && clean.tag === "fn");
-  unify(scar.params[0], taintedType(NumberTy));
+  unify(scar.params[0], taintedType(Real64Ty));
   assertEquals(show(scar.result), "String!");
   assertEquals(show(clean.result), "String");
   assertEquals(show(signature.result), "String");
@@ -467,7 +467,7 @@ Deno.test("new structural record fields extend the existing contained summary", 
   const record = structural([]);
   const result = sequenceType([record], { ...StringTy });
   unify(record, structural([{ name: "value", type: source }]));
-  unify(source, taintedType(NumberTy));
+  unify(source, taintedType(Real64Ty));
   assertEquals(show(result), "String!");
   assertEquals(isTainted(record), false);
 });
@@ -477,19 +477,19 @@ Deno.test("solving an FFI placeholder binds its contained summary", () => {
   const result = sequenceType([placeholder], { ...StringTy });
   const source = fresh();
   solveFfi(placeholder, tuple([source, StringTy]));
-  unify(source, taintedType(NumberTy));
+  unify(source, taintedType(Real64Ty));
   assertEquals(show(result), "String!");
-  assertEquals(show(placeholder), "(Number!, String)");
+  assertEquals(show(placeholder), "(Real64.Real!, String)");
 });
 
 Deno.test("a sequence view shares its symbolic summary with its consumers", () => {
   const source = fresh();
   const sequence = sequenceType([source], { ...StringTy });
   const view = sequenceView(sequence, StringTy);
-  const consumer = sequenceType([view], { ...NumberTy });
-  unify(source, taintedType(NumberTy));
+  const consumer = sequenceType([view], { ...Real64Ty });
+  unify(source, taintedType(Real64Ty));
   assertEquals(show(view), "String!");
-  assertEquals(show(consumer), "Number!");
+  assertEquals(show(consumer), "Real64.Real!");
 });
 
 Deno.test("copying a bound HM alias preserves the contained summary of its value type", () => {
@@ -501,14 +501,14 @@ Deno.test("copying a bound HM alias preserves the contained summary of its value
   const instance = instantiate(generalize(new Map(), signature));
   assert(instance.tag === "fn");
   const discarded = sequenceType([instance.result], StringTy);
-  unify(instance.params[0], taintedType(NumberTy));
+  unify(instance.params[0], taintedType(Real64Ty));
   assertEquals(show(discarded), "String!");
 });
 
 Deno.test("sequence summaries retain no discarded value shapes", () => {
   const discarded = tuple([
-    tuple([NumberTy, StringTy]),
-    fn([tuple([StringTy, NumberTy])], tuple([NumberTy, StringTy])),
+    tuple([Real64Ty, StringTy]),
+    fn([tuple([StringTy, Real64Ty])], tuple([Real64Ty, StringTy])),
   ]);
   const result = sequenceType([discarded], StringTy);
   assert(result.tag === "prim");
@@ -528,8 +528,8 @@ Deno.test("generalized local closures preserve captured summaries across indepen
     let scar = relay(effect);
     let clean = relay(() => { 1 });
   `);
-  assertEquals(types.scar, "Void -> Number!");
-  assertEquals(types.clean, "Void -> Number");
+  assertEquals(types.scar, "Void -> Real64.Real!");
+  assertEquals(types.clean, "Void -> Real64.Real");
 });
 
 Deno.test("a generic function types a rebuilt container exactly like the inlined match", async () => {
@@ -545,10 +545,10 @@ Deno.test("a generic function types a rebuilt container exactly like the inlined
     let value = map(original, (x) => { x + 1 });
     let clean = map(Good(2), (x) => { x + 1 });
   `);
-  assertEquals(types.original, "R<Number, 'a>!");
-  assertEquals(types.direct, "R<Number, 'a>!");
-  assertEquals(types.value, "R<Number, 'a>!");
-  assertEquals(types.clean, "R<Number, 'a>");
+  assertEquals(types.original, "R<Real64.Real, 'a>!");
+  assertEquals(types.direct, "R<Real64.Real, 'a>!");
+  assertEquals(types.value, "R<Real64.Real, 'a>!");
+  assertEquals(types.clean, "R<Real64.Real, 'a>");
 });
 
 Deno.test("adding an outer scar to a sequence result does not mark its dependency", () => {
@@ -571,23 +571,23 @@ Deno.test("outer and inner taint stay distinct through signatures and calls", as
     let element = match(inner()) { Cons(h, t) => { h }, Nil => { 0 } };
     let outerElement = match(outer()) { Cons(h, t) => { h }, Nil => { 0 } };
   `);
-  assertEquals(types.both, "Void -> List<Number!>!");
-  assertEquals(types.inner, "Void -> List<Number!>");
-  assertEquals(types.outer, "Void -> List<Number>!");
-  assertEquals(types.bothValue, "List<Number!>!");
-  assertEquals(types.innerValue, "List<Number!>");
-  assertEquals(types.outerValue, "List<Number>!");
-  assertEquals(types.element, "Number!");
-  assertEquals(types.outerElement, "Number!");
+  assertEquals(types.both, "Void -> List<Real64.Real!>!");
+  assertEquals(types.inner, "Void -> List<Real64.Real!>");
+  assertEquals(types.outer, "Void -> List<Real64.Real>!");
+  assertEquals(types.bothValue, "List<Real64.Real!>!");
+  assertEquals(types.innerValue, "List<Real64.Real!>");
+  assertEquals(types.outerValue, "List<Real64.Real>!");
+  assertEquals(types.element, "Real64.Real!");
+  assertEquals(types.outerElement, "Real64.Real!");
 });
 
 Deno.test("concrete function types absorb a joined scar through variables and results", async () => {
   const types = await bindings(`
     let eff ==> { print "a"; 1 };
-    let clean: Void -> Number = () => { 1 };
-    let held: Void -> Number = eff;
+    let clean: Void -> Real64.Real = () => { 1 };
+    let held: Void -> Real64.Real = eff;
     let heldValue = held();
-    type Cb = Void -> Number;
+    type Cb = Void -> Real64.Real;
     let run = (f: Cb) => { f(); 1 };
     let aliased = run(eff);
     let pureAliased = run(() => { 1 });
@@ -598,13 +598,13 @@ Deno.test("concrete function types absorb a joined scar through variables and re
     let element = match(list) { [a, b] => { a() }, _ => { 1 } };
     let positions = (c) => { if (c) { (1, "a") } else { (eff(), "b") } };
   `);
-  assertEquals(types.heldValue, "Number!");
-  assertEquals(types.aliased, "Number!");
-  assertEquals(types.pureAliased, "Number");
-  assertEquals(types.branch, "Number!");
-  assertEquals(types.cleanAfter, "Number");
-  assertEquals(types.element, "Number!");
-  assertEquals(types.positions, "Bool -> (Number!, String)");
+  assertEquals(types.heldValue, "Real64.Real!");
+  assertEquals(types.aliased, "Real64.Real!");
+  assertEquals(types.pureAliased, "Real64.Real");
+  assertEquals(types.branch, "Real64.Real!");
+  assertEquals(types.cleanAfter, "Real64.Real");
+  assertEquals(types.element, "Real64.Real!");
+  assertEquals(types.positions, "Bool -> (Real64.Real!, String)");
 });
 
 Deno.test("a recursive function's callback reaches its result", async () => {
@@ -614,16 +614,16 @@ Deno.test("a recursive function's callback reaches its result", async () => {
     let scar = go(eff, 3);
     let clean = go(() => { 2 }, 3);
   `);
-  assertEquals(types.scar, "Number!");
-  assertEquals(types.clean, "Number");
+  assertEquals(types.scar, "Real64.Real!");
+  assertEquals(types.clean, "Real64.Real");
 });
 
 Deno.test("a concrete function field marks the value that holds it", async () => {
   const types = await bindings(`
     let eff ==> { print "a"; 1 };
     let pure = () => { 1 };
-    type H = | H<Void -> Number>;
-    record Holder = { f: Void -> Number, n: Number };
+    type H = | H<Void -> Real64.Real>;
+    record Holder = { f: Void -> Real64.Real, n: Real64.Real };
     let scar = H(eff);
     let clean = H(pure);
     let called = match(H(eff)) { H(f) => { f() } };
@@ -637,26 +637,26 @@ Deno.test("a concrete function field marks the value that holds it", async () =>
   `);
   assertEquals(types.scar, "H!");
   assertEquals(types.clean, "H");
-  assertEquals(types.called, "Number!");
-  assertEquals(types.cleanCalled, "Number");
+  assertEquals(types.called, "Real64.Real!");
+  assertEquals(types.cleanCalled, "Real64.Real");
   assertEquals(types.lateScar, "H!");
   assertEquals(types.lateClean, "H");
   assertEquals(types.record, "Holder!");
   assertEquals(types.recordClean, "Holder");
-  assertEquals(types.generic, "Option<Void -> Number!>");
+  assertEquals(types.generic, "Option<Void -> Real64.Real!>");
 });
 
 Deno.test("a concrete data field marks the value, and a generic one keeps the mark inside", async () => {
   const types = await bindings(`
     let eff = () => { print("x"); 1 };
     let clean = () => 1;
-    type Box = | Box<Number>;
-    type Lst = | Lst<List<Number>>;
-    type Mix<T> = | Mix<T, Number>;
+    type Box = | Box<Real64.Real>;
+    type Lst = | Lst<List<Real64.Real>>;
+    type Mix<T> = | Mix<T, Real64.Real>;
     type Gen<T> = | Gen<List<T>>;
-    record P = { a: Number, b: String };
-    record G<T> = { v: T, n: Number };
-    record C = { f: Void -> Number };
+    record P = { a: Real64.Real, b: String };
+    record G<T> = { v: T, n: Real64.Real };
+    record C = { f: Void -> Real64.Real };
     record D<T> = { f: Void -> T };
     let box = Box(eff());
     let list = Lst([eff()]);
@@ -666,11 +666,11 @@ Deno.test("a concrete data field marks the value, and a generic one keeps the ma
     let record = P(eff(), "s");
     let literal = .{ a = eff(), b = "s" };
     let genericLiteral = .{ v = eff(), n = 1 };
-    let concreteLiteral: G<Number> = .{ v = 1, n = eff() };
+    let concreteLiteral: G<Real64.Real> = .{ v = 1, n = eff() };
     let spread = .{ ..literal, b = "t" };
     let functionField = .{ f = eff };
     let cleanFunctionField = .{ f = clean };
-    let genericFunctionField: D<Number> = .{ f = eff };
+    let genericFunctionField: D<Real64.Real> = .{ f = eff };
     let extracted = () => { match(Box(eff())) { Box(x) => { x } } };
     let sibling = () => { let p = P(eff(), "s"); p.b };
     let viaCallback = (g) => { Box(g()) };
@@ -679,18 +679,18 @@ Deno.test("a concrete data field marks the value, and a generic one keeps the ma
   `);
   assertEquals(types.box, "Box!");
   assertEquals(types.list, "Lst!");
-  assertEquals(types.mixConcrete, "Mix<Number>!");
-  assertEquals(types.mixGeneric, "Mix<Number!>");
-  assertEquals(types.gen, "Gen<Number!>");
+  assertEquals(types.mixConcrete, "Mix<Real64.Real>!");
+  assertEquals(types.mixGeneric, "Mix<Real64.Real!>");
+  assertEquals(types.gen, "Gen<Real64.Real!>");
   assertEquals(types.record, "P!");
   assertEquals(types.literal, "P!");
-  assertEquals(types.genericLiteral, "G<Number!>");
-  assertEquals(types.concreteLiteral, "G<Number>!");
+  assertEquals(types.genericLiteral, "G<Real64.Real!>");
+  assertEquals(types.concreteLiteral, "G<Real64.Real>!");
   assertEquals(types.spread, "P!");
   assertEquals(types.functionField, "C!");
   assertEquals(types.cleanFunctionField, "C");
-  assertEquals(types.genericFunctionField, "D<Number>!");
-  assertEquals(types.extracted, "Void -> Number!");
+  assertEquals(types.genericFunctionField, "D<Real64.Real>!");
+  assertEquals(types.extracted, "Void -> Real64.Real!");
   assertEquals(types.sibling, "Void -> String!");
   assertEquals(types.tainted, "Box!");
   assertEquals(types.untainted, "Box");
@@ -714,14 +714,14 @@ Deno.test("a discarded call taints through a callback whose own result is concre
     let mappedClean = mapIgnore([1, 2], clean);
     let mappedEffectAgain = mapIgnore([1, 2], effect);
   `);
-  assertEquals(types.wrappedEffect, "Number!");
-  assertEquals(types.wrappedClean, "Number");
-  assertEquals(types.collectedEffect, "Number!");
-  assertEquals(types.namedEffect, "Number!");
-  assertEquals(types.mappedEffect, "List<Number>!");
+  assertEquals(types.wrappedEffect, "Real64.Real!");
+  assertEquals(types.wrappedClean, "Real64.Real");
+  assertEquals(types.collectedEffect, "Real64.Real!");
+  assertEquals(types.namedEffect, "Real64.Real!");
+  assertEquals(types.mappedEffect, "List<Real64.Real>!");
   // One caller's `!` stays with that caller.
-  assertEquals(types.mappedClean, "List<Number>");
-  assertEquals(types.mappedEffectAgain, "List<Number>!");
+  assertEquals(types.mappedClean, "List<Real64.Real>");
+  assertEquals(types.mappedEffectAgain, "List<Real64.Real>!");
 });
 
 Deno.test("a callback result stays open after meeting a concrete type in the body", async () => {
@@ -739,34 +739,34 @@ Deno.test("a callback result stays open after meeting a concrete type in the bod
     let e = joined(true, eff)();
     let g = joined(true, clean)();
   `);
-  assertEquals(types.a, "Number!");
-  assertEquals(types.b, "Number");
-  assertEquals(types.c, "Number!");
-  assertEquals(types.d, "Number");
-  assertEquals(types.e, "Number!");
-  assertEquals(types.g, "Number");
+  assertEquals(types.a, "Real64.Real!");
+  assertEquals(types.b, "Real64.Real");
+  assertEquals(types.c, "Real64.Real!");
+  assertEquals(types.d, "Real64.Real");
+  assertEquals(types.e, "Real64.Real!");
+  assertEquals(types.g, "Real64.Real");
 });
 
 Deno.test("a return annotation keeps the positions a caller's taint reaches", async () => {
   const types = await bindings(`
     let eff = () => { print("x"); 1 };
     let clean = () => 1;
-    let value = (f: Void -> Number): Number => { f() };
+    let value = (f: Void -> Real64.Real): Real64.Real => { f() };
     let a = value(eff);
     let b = value(clean);
-    let same = (f: Void -> Number): (Void -> Number) => { f };
+    let same = (f: Void -> Real64.Real): (Void -> Real64.Real) => { f };
     let c = same(eff)();
     let d = same(clean)();
-    let list = (f: Void -> Number): List<Number> => { [f()] };
+    let list = (f: Void -> Real64.Real): List<Real64.Real> => { [f()] };
     let e = list(eff);
     let g = list(clean);
   `);
-  assertEquals(types.a, "Number!");
-  assertEquals(types.b, "Number");
-  assertEquals(types.c, "Number!");
-  assertEquals(types.d, "Number");
-  assertEquals(types.e, "List<Number!>");
-  assertEquals(types.g, "List<Number>");
+  assertEquals(types.a, "Real64.Real!");
+  assertEquals(types.b, "Real64.Real");
+  assertEquals(types.c, "Real64.Real!");
+  assertEquals(types.d, "Real64.Real");
+  assertEquals(types.e, "List<Real64.Real!>");
+  assertEquals(types.g, "List<Real64.Real>");
 });
 
 Deno.test("a callback result stays open when an operator in the body makes it concrete", async () => {
@@ -789,20 +789,20 @@ Deno.test("a callback result stays open when an operator in the body makes it co
     let j = loop(eff, 1);
     let l = loop(clean, 1);
   `);
-  assertEquals(types.a, "Number!");
-  assertEquals(types.b, "Number");
+  assertEquals(types.a, "Real64.Real!");
+  assertEquals(types.b, "Real64.Real");
   assertEquals(types.c, "String!");
   assertEquals(types.d, "String");
   assertEquals(types.e, "Bool!");
   assertEquals(types.g, "Bool");
-  assertEquals(types.h, "Number!");
-  assertEquals(types.i, "Number");
+  assertEquals(types.h, "Real64.Real!");
+  assertEquals(types.i, "Real64.Real");
   assertEquals(types.j, "String!");
   assertEquals(types.l, "String");
 });
 
 const pureLibraryCalls = `
-  let byte = Word8.fromNumber(260);
+  let byte = Word8.fromReal64(260);
   let chars = String.toList("ab");
   let task = Task.succeed(1);
   let parsed = Monad.via Task (login) => { login :> Task.succeed };
@@ -816,7 +816,7 @@ Deno.test({
     const type = (name: string) => show(env.get(name)!.type);
     assertEquals(type("byte"), "Word8.Word");
     assertEquals(type("chars"), "List<String>");
-    assertEquals(type("task"), "Task<Number, 'a>");
+    assertEquals(type("task"), "Task<Real64.Real, 'a>");
     assertEquals(type("parsed"), "Task<'a, 'b> -> Task<'a, 'b>");
   },
 });
@@ -829,6 +829,6 @@ Deno.test("destructuring keeps a generic component's taint", async () => {
     let tainted = first((eff(), 2));
     let untainted = first((clean(), 2));
   `);
-  assertEquals(types.tainted, "List<Number!>!");
-  assertEquals(types.untainted, "List<Number>");
+  assertEquals(types.tainted, "List<Real64.Real!>!");
+  assertEquals(types.untainted, "List<Real64.Real>");
 });

@@ -29,9 +29,9 @@ Deno.test("library pervasives project their defining schemes without exporting t
     let left = foldLeft(numbers, "", (item, acc) => { acc ++ Text.of(item) });
     let right = foldRight(numbers, "", (item, acc) => { Text.of(item) ++ acc });
   `);
-  expectBinding(checked.env, "numbers", { type: "List<Number>", vars: 0 });
+  expectBinding(checked.env, "numbers", { type: "List<Real64.Real>", vars: 0 });
   expectBinding(checked.env, "texts", { type: "List<String>", vars: 0 });
-  expectBinding(checked.env, "count", { type: "I32", vars: 0 });
+  expectBinding(checked.env, "count", { type: "Int32.Int", vars: 0 });
   expectBinding(checked.env, "left", { type: "String", vars: 0 });
   expectBinding(checked.env, "right", { type: "String", vars: 0 });
   await assertRejects(() => checkSource("let value = forEach([1], (n) => { n });"));
@@ -43,10 +43,10 @@ Deno.test("pervasive Order preserves shared type and constructor identity in pat
     from "basis/order.wm" import * as Orders;
     let bare: Order = Less;
     let qualified: Orders.Order = Orders.Less;
-    let rank: Order -> Number = match {
+    let rank: Order -> Real64.Real = match {
       Less => -1, Equal => 0, Greater => 1
     };
-    let real = match(Real.compare(1, 0)) {
+    let real = match(Real64.compare(1, 0)) {
       Ok(Greater) => true, _ => false
     };
     let ranks = (rank(Orders.Less), rank(Orders.Equal), rank(Orders.Greater));
@@ -69,7 +69,7 @@ Deno.test("pervasive Order preserves shared type and constructor identity in pat
   assertStrictEquals(runtime.bare, runtime.qualified);
   assertEquals(runtime.ranks, [-1, 0, 1]);
   assertEquals(runtime.real, true);
-  await assertRejects(() => checkSource("-- @no-prelude\nlet rank: Order -> Number = _ => 0;"));
+  await assertRejects(() => checkSource("-- @no-prelude\nlet rank: Order -> Real64.Real = _ => 0;"));
   const unused = await compile("let value: Option<Order> = None;");
   assertEquals(unused.includes("__wm_lib_subml_basis_subset_order"), false);
   const patternsOnly = await compileLibraryVirtual(
@@ -77,7 +77,7 @@ Deno.test("pervasive Order preserves shared type and constructor identity in pat
     new Map([[
       "/test/patterns.wm",
       `
-      let rank: Order -> Number = match { Less => -1, Equal => 0, Greater => 1 };
+      let rank: Order -> Real64.Real = match { Less => -1, Equal => 0, Greater => 1 };
     `,
     ]]),
   );
@@ -103,7 +103,7 @@ Deno.test("pervasive Order preserves shared type and constructor identity in pat
 
 Deno.test("pervasive ordering types and constructors resolve to shared library definitions", async () => {
   const source = `let value: Order = Less;
-    let rank: Order -> Number = match { Less => -1, Equal => 0, Greater => 1 };`;
+    let rank: Order -> Real64.Real = match { Less => -1, Equal => 0, Greater => 1 };`;
   const { projectSnapshot: project } = await analyzeVirtual(
     "/test/main.wm",
     new Map([["/test/main.wm", source]]),
@@ -129,7 +129,7 @@ Deno.test("bare library pervasives retain Basis behavior through code generation
     let checks = (
       values == [2, 4, 6], selected == [4, 6], flattened == [1, 2, 3],
       reverse(flattened) == [3, 2, 1], isEmpty([]), !isEmpty(values),
-      length(values) == (3: I32),
+      length(values) == (3: Int32.Int),
       Result.getOr(head(values) == Ok(2), false),
       Result.getOr(tail(values) == Ok([4, 6]), false),
       match(head([])) { Err(_) => { true }, Ok(_) => { false } },
@@ -257,29 +257,29 @@ Deno.test("string, character, boolean and option pervasives preserve checked bou
       },
       match(implode([])) { Ok(s) => { s == "" }, Err(_) => { false } },
       match(explode("a\u0100")) {
-        Err(Strings.NonByte(offset)) => { offset == (1: I32) }, _ => { false }
+        Err(Strings.NonByte(offset)) => { offset == (1: Int32.Int) }, _ => { false }
       },
       match(explode("a\u{1f600}")) {
-        Err(Strings.NonByte(offset)) => { offset == (1: I32) }, _ => { false }
+        Err(Strings.NonByte(offset)) => { offset == (1: Int32.Int) }, _ => { false }
       },
       match(implode(['a', '\u0100'])) {
-        Err(Strings.NonByte(offset)) => { offset == (1: I32) }, _ => { false }
+        Err(Strings.NonByte(offset)) => { offset == (1: Int32.Int) }, _ => { false }
       },
-      match(chr(0: I32)) { Ok(c) => { c == '\u0000' }, Err(_) => { false } },
-      match(chr(255: I32)) { Ok(c) => { c == '\u00ff' }, Err(_) => { false } },
-      match(chr(-1: I32)) { Err(Chars.InvalidCode) => { true }, _ => { false } },
-      match(chr(256: I32)) { Err(Chars.InvalidCode) => { true }, _ => { false } },
-      match(ord('\u00ff')) { Ok(n) => { n == (255: I32) }, Err(_) => { false } },
+      match(chr(0: Int32.Int)) { Ok(c) => { c == '\u0000' }, Err(_) => { false } },
+      match(chr(255: Int32.Int)) { Ok(c) => { c == '\u00ff' }, Err(_) => { false } },
+      match(chr(-1: Int32.Int)) { Err(Chars.InvalidCode) => { true }, _ => { false } },
+      match(chr(256: Int32.Int)) { Err(Chars.InvalidCode) => { true }, _ => { false } },
+      match(ord('\u00ff')) { Ok(n) => { n == (255: Int32.Int) }, Err(_) => { false } },
       match(ord('\u0100')) { Err(Chars.NonByteCharacter) => { true }, _ => { false } },
-      match(size("")) { Ok(n) => { n == (0: I32) }, Err(_) => { false } },
-      match(size("a\u0000\u00ff")) { Ok(n) => { n == (3: I32) }, Err(_) => { false } },
+      match(size("")) { Ok(n) => { n == (0: Int32.Int) }, Err(_) => { false } },
+      match(size("a\u0000\u00ff")) { Ok(n) => { n == (3: Int32.Int) }, Err(_) => { false } },
       match(size("a\u0100")) {
-        Err(Strings.NonByte(offset)) => { offset == (1: I32) }, _ => { false }
+        Err(Strings.NonByte(offset)) => { offset == (1: Int32.Int) }, _ => { false }
       },
       match(str('\u0000')) { Ok(s) => { s == "\u0000" }, Err(_) => { false } },
       match(str('\u00ff')) { Ok(s) => { s == "\u00ff" }, Err(_) => { false } },
       match(str('\u0100')) {
-        Err(Strings.NonByte(offset)) => { offset == (0: I32) }, _ => { false }
+        Err(Strings.NonByte(offset)) => { offset == (0: Int32.Int) }, _ => { false }
       },
       not(false), !not(true), map([true, false], not) == [false, true],
       match(toResult(Some(42), "missing")) { Ok(n) => { n == 42 }, Err(_) => { false } },
@@ -295,7 +295,7 @@ Deno.test("string, character, boolean and option pervasives preserve checked bou
   assertEquals(runtime.checks, Array(25).fill(true));
   for (
     const expression of [
-      "chr(1: Number)",
+      "chr(1: Real64.Real)",
       'ord("a")',
       'implode(["a"])',
       "size([])",

@@ -15,7 +15,7 @@ import {
   instantiate,
   knownTypeInfos,
   named,
-  NumberTy,
+  Real64Ty,
   prune,
   StringTy,
   tuple,
@@ -82,7 +82,7 @@ function inferExprInner(expr: Expr, context: InferContext, expected?: Ty): Ty {
       t = freshIntegerLiteral(expr, negatedLiterals.has(expr));
       break;
     case "Float":
-      t = NumberTy;
+      t = Real64Ty;
       break;
     case "Char":
       t = CharTy;
@@ -499,7 +499,7 @@ function inferExprInner(expr: Expr, context: InferContext, expected?: Ty): Ty {
       break;
     case "Unary":
       if (expr.op === "-") {
-        // The parser reads `(-2147483648: I32)` as a minus around the ascribed literal.
+        // The parser reads `(-2147483648: Int32.Int)` as a minus around the ascribed literal.
         const operand = expr.value.kind === "Ascribed" ? expr.value.value : expr.value;
         if (operand.kind === "Int") negatedLiterals.add(operand);
         const numeric = operand.kind === "Int"

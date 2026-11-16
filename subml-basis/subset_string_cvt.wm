@@ -14,13 +14,13 @@ from "./subset_result.wm" import * as SubsetResult;
 from "./subset_list.wm" import * as SubsetList;
 from "./subset_text.wm" import * as SubsetText;
 
-let repeat = (piece, count: I32) => {
+let repeat = (piece, count: Int32.Int) => {
   let rec go = (left, acc) => {
-    if (left <= (0: I32)) { SubsetString.concat(acc) } else { go(left - (1: I32), [piece, ..acc]) }
+    if (left <= (0: Int32.Int)) { SubsetString.concat(acc) } else { go(left - (1: Int32.Int), [piece, ..acc]) }
   };
   go(count, [])
 };
-let pad = (value, width: I32, piece, length: I32, left) => {
+let pad = (value, width: Int32.Int, piece, length: Int32.Int, left) => {
   if (width <= length) { value } else {
     let padding = repeat(piece, width - length);
     if (left) { padding ++ value } else { value ++ padding }

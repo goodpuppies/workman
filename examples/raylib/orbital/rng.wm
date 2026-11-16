@@ -6,7 +6,7 @@
 -- hand: `next` returns a fresh generator, `value` reads a [0, 1) sample from
 -- it. Same seed, same world, every run.
 
-record Rng = { seed: Number };
+record Rng = { seed: Real64 };
 
 -- 16807 * (largest seed < 2^31) stays well under 2^53, so the modulo is exact
 -- in JavaScript's float number type.
@@ -18,6 +18,6 @@ let value = (r: Rng) => {
   r.seed / 2147483647
 };
 
-let between = (r: Rng, lo: Number, hi: Number) => {
+let between = (r: Rng, lo: Real64, hi: Real64) => {
   lo + value(r) * (hi - lo)
 };

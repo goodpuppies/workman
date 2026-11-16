@@ -25,23 +25,23 @@ type Reason =
   | OutOfRange
   | OddLength
   | UnpairedSurrogate;
-type Error = | Error<Reason, I32>;
+type Error = | Error<Reason, Int32.Int>;
 
 // Internal: nonnegative scalar codes and a positive integer divisor.
-let split = (value: I32, base: I32) => { (I32.div(value, base), I32.mod(value, base)) };
+let split = (value: Int32.Int, base: Int32.Int) => { (Int32.div(value, base), Int32.mod(value, base)) };
 
-let isScalar = (value: I32) => {
-  if (if (if (value >= (0: I32)) { value <= (1114111: I32) } else { false }) {
-    SubsetBool.not(if (value >= (55296: I32)) { value <= (57343: I32) } else { false })
+let isScalar = (value: Int32.Int) => {
+  if (if (if (value >= (0: Int32.Int)) { value <= (1114111: Int32.Int) } else { false }) {
+    SubsetBool.not(if (value >= (55296: Int32.Int)) { value <= (57343: Int32.Int) } else { false })
   } else { false }) {
-    let (whole, residue) = split(value, (1: I32));
-    residue <= (0: I32)
+    let (whole, residue) = split(value, (1: Int32.Int));
+    residue <= (0: Int32.Int)
   } else { false }
 };
 
 let scalarError = (value) => {
-  if (if (value >= (55296: I32)) { value <= (57343: I32) } else { false }) { Surrogate } else {
-    if (value > (1114111: I32)) { OutOfRange } else { InvalidScalar }
+  if (if (value >= (55296: Int32.Int)) { value <= (57343: Int32.Int) } else { false }) { Surrogate } else {
+    if (value > (1114111: Int32.Int)) { OutOfRange } else { InvalidScalar }
   }
 };
 

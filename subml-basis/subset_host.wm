@@ -9,12 +9,12 @@ from js.module("./js/subset_host.js") import unsafe {
   writeFile as rawWriteFile: (String, String) -> (Bool, String),
   writeStdout as rawWriteStdout: String -> (Bool, String),
   writeStderr as rawWriteStderr: String -> (Bool, String),
-  argumentCount: Void -> Number,
-  argument: Number -> String,
-  system as rawSystem: String -> (Bool, I32, String),
+  argumentCount: Void -> Real64.Real,
+  argument: Real64.Real -> String,
+  system as rawSystem: String -> (Bool, Int32.Int, String),
   getEnv as rawGetEnv: String -> (Bool, String),
-  exit as rawExit: I32 -> Void,
-  terminate as rawTerminate: I32 -> Void
+  exit as rawExit: Int32.Int -> Void,
+  terminate as rawTerminate: Int32.Int -> Void
 };
 let convert = (result) => {
   let (succeeded, text) = result;

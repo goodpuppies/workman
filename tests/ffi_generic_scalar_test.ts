@@ -18,7 +18,7 @@ Deno.test("scalar literals instantiate generic tuples before discovery types esc
       value ++ "!"
     };
   `);
-  expectBinding(result.env, "numeric", { type: "Void -> Number!", vars: 0 });
+  expectBinding(result.env, "numeric", { type: "Void -> Real64.Real!", vars: 0 });
   expectBinding(result.env, "textual", { type: "Void -> String!", vars: 0 });
 });
 
@@ -31,7 +31,7 @@ Deno.test("scalar generic specialization retains unsafe precision and rejects wr
       value + 1
     };
   `);
-  expectBinding(result.env, "numeric", { type: "Void -> Number!", vars: 0 });
+  expectBinding(result.env, "numeric", { type: "Void -> Real64.Real!", vars: 0 });
   await assertRejects(() =>
     checkSource(`${header}
     let wrong = () => {
@@ -52,7 +52,7 @@ Deno.test("HM scalar arguments specialize erased generics without annotations", 
       value + 1
     };
   `);
-  expectBinding(result.env, "numeric", { type: "Void -> Number!", vars: 0 });
+  expectBinding(result.env, "numeric", { type: "Void -> Real64.Real!", vars: 0 });
 });
 
 Deno.test("generic lazy initializers wait for HM callback result evidence", async () => {
@@ -64,5 +64,5 @@ Deno.test("generic lazy initializers wait for HM callback result evidence", asyn
       value + 1
     };
   `);
-  expectBinding(result.env, "numeric", { type: "Void -> Number!", vars: 0 });
+  expectBinding(result.env, "numeric", { type: "Void -> Real64.Real!", vars: 0 });
 });

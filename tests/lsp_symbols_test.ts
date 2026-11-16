@@ -70,7 +70,7 @@ Deno.test("lsp definition resolves an imported record constructor to its declara
   const dir = await Deno.makeTempDir();
   const lib = `${dir}/records.wm`;
   const main = `${dir}/main.wm`;
-  const libSource = "record Point = { x: Number, y: Number };";
+  const libSource = "record Point = { x: Real64.Real, y: Real64.Real };";
   const mainSource = 'from "./records.wm" import { Point }; let point = Point(1, 2);';
   await Deno.writeTextFile(lib, libSource);
   await Deno.writeTextFile(main, mainSource);
@@ -92,7 +92,7 @@ Deno.test("lsp type definition follows inferred nominal types across modules", a
   const dir = await Deno.makeTempDir();
   const records = `${dir}/records.wm`;
   const main = `${dir}/main.wm`;
-  const recordsSource = "record Point = { x: Number, y: Number };";
+  const recordsSource = "record Point = { x: Real64.Real, y: Real64.Real };";
   const mainSource = 'from "./records.wm" import { Point }; ' +
     "let point = Point(1, 2); let use = point;";
   await Deno.writeTextFile(records, recordsSource);
@@ -116,7 +116,7 @@ Deno.test("lsp type definition follows inferred nominal types across modules", a
 Deno.test("lsp type definition returns each nominal component of a composite type", async () => {
   const dir = await Deno.makeTempDir();
   const path = `${dir}/main.wm`;
-  const source = "record Left = { value: Number }; record Right = { value: String }; " +
+  const source = "record Left = { value: Real64.Real }; record Right = { value: String }; " +
     'let pair = (Left(1), Right("x")); let use = pair;';
   await Deno.writeTextFile(path, source);
 
@@ -135,7 +135,7 @@ Deno.test("lsp type definition returns each nominal component of a composite typ
 Deno.test("lsp type definition uses certified recovered types and ignores primitives", async () => {
   const dir = await Deno.makeTempDir();
   const path = `${dir}/main.wm`;
-  const source = "let broken = Missing; record Good = { value: Number }; " +
+  const source = "let broken = Missing; record Good = { value: Real64.Real }; " +
     "let good = Good(1); let use = good; let primitive = 1;";
   await Deno.writeTextFile(path, source);
   const uri = pathToFileUri(path);
@@ -227,8 +227,8 @@ Deno.test("lsp document highlights preserve local import-alias selection", async
 Deno.test("lsp generic projections do not claim a particular nominal field identity", async () => {
   const dir = await Deno.makeTempDir();
   const path = `${dir}/main.wm`;
-  const source = "let broken = Missing; record First = { x: Number }; " +
-    "record Second = { x: Number }; let read = (value) => { value.x };";
+  const source = "let broken = Missing; record First = { x: Real64.Real }; " +
+    "record Second = { x: Real64.Real }; let read = (value) => { value.x };";
   await Deno.writeTextFile(path, source);
 
   const highlights = await documentHighlightsAt(
@@ -344,7 +344,7 @@ Deno.test("lsp rename covers namespace aliases and nominal record fields", async
   const dir = await Deno.makeTempDir();
   const records = `${dir}/records.wm`;
   const main = `${dir}/main.wm`;
-  const recordsSource = "record Point = { x: Number };";
+  const recordsSource = "record Point = { x: Real64.Real };";
   const mainSource = 'from "./records.wm" import * as Geometry; ' +
     "let read = (point: Geometry.Point) => { point.x };";
   await Deno.writeTextFile(records, recordsSource);
@@ -422,8 +422,8 @@ Deno.test("lsp definition retains a certified imported target inside a type-reje
   const librarySource = "let run = (initial, render) => { render(initial) };";
   const mainSource = `
     from "./runtime.wm" import * as Runtime;
-    record First = { value: Number };
-    record Second = { value: Number };
+    record First = { value: Real64.Real };
+    record Second = { value: Real64.Real };
     let render = (value: First) => { value.value };
     let display = (value: Second) => { Runtime.run(value, render) };
   `;
@@ -563,7 +563,7 @@ function positionOf(source: string, text: string) {
 Deno.test("lsp inline record references rename the original type and field identities", async () => {
   const dir = await Deno.makeTempDir();
   const path = `${dir}/main.wm`;
-  const source = "let a:Point{x:I32}=.{x=1}; let b:Point{x:I32}=a; let n=b.x;";
+  const source = "let a:Point{x:Int32.Int}=.{x=1}; let b:Point{x:Int32.Int}=a; let n=b.x;";
   try {
     await Deno.writeTextFile(path, source);
     const uri = pathToFileUri(path);
@@ -571,13 +571,13 @@ Deno.test("lsp inline record references rename the original type and field ident
     assertEquals(
       field?.changes[uri].map((edit) => edit.range.start.character).sort((a, b) => a - b),
       [
-        source.indexOf("x:I32"),
+        source.indexOf("x:Int32.Int"),
         source.indexOf("x=1"),
-        source.lastIndexOf("x:I32"),
+        source.lastIndexOf("x:Int32.Int"),
         source.lastIndexOf("x;"),
       ],
     );
-    const type = await renameAt(uri, positionOf(source, "Point{x:I32}=a"), "Location", new Map());
+    const type = await renameAt(uri, positionOf(source, "Point{x:Int32.Int}=a"), "Location", new Map());
     assertEquals(
       type?.changes[uri].map((edit) => edit.range.start.character).sort((a, b) => a - b),
       [
@@ -585,8 +585,8 @@ Deno.test("lsp inline record references rename the original type and field ident
         source.lastIndexOf("Point"),
       ],
     );
-    const definition = await definitionAt(uri, positionOf(source, "x:I32}=a"), new Map());
-    assertEquals(definition?.range.start.character, source.indexOf("x:I32"));
+    const definition = await definitionAt(uri, positionOf(source, "x:Int32.Int}=a"), new Map());
+    assertEquals(definition?.range.start.character, source.indexOf("x:Int32.Int"));
   } finally {
     await Deno.remove(dir, { recursive: true });
   }

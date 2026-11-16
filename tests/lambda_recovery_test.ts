@@ -22,7 +22,7 @@ for (
     "let f = x => { x",
     "let f = (x: String) => { x",
     "let f = (x, y) => { x",
-    "let f = (x): Number => { x",
+    "let f = (x): Real64.Real => { x",
     "let f = (x) => { @gpu x };",
   ]
 ) {

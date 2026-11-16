@@ -40,9 +40,9 @@ Deno.test("direct constructor payloads reject redundant Var binders", async () =
 Deno.test("general pattern constraints retain binders and check the scrutinee type", async () => {
   const source = `
     type Option<T> = None | Some<T>;
-    let get = (value: Option<Number>) => {
+    let get = (value: Option<Real64.Real>) => {
       match(value) {
-        (Some(x) : Option<Number>) => { x },
+        (Some(x) : Option<Real64.Real>) => { x },
         None => { 0 },
       }
     };
@@ -62,8 +62,8 @@ Deno.test("general pattern constraints retain binders and check the scrutinee ty
   );
   await checkSource(source);
   await checkSource(`
-    let (left, (right : Number)) = (1, 2);
-    let add = ((x : Number), y) => { x + y };
+    let (left, (right : Real64.Real)) = (1, 2);
+    let add = ((x : Real64.Real), y) => { x + y };
   `);
 
   await assertRejects(
@@ -221,7 +221,7 @@ Deno.test("constructor payload binders reject duplicates across nested patterns"
 
 Deno.test("a lone wildcard ignores a multi-field constructor payload", async () => {
   await checkSource(`
-    type Symbol = | Valid<String> | Invalid<String, Number, String>;
+    type Symbol = | Valid<String> | Invalid<String, Real64.Real, String>;
     let invalid = match(symbol) => {
       Invalid(_) => { true },
       Valid(_) => { false },

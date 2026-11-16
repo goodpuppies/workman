@@ -365,7 +365,7 @@ let binaryLevel = (operator: SurfaceToken) => {
 };
 
 // The items before the first operator at `level`, and the rest starting at that operator.
-let rec tighterBinaryItems = (level: Number, items: List<BinaryItem>, reversed: List<BinaryItem>) => {
+let rec tighterBinaryItems = (level: Real64, items: List<BinaryItem>, reversed: List<BinaryItem>) => {
   match(items) {
     [] => { (reverseInto(reversed, []), []) },
     [item, ..rest] => {
@@ -378,7 +378,7 @@ let rec tighterBinaryItems = (level: Number, items: List<BinaryItem>, reversed: 
   }
 };
 
-let rec lastBinaryEnd = (items: List<BinaryItem>, end: Number) => {
+let rec lastBinaryEnd = (items: List<BinaryItem>, end: Real64) => {
   match(items) {
     [] => { end },
     [item, ..rest] => { lastBinaryEnd(rest, item.operand.span.end) },
@@ -386,7 +386,7 @@ let rec lastBinaryEnd = (items: List<BinaryItem>, end: Number) => {
 };
 
 // Every node of one level's run gets the span of the whole run.
-let rec foldBinaryLevel = (level: Number, head: BinaryOperand, items: List<BinaryItem>) => {
+let rec foldBinaryLevel = (level: Real64, head: BinaryOperand, items: List<BinaryItem>) => {
   match(items) {
     [] => { head },
     _ => {
@@ -397,7 +397,7 @@ let rec foldBinaryLevel = (level: Number, head: BinaryOperand, items: List<Binar
     },
   }
 }
-and foldBinaryRun = (level: Number, left: BinaryOperand, items: List<BinaryItem>, span: Span) => {
+and foldBinaryRun = (level: Real64, left: BinaryOperand, items: List<BinaryItem>, span: Span) => {
   match(items) {
     [] => { left },
     [item, ..rest] => {

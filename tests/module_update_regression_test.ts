@@ -38,7 +38,7 @@ Deno.test({
       [
         "/test/main.wm",
         'from "./lib.wm" import { Option }; ' +
-        "let imported: Option<Number> = 1; " +
+        "let imported: Option<Real64.Real> = 1; " +
         "let existing = Some(2);",
       ],
     ]);
@@ -188,7 +188,7 @@ Deno.test({
     const virtualFs = new Map<string, string>([
       [
         "/test/lib.wm",
-        "type Token = | Imported; record Thing = { imported: Number }; let value = 1;",
+        "type Token = | Imported; record Thing = { imported: Real64.Real }; let value = 1;",
       ],
       [
         "/test/main.wm",
@@ -196,13 +196,13 @@ Deno.test({
         "let oldValue = value; " +
         "type Token = | Local; " +
         "let oldToken = Imported; " +
-        "record Thing = { local: Number }; " +
+        "record Thing = { local: Real64.Real }; " +
         "let value = 2; " +
         "type Option<T> = T; " +
-        "let option: Option<Number> = 6; " +
+        "let option: Option<Real64.Real> = 6; " +
         "let stillSome = Some(5); " +
         "let print = 3; " +
-        'from js.global("console") import unsafe { log: Number -> Void } as console; ' +
+        'from js.global("console") import unsafe { log: Real64.Real -> Void } as console; ' +
         "let main = () => { " +
         "match((Local, Thing(4), stillSome)) { " +
         "(Local, .{ local }, Some(number)) => { " +

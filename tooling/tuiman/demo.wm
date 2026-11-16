@@ -10,7 +10,7 @@ type Focus = Navigation | Content;
 
 record Model = {
   focus: Focus,
-  selected: Number,
+  selected: Real64,
 };
 
 let initial = Model(Navigation, 0);

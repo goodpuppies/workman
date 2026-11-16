@@ -1,11 +1,14 @@
 from js.module("./js/int64.js") import unsafe {
-  fromNumber as primFromNumber: Number -> Int64.Int,
-  toNumber as primToNumber: Int64.Int -> Number,
+  fromNumber as primFromReal64: Real64.Real -> Int64.Int,
+  toNumber as primToReal64: Int64.Int -> Real64.Real,
   fromString as primFromString: String -> Int64.Int,
   toString as primToString: Int64.Int -> String,
 };
 
-let fromNumber = primFromNumber;
-let toNumber = primToNumber;
+/** The type a bare `Int64` names in annotations (docs/modules.md). */
+type Self = Int64.Int;
+
+let fromReal64 = primFromReal64;
+let toReal64 = primToReal64;
 let fromString = primFromString;
 let toString = primToString;

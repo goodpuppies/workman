@@ -128,13 +128,13 @@ Deno.test("computed pattern effects taint the match result", async () => {
       }
     };
   `);
-  expectBinding(result.env, "check", { type: "Number -> Bool!", vars: 0 });
+  expectBinding(result.env, "check", { type: "Real64.Real -> Bool!", vars: 0 });
 });
 
 Deno.test("computed patterns work in lists records constrained patterns and match functions", async () => {
   assertEquals(
     await execute(`
-    record Pair = { left: Number, right: Number };
+    record Pair = { left: Real64.Real, right: Real64.Real };
     let expected = 2;
     let label = match { =(expected + 1) => { "function" }, _ => { "miss" } };
     let main = () => {
@@ -142,7 +142,7 @@ Deno.test("computed patterns work in lists records constrained patterns and matc
       print(match(.{ left = 1, right = 2 }) {
         .{ left = =(1), right = =(expected) } => { "record" }, _ => { "miss" }
       });
-      print(match(2) { (=(expected) : Number) => { "constrained" }, _ => { "miss" } });
+      print(match(2) { (=(expected) : Real64.Real) => { "constrained" }, _ => { "miss" } });
       print(label(3))
     };
   `),
