@@ -276,13 +276,33 @@ error type.
 
 ## Map existing carrier values
 
-`Monad.map` and `Monad.mapErr` are curried, carrier-generic forms of the ordinary
-mapping operations. They are convenient as computed pipeline stages:
+`Monad.map`, `Monad.mapErr`, `Monad.andThen`, and `Monad.traverse` are
+carrier-generic forms of the ordinary operations. They take the carrier value
+first, so a pipeline supplies it and the stage names the carrier:
 
 ```wm
 task
-  :> Monad.mapErr Task ActorCallFailure
-  :> Monad.map Task print
+  :> Monad.mapErr(Task, ActorCallFailure)
+  :> Monad.map(Task, print)
+```
+
+The parentheses also end a lambda argument, so later stages are not absorbed
+into its body. To name a reusable stage, use a pipeline lambda:
+
+```wm
+let tagFields ==> :> Monad.mapErr(Result, FieldsFailed);
+```
+
+`via` and `viaError` stay curried because they build a stage rather than being
+one: `Monad.via(Result)(f)` is `wrapped => Monad.andThen(wrapped, Result, f)`.
+Use `via` to name or pass a transformation, and `andThen` to apply one in place.
+
+`Monad.traverse(items, carrier, f)` applies `f` to each item in order and
+collects the results in one carrier. Each item runs after the previous one
+succeeds, and the first failure stops the traversal:
+
+```wm
+let pairs = fields :> Monad.traverse(Result, parsePair);
 ```
 
 `map` applies a pure transformation to a successful value. Use `via` instead when

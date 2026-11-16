@@ -289,20 +289,35 @@ Deno.test("Monad map adapters compose through explicit carrier namespaces", asyn
     type AppError = | DomainFailure<String>;
 
     let taskValue = Task.succeed(1)
-      :> Monad.map Task (number) => { number + 1 };
+      :> Monad.map(Task, (number) => { number + 1 });
     let taskFailure: Task<Real64.Real, AppError> = Task.fail("bad")
-      :> Monad.mapErr Task DomainFailure;
+      :> Monad.mapErr(Task, DomainFailure);
 
     let resultValue = Ok("hello")
-      :> Monad.map Result (text) => { text ++ "!" };
+      :> Monad.map(Result, (text) => { text ++ "!" });
     let resultFailure: Result<Real64.Real, AppError> = Err("bad")
-      :> Monad.mapErr Result DomainFailure;
+      :> Monad.mapErr(Result, DomainFailure);
   `);
 
   expectBinding(result.env, "taskValue", { type: "Task<Int32.Int, 'a>!", vars: 0 });
   expectBinding(result.env, "taskFailure", { type: "Task<Real64.Real, AppError>!", vars: 0 });
   expectBinding(result.env, "resultValue", { type: "Result<String, 'a>", vars: 0 });
   expectBinding(result.env, "resultFailure", { type: "Result<Real64.Real, AppError>", vars: 0 });
+});
+
+Deno.test("Monad andThen and traverse are tupled pipeline stages", async () => {
+  const result = await checkSource(`
+    let positive = (n: Int32) => { if (n > 0) { Ok(n + 1) } else { Err(n) } };
+    let chained = Ok(8) :> Monad.andThen(Result, positive);
+    let halves = [2, 4, 6] :> Monad.traverse(Result, positive);
+    let stopped = [2, -4, 6] :> Monad.traverse(Result, positive);
+    let tasks = [1, 2] :> Monad.traverse(Task, Task.succeed);
+  `);
+
+  expectBinding(result.env, "chained", { type: "Result<Int32.Int, Int32.Int>", vars: 0 });
+  expectBinding(result.env, "halves", { type: "Result<List<Int32.Int>, Int32.Int>", vars: 0 });
+  expectBinding(result.env, "stopped", { type: "Result<List<Int32.Int>, Int32.Int>", vars: 0 });
+  expectBinding(result.env, "tasks", { type: "Task<List<Int32.Int>, 'a>!", vars: 0 });
 });
 
 Deno.test("carrier records instantiate independently across viaError uses", async () => {
