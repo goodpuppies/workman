@@ -3,6 +3,8 @@ from js.module("./js/int64.js") import unsafe {
   toNumber as primToReal64: Int64.Int -> Real64.Real,
   fromString as primFromString: String -> Int64.Int,
   toString as primToString: Int64.Int -> String,
+  div as primDiv: (Int64.Int, Int64.Int) -> Int64.Int,
+  mod as primMod: (Int64.Int, Int64.Int) -> Int64.Int,
 };
 
 /** The type a bare `Int64` names in annotations (docs/modules.md). */
@@ -12,3 +14,6 @@ let fromReal64 = primFromReal64;
 let toReal64 = primToReal64;
 let fromString = primFromString;
 let toString = primToString;
+/** Flooring division and its remainder, as SML's `div` and `mod`; zero divisors fail with `Div`. */
+let div = primDiv;
+let mod = primMod;

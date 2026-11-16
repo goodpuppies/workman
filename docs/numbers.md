@@ -30,7 +30,8 @@ typing and exact values. Type aliases preserve this behavior.
 At the end of each top-level declaration, integer literals without determining context default to
 `Int32` when all literals sharing their type fit its signed 32-bit range. Larger literals default to
 `Real64`, with JavaScript number rounding. Decimal-point and exponent literals, such as `1.0` and
-`1e3`, remain `Real64`. Unconstrained operators without integer literals retain their `Real64`
+`1e3`, are `Real64` or `Real32` by context (`let half: Real32.Real = 0.5;` rounds to single
+precision) and otherwise `Real64`; inside `@gpu` code they are always `Real64`. Unconstrained operators without integer literals retain their `Real64`
 default. Inside `@gpu` code, undecided integer literals also default to `Real64`.
 
 A later declaration cannot change an earlier default. This helper takes and returns `Int32`:
@@ -91,7 +92,8 @@ ML's Appendix E. Both operands and the result have one type:
 `Int32` and `Int64` arithmetic panics on overflow, word arithmetic wraps, and `Real32` rounds each
 result to single precision. `%` truncates toward zero for every type: the remainder takes the
 dividend's sign, so `-7 % 2` is `-1`. An integer `%` by zero panics. Integer division is never
-implicit: `Int32.div` and `Int32.mod` round toward negative infinity, as SML's `div` and `mod` do.
+implicit: `Int32.div` and `Int32.mod` round toward negative infinity, as SML's `div` and `mod` do,
+and so do `Int64.div`/`Int64.mod` and the word types' `div`/`mod`.
 
 ```wm
 let checksum = (a: Word8.Word, b: Word8.Word) => { a + b * 31 };

@@ -349,8 +349,13 @@ function coreExprFromSurface(expr: Expr, context?: CoreLoweringContext): CoreExp
         ...integerDetails(expr, context?.types.get(expr)),
         node: expr.node,
       };
-    case "Float":
-      return { kind: "CoreFloat", value: expr.value, node: expr.node };
+    case "Float": {
+      // A Real32 constant is rounded once here, as an integer literal is at emission.
+      const type = context?.types.get(expr);
+      const selected = type && numericType(prune(type));
+      const value = selected && selected.name === "Real32.Real" ? Math.fround(expr.value) : expr.value;
+      return { kind: "CoreFloat", value, node: expr.node };
+    }
     // Character typing is complete; host Core stores the single scalar as text.
     case "Char":
     case "String":

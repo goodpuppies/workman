@@ -1,6 +1,7 @@
 # 0.8.0 release plan
 
-Status: 2026-11-16, in progress. Done: 1 (`viaErr`), 2 (collection names), 3 (missing counterparts), 4 (operator table). Step 8 is under
+Status: 2026-11-16, in progress. Done: 1 (`viaErr`), 2 (collection names), 3 (missing counterparts), 4 (operator table), 5
+(SubsetML numbers), 6 (scope expansions: `local`, `op`, alias modules, sized numbers). Step 8 is under
 way: the [gap audit](subml-gap-audit.md) records what porting frontend-v2 to SML added. Nothing
 is tagged or published.
 
@@ -112,6 +113,11 @@ phrase, so the language conformance rule in `docs/spec.md` §1 still holds.
 | `local dec1 in dec2 end` | Private helpers and private `open`; fixes SubsetML's [private-imports issue](../subm/SubsetML/markdown/issues/private-imports.md) and is the translation target for step 7 |
 | top-level structure aliases (`structure A = B`) | Resolves the §11 open question; WM already expresses it with `export from … import * as` |
 | `op` | Passes an operator as a function value (`op +`); needs a WM spelling for an operator value |
+
+Done 2026-11-16. Decisions made on the way: a top-level alias is a whole-file alias module
+(`export from "./b.wm" import *;`); Word64, Int64 and Real32 build with MLton only, since MLWorks
+lacks them; WM decimal literals now take `Real32` from context, as Appendix E's real constants do
+(`@gpu` code keeps them `Real64`); `Int64.div`/`Int64.mod` were added to std for `wordint`.
 
 ## 7. Private declarations
 

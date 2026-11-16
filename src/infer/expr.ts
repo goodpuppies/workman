@@ -1,4 +1,4 @@
-import { SIGNED_TYPES } from "../numeric.ts";
+import { REAL_TYPES, SIGNED_TYPES } from "../numeric.ts";
 import { taintExpression } from "./taint.ts";
 import { holdResult } from "../types.ts";
 import type { Expr } from "../ast.ts";
@@ -91,8 +91,10 @@ function inferExprInner(expr: Expr, context: InferContext, expected?: Ty): Ty {
     case "Int":
       t = freshIntegerLiteral(expr, negatedLiterals.has(expr), context.dialect.domain === "gpu");
       break;
+    // Decimal literals are real: Real64 or Real32 by context, Real64 by default (Appendix E).
+    // Shader code keeps them Real64, which Slang builtin overload resolution expects.
     case "Float":
-      t = Real64Ty;
+      t = context.dialect.domain === "gpu" ? Real64Ty : freshNumeric(undefined, REAL_TYPES);
       break;
     case "Char":
       t = CharTy;

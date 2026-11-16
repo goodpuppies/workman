@@ -304,6 +304,36 @@ Deno.test("arithmetic operators follow the Appendix E classes for every numeric 
   }
 });
 
+Deno.test("decimal literals are Real64 or Real32 by context, as Appendix E's real constants", async () => {
+  assertEquals(
+    await run(`
+    let f: Real32.Real = 0.1;
+    print((f + f, f / 3.0, 1.5 + 1));
+    let g = (x: Real32.Real) => { x * 2.5 };
+    print(g(0.1));
+  `),
+    ["(0.20000000298023224, 0.03333333507180214, 2.5)", "0.25"],
+  );
+  for (
+    const source of [
+      "let n: Int32.Int = 1.5;",
+      "let w: Word8.Word = 0.5;",
+    ]
+  ) {
+    await assertRejects(() => checkSource(source));
+  }
+});
+
+Deno.test("Int64.div and Int64.mod floor, as SML's div and mod", async () => {
+  assertEquals(
+    await run(`
+    let a: Int64.Int = -7;
+    print((Int64.div(a, 2), Int64.mod(a, 2), Int64.div(7, -2), Int64.mod(7, -2)));
+  `),
+    ["(-4, 1, -4, -1)"],
+  );
+});
+
 Deno.test("integer % and overflow fail instead of producing NaN or wrapping", async () => {
   for (
     const [source, message] of [

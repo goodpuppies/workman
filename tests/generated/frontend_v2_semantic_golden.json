@@ -7,7 +7,7 @@
     "std/byte.wm": "bdf76db682591cfe3674a9b1329379db4b6da69feee772711e07e2d41703a410",
     "std/general.wm": "b1d4ccdfb324c7d6500a0fd350c41a361adf5450d3d00802503d34fa83516ae4",
     "std/int32.wm": "0a022f3464667abdee81a0bba0bf1f4b21cf0b728d1a5530692dc4a420145fac",
-    "std/int64.wm": "23f109acc2b7c227b2e51e846cdf42d91c9dc6d28d2578c4e2dc80e0158d9f17",
+    "std/int64.wm": "e4bd95553142da8f0e019dd8b874e357b2a0567aae1ef894bcb1ef7d5f9eb5e9",
     "std/json_parser.wm": "09ac30c0bd4f6c0b33b61e869f6e405413be264e1ed4aa5682a1e784aa47920b",
     "std/json_value.wm": "d878f9e9754017a68dea06953927dd24720cc84c57ab0bd94c16386bdeccfdec",
     "std/json.wm": "5f5c43f83a555c366085fa44ec73d2b76ee745e8fd314ef4d9ac79031e25a054",

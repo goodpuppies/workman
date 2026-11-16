@@ -827,6 +827,8 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
           "toReal64",
           "fromString",
           "toString",
+          "div",
+          "mod",
         ],
         types: [
           "Int",
