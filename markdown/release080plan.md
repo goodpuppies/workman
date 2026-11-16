@@ -153,7 +153,7 @@ From the [translation gap audit](subml-gap-audit.md): cover groups A, B and C, s
 code translates to SML under two rules: annotate a record receiver whose type the declaration
 does not otherwise fix, and keep record label sets distinct (R2).
 
-- A, syntax: computed patterns and cond-style matches, pipeline lambdas and `==>`, capture
+- A, syntax: named imports (`import { a, B }`), computed patterns and cond-style matches, pipeline lambdas and `==>`, capture
   clauses, lambda result annotations, piped conditionals, inline record types, and the reader's
   grouped-argument space application defect.
 - B, using the translator's existing inference: record member pipes on records, record updates

@@ -1,5 +1,5 @@
 from "./generated/surface_types.wm" import {
-  Span, SurfaceToken, MatchArmNode, MatchExpressionNode, MatchFunctionNode, BareMatchFunctionNode,
+  Span, SurfaceToken, SurfaceNode, MatchArmNode, MatchExpressionNode, MatchFunctionNode, BareMatchFunctionNode,
   AnonymousMatchFunctionNode, BareAnonymousMatchFunctionNode, TupleExpressionNode
 };
 from "./surface_parse_value.wm" import {
@@ -37,29 +37,32 @@ let buildMatchExpr = (value: ParseValue, span: Span) => {
       EmptyParseValue,
       TokenParseValue(closeBrace),
     ]) => {
-      let matchedNode = match(matched) {
-        [single] => { single },
+      let build = (matchedNode: SurfaceNode) => {
+        NodeParseValue(
+          MatchExpressionNode(
+            matchToken,
+            surfaceValue(open),
+            matchedNode,
+            surfaceValue(close),
+            surfaceValue(openBrace),
+            arms,
+            surfaceValue(closeBrace),
+            span,
+          )
+        )
+      };
+      match(matched) {
+        [] => { RuleParseValue("MatchExpr", value, span) },
+        [single] => { build(single) },
         [first, second, ..rest] => {
-          TupleExpressionNode(
+          build(TupleExpressionNode(
             surfaceValue(open),
             [first, second, ..rest],
             surfaceValue(close),
             span,
-          )
+          ))
         },
-      };
-      NodeParseValue(
-        MatchExpressionNode(
-          matchToken,
-          surfaceValue(open),
-          matchedNode,
-          surfaceValue(close),
-          surfaceValue(openBrace),
-          arms,
-          surfaceValue(closeBrace),
-          span,
-        )
-      )
+      }
     },
     _ => { RuleParseValue("MatchExpr", value, span) },
   }

@@ -41,7 +41,6 @@ let buildPostfix = (value: ParseValue, span: Span) => {
               }
             },
             None => { NodeParseValue(node) },
-            _ => { RuleParseValue("Postfix", value, span) },
           }
         },
         None => { RuleParseValue("Postfix", value, span) },

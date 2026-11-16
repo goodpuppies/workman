@@ -14,8 +14,8 @@ from "./generated/surface_types.wm" import {
 let renderImportToken = (value: SurfaceToken) => { value.text };
 
 let renderImportSurfaceValue = match(value, materializeMarks) => {
-  (AuthoredValue(token), Var(materializeMarks)) => { token.text },
-  (MarkedValue(mark, fallback), true) => { fallback.text },
+  (AuthoredValue(token), Var(materializeMarks)) => { (token: SurfaceToken).text },
+  (MarkedValue(mark, fallback), true) => { (fallback: SurfaceToken).text },
   (MarkedValue(mark, fallback), false) => { "" },
 };
 

@@ -31,6 +31,7 @@ Each is a source-level desugaring that needs no type information.
 | piped conditional `b :> if { … } else { … }` | `expected (, found {` | `if b then … else …` |
 | space application with a grouped argument `add (1: Int32.Int) one` | `expected ), found :` | reader defect: WM accepts it |
 | inline record type `.{ a = 1 }: Point{ a: Int32 }` | `expected ;, found :` | hoist `type point = {a : int}` before the declaration |
+| named import `from "./x.wm" import { a, B };` | `reverse discovery requires header namespace imports` | qualify each imported value, constructor and type (`X.a`, `X.B` in patterns); found later, see below |
 | typed hole `?` | `unexpected character` | could lower to the panic runtime; holes are development-only, so rejection is reasonable |
 
 ## B. Forms whose translation depends on types
@@ -77,6 +78,41 @@ WM programs use unqualified.
 
 `JSON{}`/`JSON[]` and JS receivers are JavaScript FFI. `Task` is a host carrier. `WON[...]`
 literals are excluded too: portable code uses the `SubsetWon` constructors directly.
+
+## Later finding: named imports
+
+Translating `tooling/frontend-v2` (the self-hosted WM frontend, 27 modules, 31,308 lines including
+the 25,922-line generated `compiled_probe_rules.wm`) stops at its first import. All 75 of its
+module imports use named clauses, which the reader does not accept; only `import * as Name` is
+in the profile. Named imports are ordinary WM style, so they belong in group A.
+
+frontend-v2's remaining JS dependencies are small: `String.prototype.charCodeAt` and `slice`,
+one `:> .length`, and a `Js.Table` memo for packrat parsing. The first three map to Basis text
+functions. The memo table is mutable, which SubsetML cannot express; it needs a host kernel
+adapter like the existing text and file adapters, or a persistent map such as SubsetML's
+`int_map`.
+
+### Status, 2026-11-16
+
+With the two JS host modules replaced by stubs, all of frontend-v2 translates (32 SML modules,
+43,496 lines) and MLton type-checks it. The work took these SubsetML changes, each found by the
+port:
+
+- group A: named imports, lambda result annotations, a conditional as a binary operand, and a
+  field read on a call result (`f(x).node`);
+- integer literals typed by context, as in WM, so `x / 2` on a `Real64` needs no `2.0`;
+- R3 finding record types declared in imported structures;
+- group C: WM opens each Basis module `subset_x.wm` as the namespace `X`, so `List.filter` is
+  `SubsetList.filter`. The translator gave `List` the SML-style bootstrap instead. With `--basis`
+  it now adds the same implicit imports. The audit's table above missed this, because
+  `List.length` has the same meaning in both;
+- native names: `before` and `o` are infix in the SML Basis Library, which MLton rejects as
+  binding names.
+
+frontend-v2 itself needed receiver annotations on 13 field reads, and its choice indices
+(`ChoiceParseValue`, `ChoiceCompiledCapture`) became `Int32`: SML has no real patterns, and an
+index was never a real. Running the native parser still needs real host modules for text and the
+memo table.
 
 ## Known defects found by the ports
 

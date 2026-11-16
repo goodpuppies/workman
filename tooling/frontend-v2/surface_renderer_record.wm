@@ -7,8 +7,8 @@ from "./generated/surface_types.wm" import {
 let renderRecordToken = (value: SurfaceToken) => { value.text };
 
 let renderRecordSurfaceValue = match(value, materializeMarks) => {
-  (AuthoredValue(token), Var(materializeMarks)) => { token.text },
-  (MarkedValue(mark, fallback), true) => { fallback.text },
+  (AuthoredValue(token), Var(materializeMarks)) => { (token: SurfaceToken).text },
+  (MarkedValue(mark, fallback), true) => { (fallback: SurfaceToken).text },
   (MarkedValue(mark, fallback), false) => { "" },
 };
 

@@ -26,14 +26,15 @@ from "./surface_renderer_expression_extra.wm" import {
 };
 let renderToken = (value: SurfaceToken) => { value.text };
 let renderSurfaceValue = match(value, materializeMarks) => {
-  (AuthoredValue(token), Var(materializeMarks)) => { token.text },
-  (MarkedValue(mark, fallback), true) => { fallback.text },
+  (AuthoredValue(token), Var(materializeMarks)) => { (token: SurfaceToken).text },
+  (MarkedValue(mark, fallback), true) => { (fallback: SurfaceToken).text },
   (MarkedValue(mark, fallback), false) => { "" },
 };
 let rec joinTokens = match(tokens, separator, output) => {
   ([], Var(separator), Var(output)) => { output },
   ([token, ..rest], Var(separator), Var(output)) => {
-    let next = if (output == "") { token.text } else { output ++ separator ++ token.text };
+    let text = (token: SurfaceToken).text;
+    let next = if (output == "") { text } else { output ++ separator ++ text };
     joinTokens(rest, separator, next)
   },
 };

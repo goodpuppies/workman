@@ -4,7 +4,7 @@ type ParseValue =
   | EmptyParseValue
   | TokenParseValue<SurfaceToken>
   | SequenceParseValue<List<ParseValue>>
-  | ChoiceParseValue<Real64, ParseValue>
+  | ChoiceParseValue<Int32, ParseValue>
   | OptionalParseValue<Option<ParseValue>>
   | RepeatedParseValue<List<ParseValue>>
   | NodeParseValue<SurfaceNode>

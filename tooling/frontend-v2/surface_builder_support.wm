@@ -130,7 +130,7 @@ let collectTokens = (value: ParseValue) => {
 let rec tokensWithout = match(tokens, excluded, output) => {
   ([], Var(excluded), Var(output)) => { reverseInto(output, []) },
   ([value, ..rest], Var(excluded), Var(output)) => {
-    if (value.text == excluded) {
+    if ((value: SurfaceToken).text == excluded) {
       tokensWithout(rest, excluded, output)
     } else {
       tokensWithout(rest, excluded, [value, ..output])
@@ -141,14 +141,14 @@ let rec tokensWithout = match(tokens, excluded, output) => {
 let rec firstTokenWithText = match(tokens, text) => {
   ([], Var(text)) => { None },
   ([value, ..rest], Var(text)) => {
-    if (value.text == text) { Some(value) } else { firstTokenWithText(rest, text) }
+    if ((value: SurfaceToken).text == text) { Some(value) } else { firstTokenWithText(rest, text) }
   },
 };
 
 let rec lastTokenWithText = match(tokens, text, found) => {
   ([], Var(text), Var(found)) => { found },
   ([value, ..rest], Var(text), Var(found)) => {
-    if (value.text == text) {
+    if ((value: SurfaceToken).text == text) {
       lastTokenWithText(rest, text, Some(value))
     } else {
       lastTokenWithText(rest, text, found)

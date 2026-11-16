@@ -12,7 +12,7 @@ type CompiledCapture =
   | TokenCompiledCapture<String, Real64, Real64>
   | MissingCompiledCapture<String, Real64, String>
   | SequenceCompiledCapture<List<CompiledCapture>>
-  | ChoiceCompiledCapture<Real64, CompiledCapture>
+  | ChoiceCompiledCapture<Int32, CompiledCapture>
   | OptionalCompiledCapture<Option<CompiledCapture>>
   | RepeatedCompiledCapture<List<CompiledCapture>>
   | RuleCompiledCapture<String, CompiledCapture, Real64, Real64>;
