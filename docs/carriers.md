@@ -27,8 +27,7 @@ Workman makes errors and asynchronous effects explicit. Safe JavaScript calls
 therefore produce carrier values such as `Result<T, E>` and `Task<T, E>` instead of
 throwing or implicitly awaiting.
 
-The main Workman pattern is not to write `Result.andThen` after every expression.
-It is:
+In the procedure style, the pattern is:
 
 1. start a procedure with its head input already inside one shared carrier;
 2. define or select transformations created via that carrier;
@@ -38,6 +37,113 @@ It is:
 
 “Procedure” here is a coding role, not a separate language construct. It is usually
 a top-level Workman function that returns a carrier.
+
+## Two ways to write a carrier-returning function
+
+Both the procedure style and the full pipeline style are idiomatic WM. They
+organize the same carrier operations at different scales.
+
+### Procedure style with `via`
+
+Name the transformations, adapt them to a shared carrier with `via` or
+`viaError`, and compose them in the final pipeline. This gives longer functions
+recognizable steps and lets transformations be reused.
+
+For example, these declarations describe a parser's output and errors:
+
+```wm
+record Pair = { first: Int32, second: Int32 };
+
+type ParseError =
+  | FieldsFailed<String.Error>
+  | NumberFailed<Int32.Error>
+  | ExpectedPair;
+```
+
+The procedure version names splitting and parsing as transformations:
+
+```wm
+let parsePairProcedure = input => {
+  let split = Monad.viaError Result FieldsFailed text => {
+    String.fields(text, c => c == '-')
+  };
+
+  let parseFields = Monad.via Result match {
+    [a, b] => {
+      Result|Int32.fromString(a), Int32.fromString(b)|
+        :> Result.map(Pair)
+        :> Result.mapErr(NumberFailed)
+    },
+    _ => Err(ExpectedPair)
+  };
+
+  Ok(input) :> split :> parseFields
+};
+```
+
+### Full pipeline style
+
+Keep the transformations inline when the function reads naturally as one
+pipeline. Use `map` to transform successful values, `mapErr` to translate errors,
+and inline `match` for branching on the value's shape. Carrier groups such as
+`Result|...|` combine related operations within that pipeline.
+
+Using the same `Pair` and `ParseError` declarations:
+
+```wm
+let parsePair = input => {
+  input
+    :> String.fields(c => c == '-')
+    :> Result.mapErr(FieldsFailed)
+    :> match {
+      Ok([a, b]) => {
+        Result|Int32.fromString(a), Int32.fromString(b)|
+          :> Result.map(Pair)
+          :> Result.mapErr(NumberFailed)
+      },
+      Ok(_) => Err(ExpectedPair),
+      Err(error) => Err(error)
+    }
+};
+```
+
+The match handles the input shape and changes the success type from
+`List<String>` to `Pair`. Each arm still returns a `Result` with the same error
+type. There is no need to extract every inline step into a named procedure;
+extract one when the name or reuse makes the function easier to read. The two
+styles can also be combined within a function.
+
+### Pipeline lambdas are a separate convention
+
+The function's shape and its parameter notation are separate choices. When an
+input is used only to start a pipeline, `x => x :> ...` can be written
+`=> :> ...`:
+
+```wm
+let explicit = x => x :> first :> second;
+let implicit = => :> first :> second;
+
+let block = => {
+  :> first
+  :> second
+};
+```
+
+The `=> :>` shorthand gives the leading pipe the function's implicit input.
+The body may also use braces, as in `=> { :> ... }`. This is useful for a function
+that consists of one pipeline, including the full pipeline parser above. It also
+works with `via`:
+
+```wm
+let split = Monad.viaError Result FieldsFailed => {
+  :> String.fields(c => c == '-')
+};
+```
+
+Keep the explicit parameter when later expressions need to refer to it by name.
+See [Pipeline lambdas](./advancedsyntax.md#pipeline-lambdas) for the syntax and
+scope rules, and [Reading adjacent arrows](./syntax-guide.md#reading-adjacent-arrows)
+for the common `==>` spelling in bindings.
 
 ## Procedure shape
 

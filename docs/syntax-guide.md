@@ -18,6 +18,7 @@ translation guide.
 - [Pattern Matching](#pattern-matching)
 - [If/Else](#ifelse)
 - [Operators](#operators)
+- [Carriers and Pipelines](#carriers-and-pipelines)
 - [Lists](#lists)
 - [Modules and Imports](#modules-and-imports)
 - [Quirks and Gotchas](#quirks-and-gotchas)
@@ -27,11 +28,13 @@ translation guide.
 
 ## Comments
 
-Both styles are valid:
+Line comments use either spelling:
 
 ```workman
--- This is a comment (ML-style)
+-- This is a dash comment
 // This is also a comment (C-style)
+/* A block comment can span
+   several lines. */
 ```
 
 ---
@@ -248,7 +251,7 @@ let x = addPair(1, 2);
 let y = addPair((1, 2));
 
 -- Explicit currying by returning functions
-let addCurried = (a) => { (b) => { a + b } };
+let addCurried = a => b => { a + b };
 let z = addCurried(1)(2);
 ```
 
@@ -257,9 +260,80 @@ Rule of thumb:
 - `f(1, 2)` means one tuple argument
 - `f(1)(2)` means two unary applications (curried style)
 
+### Pipeline Lambdas
+
+When a function uses its input only as the head of one pipeline, omit the named
+parameter and start its body with `:>`:
+
+```workman
+let add = (a: Int32, b: Int32) => a + b;
+let double = (x: Int32) => x * 2;
+
+let explicit = x => x :> add(1) :> double;
+let implicit = => :> add(1) :> double;
+let block = => {
+  :> add(1)
+  :> double
+};
+```
+
+All three functions do the same thing. The `=> :>` shorthand supplies a fresh
+implicit input to the leading pipe; a braced body can use `=> { :> ... }`.
+Ordinary pipe rules still apply, including inline matches, record/JS member stages,
+and piped conditionals.
+
+This notation also works in a `via` transformation:
+
+```workman
+let increment = Monad.via Result => {
+  :> add(1)
+  :> Ok
+};
+```
+
+Use an explicit parameter if later expressions need its name. With no leading
+pipe, a bare arrow such as `=> { 42 }` remains a `Void`-argument function. Braces
+can end an inline pipeline lambda before the surrounding pipeline continues.
+See [Pipeline lambdas](./advancedsyntax.md#pipeline-lambdas) for scope details.
+
+#### Reading Adjacent Arrows
+
+The common spelling `==>` places a binding's `=` directly beside a lambda's
+`=>`. Read the lambda according to how its body starts:
+
+| Lambda form | Expansion |
+| --- | --- |
+| `=> :> step` | `value => value :> step` |
+| `=> expression` (no leading `:>`) | `() => expression` |
+
+For example, using `add` from above:
+
+```workman
+let transform ==> :> add(1);
+let produce ==> 42;
+
+-- The same declarations with explicit parameters:
+let transformExplicit = value => value :> add(1);
+let produceExplicit = () => 42;
+```
+
+Both lambda shorthands work independently of a preceding `=`. They can appear
+directly as arguments:
+
+```workman
+let incremented = List.map([1, 2], => :> add(1));
+let invoke = thunk => thunk();
+let answer = invoke(=> 42);
+```
+
+The leading `:>` chooses the implicit-input expansion. Without it, the lambda
+takes `Void`; the body runs when the function is called. `==>` has no additional
+behavior, and spacing it as `= =>` does not change the lambda.
+
 ### Recursive Bindings
 
-**Use `let rec`** for recursion (functions or values):
+**Use `let rec`** for a binding that refers to itself. Recursive references must
+occur beneath a function:
 
 ```workman
 -- ❌ WRONG: Regular let cannot self-reference
@@ -293,8 +367,8 @@ calls.
 
 ```workman
 let rec fold = match(items, acc) => {
-  [] => { acc },
-  [head, ..tail] => { fold(tail, acc + head) }
+  ([], _) => { acc },
+  ([head, ..tail], _) => { fold(tail, acc + head) }
 };
 ```
 
@@ -317,6 +391,27 @@ and isOdd = match(n) => {
 
 ## Types
 
+### Numbers and Literal Types
+
+At the end of a top-level declaration, unconstrained integer literals default to
+`Int32` when they fit its signed 32-bit range. Larger unconstrained literals,
+fractional literals, and exponent literals use `Real64`. Context can give an integer
+literal another numeric type before that default applies:
+
+```workman
+let count = 42;             -- Int32
+let measurement = 42.0;     -- Real64
+let real: Real64 = 42;      -- context makes the literal Real64
+let increment = x => x + 1; -- Int32 -> Int32
+let scale = (x: Real64) => x * 2;
+```
+
+`Int32` arithmetic checks signed 32-bit overflow. `Real64` is the usual floating-point
+type; `Real32` provides explicit single-precision operations. Already-bound values
+do not change numeric type implicitly: use a conversion such as
+`count :> Int32.toReal64`. GPU regions have their own numeric rules; see
+[Numeric literals](./numbers.md) and [WMSlang](../tooling/wmslang/README.md).
+
 ### Sum Types (Tagged Unions)
 
 Instead of enums, Workman uses TypeScript-style union types that are functionally algebraic data
@@ -336,6 +431,10 @@ type Result<T, E> = Ok<T> | Err<E>;
 -- Multiple type parameters
 type Either<A, B> = Left<A> | Right<B>;
 ```
+
+`Option`, `List`, and `Result` are already provided by the standard library.
+The declarations above illustrate the syntax; redeclaring a datatype creates a
+new nominal type, not an alias of its standard-library counterpart.
 
 ### Alias vs Variant Disambiguation
 
@@ -390,11 +489,44 @@ let maybeNum = Some(42);
 let list = Link(1, Link(2, Empty));
 ```
 
+### Function Types and Type Variables
+
+Function types use `->`; function and match bodies use `=>`. The type arrow
+associates to the right. A higher-order input is grouped, as in `(a -> b) -> c`.
+
+```workman
+let parse: String -> Result<Int32, Int32.Error> = Int32.fromString;
+let add: (Int32, Int32) -> Int32 = (a, b) => a + b;
+let apply: ((a -> b), a) -> b = (f, value) => f(value);
+```
+
+Lowercase names such as `a` and `b` in annotations stand for type variables.
+An explicit type declaration binds its named parameters, so uppercase parameters
+are also valid in `type Box<T> = | Box<T>;`. An uppercase name not bound as a
+parameter must resolve to a declared type or type constructor.
+
+### Typed Holes
+
+Use `?` for an expression that is not implemented yet:
+
+```workman
+let todo: String -> Int32 = ?;
+let calculate = (x: Real64): Real64 => {
+  let intermediate = x * 2;
+  ?
+};
+```
+
+The hole receives constraints from its context, and the language server can show
+its type. The rest of the program remains available to tooling. Reaching a hole
+at runtime fails with `typed hole`; it is not an FFI implementation or a successful
+placeholder value.
+
 ### Record Types
 
 ```workman
-record Point = { x: Real64, y: Real64 };
-record Person = { name: String, age: Real64 };
+record Point = { x: Int32, y: Int32 };
+record Person = { name: String, age: Int32 };
 
 -- Records with type parameters
 record Pair<A, B> = { first: A, second: B };
@@ -406,6 +538,19 @@ record Pair<A, B> = { first: A, second: B };
 
 Declare a nominal record directly in a type annotation by writing its name followed by
 its fields:
+
+```wm
+let point = .{ a = 1, b = 2 }: Point{ a: Int32, b: Int32 };
+let next: Point = .{ a = point.a + 1, b = point.b };
+let origin = Point(0, 0);
+```
+
+The first expression defines `Point` alongside the literal. Later expressions can
+use the type name and its ordered constructor. This gives the convenience of
+describing a record's shape where it is used while retaining nominal records:
+another record type with identical fields remains a different type.
+
+The same syntax works in parameter and return annotations:
 
 ```wm
 let add = (r: AddI{ a: Int32, b: Int32 }): AddRes{ result: Int32 } => {
@@ -421,7 +566,7 @@ to later statements in the containing module or block. New module-level definiti
 exported; block-local types follow the usual restrictions on escaping their scope.
 
 An inline annotation creates a nominal type only if its name is not already visible.
-Repeated `Point{x:Int32}` annotations refer to the same `Point` and check that the field
+Repeated `Point{a:Int32, b:Int32}` annotations refer to the same `Point` and check that the field
 names and types match. Field order may differ in a repeated annotation; the ordered
 constructor retains the order established by the original declaration. Differently
 named records remain distinct even when their fields match.
@@ -431,7 +576,7 @@ An explicit declaration in a nested block may shadow an outer type; an inline an
 instead reuses any visible record of that name. Referencing an existing non-record type
 with inline record syntax is an error.
 
-Inline definitions also work in binding annotations, nested fields, aliases, and function
+Inline definitions also work in expression and binding annotations, nested fields, aliases, and function
 types. Empty records use `Empty{}`. Explicit type parameters define generic records:
 
 ```wm
@@ -448,7 +593,7 @@ Records are **nominal** (not structural). Declare a record type separately or in
 
 ```workman
 -- First, declare the record type
-record Point = { x: Real64, y: Real64 };
+record Point = { x: Int32, y: Int32 };
 
 -- Then create instances (note the leading dot)
 let p = .{ x = 10, y = 20 };
@@ -466,7 +611,7 @@ Every record declaration also introduces an ordinary constructor function. Its a
 field declaration order:
 
 ```workman
-record Point = { x: Real64, y: Real64 };
+record Point = { x: Int32, y: Int32 };
 
 let p = Point(10, 20);
 ```
@@ -545,9 +690,20 @@ let next = counter().step(1);
 ```
 
 The `.` must follow the expression directly, with no space, and a numeric literal can't take a field.
-After an expression, `.` only reads a record field. A JS member of a computed value is spelled
-`:> .member`, as in `JSON.parse(text) :> .did` or `"hello" :> .length`. A name bound to a JS value
-can still use `value.member`.
+After an expression, `.` reads a record field. A pipe member stage, `:> .member`, works with both
+Workman records and JavaScript values:
+
+```workman
+record Label = { text: String };
+let label = Label("hello");
+let text = label :> .text; -- same as label.text
+let length = "hello" :> .length;
+```
+
+For a computed JS receiver, use a pipe member stage, as in
+`JSON.parse(text) :> .did`. A name bound to a JS value can also use `value.member`.
+Chained projections and function-valued record fields work too: `value :> .inner.text`
+and `value :> .transform(argument)`. The receiver runs once, before call arguments.
 
 In a pipeline, the input goes into the first call of the access. Parentheses make the stage a value
 that gets called with the input, as they do for any call:
@@ -579,9 +735,11 @@ let describe = match(n) => {
 };
 
 -- Match several subjects directly; no extra tuple parentheses are needed
-match(status, ready) {
-  (Ok, true) => { "go" },
-  _ => { "wait" }
+let describeReady = (status, ready) => {
+  match(status, ready) {
+    (Some(_), true) => { "go" },
+    _ => { "wait" }
+  }
 };
 ```
 
@@ -603,12 +761,12 @@ let rec sum = match(list) => {
 
 ```workman
 let swap = match(pair) => {
-  (a, b) => { (b, a) }
+  (Var(a), Var(b)) => { (b, a) }
 };
 
 -- Nested tuples
 let getFirst = match(nested) => {
-  ((a, _), _) => { a }
+  ((Var(a), _), _) => { a }
 };
 ```
 
@@ -651,6 +809,21 @@ let unwrap = match {
 
 let value = option :> unwrap;
 ```
+
+For top-level function definitions, prefer naming the input with `match(input) =>`:
+
+```workman
+let unwrap = match(option) => {
+  Some(value) => value,
+  None => 0
+};
+```
+
+An unapplied match implicitly creates a match function, but the named form makes a
+top-level function's input explicit and gives it a name available throughout the
+arms. It also provides a place for an explicit capture clause, such as
+`match(input) |limit| =>`. Anonymous matches are convenient inline in pipelines
+and callbacks.
 
 The named-parameter match form is syntactic sugar for a regular function:
 
@@ -703,6 +876,46 @@ let extract = match(actual) => {
 **Key insight:** In Workman, bare identifiers in patterns are looked up as existing variables. Use
 `Var(name)` to introduce a new binding.
 
+Constructor payload and list-element positions introduce their own bindings, as in
+`Some(x)` and `[head, ..tail]`. For tuple patterns, use explicit binders such as
+`(Var(a), Var(b))` when introducing new names.
+
+`Var(x)` binds the whole matched value. In a `Result` match, `Var(x) => x` preserves
+the original success and error types and also catches remaining `Ok` values.
+`Err(error) => Err(error)` matches only the error variant and allows the other arms
+to change the success type. These forms are not interchangeable.
+
+### Computed Equality Patterns: `=(expression)`
+
+Use `=(expression)` to match the value of an expression:
+
+```workman
+let limit = 10;
+let describe = match(input) |limit| => {
+  =(limit - 1) => "just below",
+  =(limit + 1) => "just above",
+  _ => "other"
+};
+let label = describe(11); -- "just above"
+```
+
+Here `input` names the matched value, and `|limit|` declares the enclosing binding
+captured by the function. The computed patterns compare `input` with their values.
+
+The expression must have the same type as the matched value and support equality.
+This works with values such as numbers, strings, and constructed
+datatypes, not just Booleans. Computed patterns also work inside other patterns,
+such as `Some(=(limit + 1))`.
+
+The subject is evaluated once. Arms are checked in order, and a computed
+expression runs only when that pattern check is reached. After an arm matches,
+later conditions and arm bodies are skipped. Expressions use the enclosing
+lexical scope, not names newly introduced elsewhere in the same pattern.
+
+`=(expression)` is an equality pattern, not a `when` guard or a binding form.
+Include a fallback when needed; computed patterns do not establish exhaustiveness
+on their own.
+
 ---
 
 ## If/Else
@@ -712,6 +925,47 @@ let extract = match(actual) => {
 1. **`else` is mandatory** (expressions must return a value)
 2. **`else if` is banned** (use nested if or match instead)
 3. **Braces are mandatory**
+
+### Cond-Style Matches
+
+For a sequence of conditions, use a match against `true` with computed equality
+patterns:
+
+```workman
+let n = -3;
+let thing = match {
+  =(n < 0) => "negative",
+  =(n == 0) => "zero",
+  _ => "positive"
+} true;
+```
+
+Each computed expression produces a Boolean. The first one equal to `true`
+selects its arm, and `_` supplies the final fallback. This is a convenient
+convention for a cond-style decision instead of an `if` / `else if` / `else`
+chain. The trailing `true` makes that intention visible when reading the code.
+
+Its placement is a style choice: this is an ordinary match function applied to
+`true`, with the same meaning as `match(true) { ... }` or `true :> match { ... }`.
+There is no separate `cond` keyword.
+
+When piping the selected result onward, group the complete application:
+
+```workman
+let decorate = text => "[" ++ text ++ "]";
+let decorated = (match {
+  =(n < 0) => "negative",
+  =(n == 0) => "zero",
+  _ => "positive"
+} true) :> decorate;
+```
+
+The parentheses make the pipe consume the match's result. Without that grouping,
+the pipe can attach to the argument expression instead. See
+[Computed equality patterns](#computed-equality-patterns-expression) for evaluation
+and scope rules.
+
+### Boolean Conditions and Piped `if`
 
 A pipeline can supply the Boolean condition directly:
 
@@ -767,12 +1021,6 @@ let correct = (n) => {
   }
 };
 
--- Planned syntax: match guards are not supported yet.
--- let better = match(n) => {
---   Var(x) when x < 0 => { "negative" },
---   0 => { "zero" },
---   _ => { "positive" }
--- };
 ```
 
 ---
@@ -782,16 +1030,17 @@ let correct = (n) => {
 ### Built-in Operators
 
 ```workman
--- Arithmetic (precedence 6-7)
+-- Arithmetic: * / % bind tighter than + -
 let sum = 1 + 2;
 let diff = 5 - 3;
 let prod = 4 * 2;    -- Higher precedence than +/-
 let quot = 10 / 2;
+let remainder = 10 % 3;
 
--- String concatenation (precedence 5)
+-- String concatenation (same precedence as + and -)
 let greeting = "Hello" ++ " " ++ "World";
 
--- Comparison (precedence 4)
+-- Comparisons bind less tightly than arithmetic; ordering binds tighter than equality
 let equal = x == y;
 let notEqual = x != y;
 let less = x < y;
@@ -799,7 +1048,7 @@ let greater = x > y;
 let lessEq = x <= y;
 let greaterEq = x >= y;
 
--- Boolean (precedence 2-3)
+-- Boolean: && binds tighter than ||; both bind less tightly than comparisons
 let both = a && b;
 let either = a || b;
 let negated = !flag;
@@ -878,6 +1127,34 @@ See [Inline Task continuations with `via`](./advancedsyntax.md#inline-task-conti
 full expansion into `Task.andThen`.
 
 ---
+
+## Carriers and Pipelines
+
+Carrier values keep effects explicit: `Result<T, E>` carries success or failure,
+and `Task<T, E>` carries asynchronous work. A carrier group combines related
+operations into one carrier containing a tuple:
+
+```workman
+let parsed = Result|Int32.fromString("12"), Int32.fromString("34")|;
+let total = parsed :> Result.map((a, b) => a + b);
+```
+
+`Result.map` transforms a successful value; `Result.mapErr` translates an error.
+`Monad.via` adapts a carrier-returning function into a transformation of an
+already-wrapped input:
+
+```workman
+let increment = Monad.via Result n => Ok(n + 1);
+let answer = Ok(41) :> increment;
+```
+
+Here the bare namespace `Result` selects `Result.carrier`; the namespace rules are
+described [below](#namespace-shorthand-self-and-carrier).
+
+Both named procedures built with `via` and a full pipeline with inline `match`
+and `map` are idiomatic. [Carrier-oriented function styles](./carriers.md#two-ways-to-write-a-carrier-returning-function)
+shows both on the same parser. Pipeline-lambda shorthand (`=> :>`)
+is a separate parameter convention usable with either style.
 
 ## Lists
 
@@ -973,13 +1250,79 @@ export from "./process.wm" import * as Process; -- clients write OS.Process.run(
 export from "./math.wm" import { add as plus }; -- clients see only plus
 ```
 
+### Namespace Shorthand: `Self` and `carrier`
+
+A namespace can opt into two context-dependent shorthands:
+
+| Position | Bare namespace | Explicit member |
+| --- | --- | --- |
+| Type | `Qualifier<a>` | `Qualifier.Self<a>` |
+| Value | `Qualifier` | `Qualifier.carrier` |
+
+The type shorthand requires a type named `Self` in the namespace:
+
+```workman
+-- meters.wm
+type Self = Int32;
+```
+
+```workman
+-- main.wm
+from "./meters.wm" import * as Meters;
+let double = (value: Meters) => value + value;
+let distance: Meters.Self = 21;
+```
+
+Type arguments pass through unchanged: if `box.wm` declares
+`type Self<a> = | Box<a>;`, an annotation `Box<String>` after importing the
+namespace as `Box` means `Box.Self<String>`.
+
+The value shorthand requires a value named `carrier`. The standard `Result` and
+`Task` namespaces provide carrier records, so these select the same record:
+
+```workman
+let short = Result;
+let explicit = Result.carrier;
+```
+
+An ordinary value with the same name takes precedence in value position; an
+ordinary type takes precedence in type position. These shorthands do not create
+new value or type bindings. They select the member only when the name denotes
+the namespace itself. A qualified member such as `Result.map` is looked up
+directly; a missing member does not fall back through `carrier` or `Self`.
+
+### Standard Library and Host Imports
+
+Standard namespaces such as `List`, `String`, `Int32`, `Result`, and `Task` are
+available implicitly. Explicit imports can select a local name for the same module:
+
+```workman
+from "std/int32.wm" import * as I;
+let parsed = I.fromString("42");
+let real = 42 :> I.toReal64;
+```
+
+Explicit imports include both source-defined and compiler-owned members. A
+`-- @no-prelude` directive omits implicit library bindings while still allowing
+explicit imports. See [Modules](./modules.md) for the namespace and visibility rules.
+
+JavaScript data literals use `JSON{}` and `JSON[]`; Workman records and lists
+remain distinct:
+
+```workman
+let options = JSON{ label: "hello", values: JSON[1, 2, 3] };
+```
+
+See [JavaScript FFI](./jsffi.md) for reflected imports, JS member stages, and safe
+calls that return carriers.
+
 `export` isn't reserved, so it's still usable as a name elsewhere.
 
 ---
 
 ## Quirks and Gotchas
 
-### 1. Semicolons Are Mandatory
+### Semicolons Are Mandatory
 
 ```workman
 -- ❌ WRONG
@@ -991,29 +1334,31 @@ let x = 1;
 let y = 2;
 ```
 
-### 2. Braces Are Mandatory Everywhere
+### Braces Depend on the Construct
+
+Single-expression function and match-arm bodies may omit braces:
 
 ```workman
--- ❌ WRONG
-let f = (x) => x * 2;
-match(n) { 0 => 1, _ => n };
-
--- ✅ CORRECT
-let f = (x) => { x * 2 };
-match(n) { 0 => { 1 }, _ => { n } };
+let double = x => x * 2;
+let describe = match { 0 => "zero", _ => "other" };
 ```
 
-### 4. Record Syntax Variations
+An explicit-value match keeps braces around its arms: `match(n) { 0 => 1, _ => n }`.
+An `if` keeps braces around each branch. Use a block when a function or arm needs local
+bindings or statements. See [Application, Tuples, and Currying](#application-tuples-and-currying)
+for expression-body boundaries.
+
+### Record Syntax Variations
 
 ```workman
 -- Type declaration uses colon
-record Point = { x: Real64, y: Real64 };
+record Point = { x: Int32, y: Int32 };
 
 -- Construction uses zig style
 let p1 = .{ x = 10, y = 20 };
 ```
 
-### 5. Constructors Are Uppercase
+### Constructors Are Uppercase
 
 ```workman
 -- ✅ Types and constructors start uppercase
@@ -1024,7 +1369,7 @@ let s = Active;
 type wrong = active | inactive;  -- Error!
 ```
 
-### 6. Functions Are Not Automatically Curried
+### Functions Are Not Automatically Curried
 
 ```workman
 -- This is a 2-argument function, not curried
@@ -1034,13 +1379,28 @@ let add = (a, b) => { a + b };
 let result = add(1, 2);  -- ✅
 let partial = add(1);    -- ❌ Error
 
--- For currying, nest lambdas explicitly
-let addCurried = (a) => { (b) => { a + b } };
+-- For currying, write one lambda per argument
+let addCurried = a => b => { a + b };
 let add5 = addCurried(5);
 let result = add5(3);  -- 8
 ```
 
-### 7. Type Annotations Are Optional But Helpful
+Use the compact form for ordinary currying. The expanded layout can communicate
+intent when making function boundaries explicit, such as eta-expanding an adapter:
+
+```workman
+let via = (domain) => {
+  (f) => {
+    domain.via(f)
+  }
+};
+```
+
+Here the inner lambda explicitly forwards `f` to `domain.via`. Both layouts use
+the same function syntax; choose the layout that makes the operation's intent
+clearer.
+
+### Type Annotations Are Optional But Helpful
 
 Workman uses Hindley-Milner type inference. Most types are inferred automatically, but annotations
 can help with readability and error messages:
@@ -1051,10 +1411,10 @@ let double = (x) => { x * 2 };  -- Inferred: Int32 -> Int32
 let identity = (x) => { x };    -- Inferred: forall a. a -> a
 
 -- Annotations help with complex cases or documentation
-let process = (items: List<Real64>) => { ... };
+let process = (items: List<Real64>) => List.length(items);
 
 -- Annotate lambda parameters
-let makePoint = (x: Real64, y: Real64) => { .{ x, y } };
+let makePoint = (x: Int32, y: Int32) => { .{ x, y } };
 
 -- Annotate record parameters for clarity
 let pointX = (p: Point) => { p.x };
@@ -1068,7 +1428,7 @@ let third = () => { true }: Bool;
 let checked: Void -> Bool = (): Bool => { true }: Bool;
 ```
 
-### Explicit closure captures
+### Explicit Closure Captures
 
 A lambda may declare the complete set of enclosing lexical bindings that it captures. The clause
 appears after the parameters and optional result annotation, immediately before `=>`:
@@ -1081,6 +1441,21 @@ let makeAdder = (x: Real64) => {
 let constant = (): Real64 || => { 1 };
 ```
 
+Named match functions accept the same capture clause between their parameter list
+and `=>`, including `||` for a function with no captures:
+
+```workman
+let limit = 10;
+let describe = match(input) |limit| => {
+  =(limit - 1) => "just below",
+  _ => "other"
+};
+let isZero = match(input) || => {
+  0 => true,
+  _ => false
+};
+```
+
 An authored capture clause is a contract. Using an unlisted lexical binding is an error, `||`
 requires a captureless lambda, and listing an unused binding produces a warning. When the clause is
 omitted, captures remain inferred and the language server displays a `|name, ...|` inlay before the
@@ -1089,97 +1464,7 @@ participate in capture clauses; imported and basis-owned values remain external 
 Nominal constructors, including ordered record constructors synthesized for C struct types, are
 statically resolved and do not enter a closure's captured environment.
 
-### 8. Out of Scope (for now)
-
-The following are intentionally not part of current `wm` frontend scope:
-
-- infection/effect features
-- full record and list feature set
-- custom fixity declarations and advanced operator definitions
-- custom panic/runtime recovery semantics beyond the basic `Panic` and typed-hole behavior
-
-Some sections below describe intended Workman syntax or older/full Workman design ideas. When a
-feature is not implemented in current `wm`, it is marked with a **Not supported yet** note.
-
-#### Opaque Types
-
-**Not supported yet in current `wm`.**
-
-Declare types without exposing their implementation:
-
-```workman
--- Opaque type declaration (no constructors)
-type GpaHandle;
-type Allocator;
-
--- Zig primitive types are opaque
-type U8;
-type Int32;
-type Usize;
-```
-
-#### Function Type Annotations
-
-Function types use `->`; lambda and match arrows remain `=>`. The type arrow associates to the
-right, and a higher-order domain is grouped explicitly, as in `(A -> B) -> C`.
-
-Annotate function bindings with their full signature:
-
-```workman
--- Function type annotation: Domain -> ReturnType
-let zig_gpa_init: Void -> GpaHandle = ?;
-let zig_gpa_deinit: Ptr<GpaHandle, s> -> Void = ?;
-
--- Multiple parameters
-let zig_gpa_create: (Ptr<GpaHandle, s>, t) -> Ptr<t, s> = ?;
-let zig_gpa_alloc: (Ptr<GpaHandle, s>, t, Usize) -> Slice<t, s> = ?;
-```
-
-#### Lowercase vs Uppercase in Types
-
-- **Uppercase** (`T`, `Real64`, `Option`) — Concrete types or type constructors
-- **lowercase** (`t`, `s`, `a`) — Type variables (generics)
-
-```workman
--- 't' and 's' are type variables (generic parameters)
-let zig_gpa_create: (Ptr<GpaHandle, s>, t) -> Ptr<t, s> = ?;
-
--- 'T' would refer to a specific type constructor named T
-type Container<T> = Empty | Full<T>;
-```
-
-#### Type Holes (`?`)
-
-Use `?` as a placeholder for values you haven't implemented yet. Based on
-[Hazel's typed holes](https://hazel.org/), this lets you write incomplete programs that still
-typecheck(but workman has no defined runtime support): Hover the `?` in an editor using the Workman language server to see the type required at
-that position:
-
-```workman
--- Hole expression: placeholder for unimplemented value
-let zig_gpa_init: Void -> GpaHandle = ?;
-let zig_free: Ptr<t, s> -> Void = ?;
-
--- Useful during development
-let todoFunction: Real64 -> String = ?;
-
--- The typechecker infers what type the hole must be
-let calculate = (x: Real64): Real64 => {
-  let intermediate = x * 2;
-  ?  -- Hole must be Number (inferred from return type)
-};
-```
-
-Type holes are especially useful for:
-
-- FFI bindings where the implementation is provided by the runtime
-- Stubbing out functions during incremental development
-- Letting the typechecker tell you what type is expected
-
-A hole compiles so the rest of the program remains available to tooling. Evaluating a path that
-reaches one fails at runtime with `typed hole`.
-
-### 8. Match Is an Expression
+### Match Is an Expression
 
 ```workman
 -- Match returns a value
@@ -1195,7 +1480,7 @@ print(match(flag) { true => { "yes" }, false => { "no" } });
 print(if(flag) { "yes" } else { "no" } );
 ```
 
-### 9. No Early Return
+### No Early Return
 
 ```workman
 -- ❌ No return keyword
@@ -1216,7 +1501,7 @@ let correct = (x) => {
 };
 ```
 
-### 10. String Concatenation Uses ++
+### String Concatenation Uses ++
 
 ```workman
 -- ❌ Not + like in JS
@@ -1229,7 +1514,7 @@ let right = "Hello" ++ " " ++ "World";
 let clearer = `Hello ${name}, welcome to ${place}`;
 ```
 
-### 11. Type Constraints Use `:`
+### Type Constraints Use `:`
 
 Use `:` to require an expression or pattern to have a specific type:
 
@@ -1247,7 +1532,7 @@ This is a compile-time equality constraint, not a runtime cast or conversion. It
 JS/JSON data into a Workman record or primitive; use an explicit runtime validator such as
 `Json.assert` for dynamic data.
 
-### 12. Panic for Unrecoverable Errors
+### Panic for Unrecoverable Errors
 
 Both `Panic("message")` and `Panic "message"` are supported. The space form takes
 one argument, like ordinary space application; group a computed message, as in
@@ -1295,7 +1580,8 @@ These features are not supported yet or are only partially supported:
 - **Mutation/refs:** no mutable variables or SML refs yet.
 - **Exceptions:** use `Result`, `Option`, and `Panic`; general exception handling is not
   implemented.
-- **Async/await syntax:** JS promises are used through FFI methods like `.then(...)`.
+- **Async/await keywords:** asynchronous work uses `Task`, `via`, and carrier pipelines.
+  See [Async](./async.md); `Task` provides sequencing without an `await` keyword.
 - **Custom operators/fixity:** fixed built-in operators only.
 - **Automatic JS record/object conversion:** use `JSON{}` and `JSON[]` for current JS object/array
   literals.
@@ -1315,27 +1601,37 @@ See [WON literals](./won-literals.md) for tags, nesting, and portable data seman
 | Comment               | `-- text` or `// text`                |
 | Let binding           | `let x = value;`                      |
 | Function              | `let f = (a, b) => { body };`         |
+| Expression lambda     | `x => x + 1`                         |
+| Pipeline lambda       | `=> :> first :> second`              |
 | Recursive             | `let rec f = ...;`                    |
 | Mutual recursion      | `let rec f = ... and g = ...;`        |
 | Type union            | `type T = A \| B<Real64>;`            |
 | Record type           | `record R = { field: Type };`         |
+| Inline record type    | `.{ a = 1 }: Point{ a: Int32 }`       |
 | Record value          | `.{ field = value }` or `.{ field }`  |
 | Record spread         | `.{ ..source, field = value }`        |
 | Match                 | `match(x) { pattern => { body } }`    |
+| Computed pattern      | `=(expression) => body`               |
+| Cond-style match      | `match { =(condition) => a, _ => b } true` |
 | Match guard           | `Var(x) when cond => { body }`        |
 | Match guard status    | Planned, not supported yet            |
-| Bind variable         | `Var(x)` (literals pinned by default) |
+| Bind whole value      | `Var(x)` (bare match names are pinned) |
 | If/else               | `if (cond) { a } else { b };`         |
 | List literal          | `[1, 2, 3]`                           |
 | List spread           | `[head, ..tail]`                      |
 | Import                | `from "path" import { item };`        |
 | Namespace import      | `from "path" import * as Name;`       |
+| Namespace as type     | `Name<a>` selects `Name.Self<a>`       |
+| Namespace as value    | `Name` selects `Name.carrier`          |
 | Module value          | `let x = ...;`                        |
 | Pipe                  | `value :> fn`                         |
+| Member stage          | `value :> .field` or `value :> .method(arg)` |
+| Piped conditional     | `condition :> if { a } else { b }`    |
+| Carrier group         | `Result\|left, right\|`               |
+| Procedure adapter     | `Monad.via Result transform`           |
 | String concat         | `"a" ++ "b"`                          |
 | Multiline string      | `` `line one\nline two` ``            |
-| Type assertion        | `expr as Type`                        |
-| Type assertion status | Planned, not supported yet            |
+| Type constraint       | `expr : Type`                         |
 | Panic                 | `Panic("message")`                    |
 | Tuple destruct        | `let (a, b) = pair;`                  |
 | Tuple param           | `let f = (a, b) => { ... };`          |

@@ -70,6 +70,11 @@ A bare arrow with an ordinary body, such as `=> { nextTask }`, still takes `Void
 The shorthand supplies only the input to the first pipe; it does not implicitly
 bind inputs for later statements in the block.
 
+This parameter convention works with both
+[procedure and full pipeline styles](./carriers.md#two-ways-to-write-a-carrier-returning-function).
+For the common adjacent spelling in bindings, see
+[Reading adjacent arrows](./syntax-guide.md#reading-adjacent-arrows).
+
 ## Piped conditionals
 
 A Boolean can flow directly into an `if` stage:
