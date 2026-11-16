@@ -17,11 +17,14 @@ let result = match(Real64.compare(1, 0)) {
 ```
 
 This follows the SML Basis Library's top-level `order` datatype, using WM names.
-Comparison functions remain qualified or explicitly imported. `Real64.compare`
-is available through the preloaded `Real` namespace; `compareInt` and `compareReal`
-from `basis/order.wm` require explicit imports. The ordering type and constructors
-are omitted under `-- @no-prelude`, shadow normally, and are not re-exported by
-user modules.
+Comparison functions remain qualified or explicitly imported: `Real64.compare`, or
+`Order.compareInt` and `Order.compareReal` through the implicit `Order` namespace. The ordering
+type and constructors are omitted under `-- @no-prelude`, shadow normally, and are not
+re-exported by user modules.
+
+The carrier record types `Carrier` and `Applicative` from `std/monad.wm` are also in scope
+without an import, so a module can register a carrier with a plain `.{ succeed, map, … }`
+literal (see [carriers.md](carriers.md)).
 
 These library functions are available without an import in ordinary Workman
 modules. Calls keep the defining library's data-first argument order.
@@ -80,7 +83,7 @@ The character and string functions use the shared Basis's **byte** domain (codes
 | `str` | `Char -> Result<String, Strings.Error>` | `Strings.NonByte(0)` for a non-byte character |
 
 `Chars` and `Strings` denote explicit import aliases for `basis/char.wm` and
-`basis/string.wm`; their errors are not implicitly opened. Empty strings, NULs
+`basis/string.wm`; the implicit `Char` and `String` namespaces hold the same names. Empty strings, NULs
 and high bytes round-trip exactly. `size` counts bytes after validation and takes
 linear time. These functions do not encode or decode Unicode text.
 

@@ -36,7 +36,7 @@ let parseSelector = (text, candidates: List<Candidate>) => {
     if (text == "latest") {
       Latest
     } else {
-      if (List.any(candidates, (c: Candidate) => { c.channel == text })) { Channel(text) } else { Exact(text) }
+      if (List.exists(candidates, (c: Candidate) => { c.channel == text })) { Channel(text) } else { Exact(text) }
     }
   }
 };
@@ -132,7 +132,7 @@ let fetchSource = (paths: Paths, checksums: List<Checksum>) => {
 -- downloads matched one: almost always `make` building the wrong URL.
 let requireSomeVerified = (info: PackageInfo, candidate: Candidate) => {
   via Task (sources) => {
-    let anyVerified = List.any(sources, (s: LockedSource) => { s.verified });
+    let anyVerified = List.exists(sources, (s: LockedSource) => { s.verified });
     match(candidate.checksums) {
       [] => { Task.succeed(sources) },
       _ => {

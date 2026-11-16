@@ -1,10 +1,10 @@
 -- Small curried helpers for pipelines.
 
--- Option.filter as an Option.andThen stage: `opt :> Option.andThen(keepIf(predicate))`.
+-- A predicate as an Option.andThen stage: `opt :> Option.andThen(keepIf(predicate))`.
 from "std/list.wm" import * as List;
 from "std/option.wm" import * as Option;
 from "std/task.wm" import * as Task;
-let keepIf = (predicate) => { (value) => { Option.filter(value, predicate) } };
+let keepIf = (predicate) => { (value) => { Option.filter(Some(value), predicate) } };
 
 -- A left fold where each step is a Task, run one after another.
 let rec foldSeries = (items, acc, step) => {
@@ -19,8 +19,8 @@ let ignore = (_) => { void };
 
 -- Removes repeats, keeping first occurrences in order.
 let unique = (items) => {
-  List.foldLeft(items, [], (seen, item) => {
-    if (List.any(seen, (s) => { s == item })) { seen } else { List.revAppend(List.reverse(seen), [item]) }
+  List.foldLeft(items, [], (item, seen) => {
+    if (List.exists(seen, (s) => { s == item })) { seen } else { List.reverseAppend(List.reverse(seen), [item]) }
   })
 };
 
@@ -28,14 +28,14 @@ let unique = (items) => {
 -- and concat recurse once per element outside tail position, which overflows
 -- the JavaScript stack on real file lists (zig unpacks to ~20,000 files).
 -- These are built from foldLeft and revAppend, which compile to loops.
-let mapAll = (items, f) => { List.reverse(List.foldLeft(items, [], (acc, item) => { [f(item), ..acc] })) };
+let mapAll = (items, f) => { List.reverse(List.foldLeft(items, [], (item, acc) => { [f(item), ..acc] })) };
 
 let filterAll = (items, keep) => {
-  List.reverse(List.foldLeft(items, [], (acc, item) => { if (keep(item)) { [item, ..acc] } else { acc } }))
+  List.reverse(List.foldLeft(items, [], (item, acc) => { if (keep(item)) { [item, ..acc] } else { acc } }))
 };
 
-let appendAll = (left, right) => { List.revAppend(List.reverse(left), right) };
+let appendAll = (left, right) => { List.reverseAppend(List.reverse(left), right) };
 
 let concatAll = (lists) => {
-  List.reverse(List.foldLeft(lists, [], (acc, items) => { List.revAppend(items, acc) }))
+  List.reverse(List.foldLeft(lists, [], (items, acc) => { List.reverseAppend(items, acc) }))
 };

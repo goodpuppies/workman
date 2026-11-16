@@ -71,7 +71,7 @@ Deno.test("pervasive Order preserves shared type and constructor identity in pat
   assertEquals(runtime.real, true);
   await assertRejects(() => checkSource("-- @no-prelude\nlet rank: Order -> Real64.Real = _ => 0;"));
   const unused = await compile("let value: Option<Order> = None;");
-  assertEquals(unused.includes("__wm_lib_subml_basis_subset_order"), false);
+  assertEquals(/let __wm_std_Order\b/.test(unused), false);
   const patternsOnly = await compileLibraryVirtual(
     "/test/patterns.wm",
     new Map([[
@@ -81,7 +81,7 @@ Deno.test("pervasive Order preserves shared type and constructor identity in pat
     `,
     ]]),
   );
-  assertEquals(patternsOnly.includes("__wm_lib_subml_basis_subset_order"), true);
+  assertEquals(/let __wm_std_Order\b/.test(patternsOnly), true);
   const patternsRuntime = await import(`data:text/javascript;base64,${btoa(patternsOnly)}`);
   assertEquals(typeof patternsRuntime.rank, "function");
   const shadowed = await compileLibraryVirtual(

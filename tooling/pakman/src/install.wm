@@ -145,7 +145,7 @@ let generationNumber = (name) => {
   }
 };
 
-let generationNumbers = (names) => { names :> List.mapPartial(generationNumber) };
+let generationNumbers = (names) => { names :> List.filterMap(generationNumber) };
 
 -- Every generation number recorded for a root, oldest first.
 let generations = (paths: Paths, root) => {
@@ -240,14 +240,14 @@ let filesFor = (manifests: List<Manifest>) => {
 -- pakman packages, `uses` are specific files in them, `base` are host files.
 
 let installsFile = (manifests: List<Manifest>, owner, path) => {
-  List.any(manifests, (m: Manifest) => {
-    m.owner == owner && List.any(m.files, (f: FileEntry) => { f.path == path })
+  List.exists(manifests, (m: Manifest) => {
+    m.owner == owner && List.exists(m.files, (f: FileEntry) => { f.path == path })
   })
 };
 
 -- Problems that would leave a package in this set without something it needs.
 let problemsIn = (manifests: List<Manifest>) => {
-  let isInstalled = (name) => { List.any(manifests, (m: Manifest) => { m.owner == name }) };
+  let isInstalled = (name) => { List.exists(manifests, (m: Manifest) => { m.owner == name }) };
   let missingDepends = (m: Manifest) => {
     m.depends
       :> filterAll((name) => { !isInstalled(name) })
@@ -350,7 +350,7 @@ let activate = (paths: Paths, root, before: List<FileEntry>, after: List<FileEnt
 };
 
 let nextNumber = (numbers) => {
-  List.foldLeft(numbers, 0, (highest, n) => { if (n > highest) { n } else { highest } }) + 1
+  List.foldLeft(numbers, 0, (n, highest) => { if (n > highest) { n } else { highest } }) + 1
 };
 
 -- Creates and activates a new generation with this package set. The

@@ -78,9 +78,17 @@ from js.host("table") import * as Table; -- a JS host helper (see jsffi.md)
 from "pakman/package.wm" import { serve }; -- pakman's package recipe API
 ```
 
-`std/` modules are also open as namespaces in every program (`Result`, `Option`, `List`, …), so
-importing one only chooses a local name. SubsetML Basis modules (`basis/`) are never open
-implicitly: WON, the text codecs, I/O and the other Basis modules need an import. `pakman/` is
+The SubsetML Basis modules and the `std/` modules are also open as namespaces in every program,
+so importing one only chooses a local name. A Basis module is named as in SML: `basis/list.wm`
+is `List`, `basis/string_cvt.wm` is `StringCvt` and `basis/os.wm` is `OS`; `Won`, `Text`, `Io`,
+`Char` and the rest need no import. Where `std/` has a module of the same name (`List`, `Option`,
+`Result`, `String`, `ListPair`, `Int32`), that module is the Basis module plus additions: it
+re-exports the Basis module and never redefines a name the Basis defines, so `List.foldLeft`
+means the Basis `foldLeft` everywhere. Opening these namespaces doesn't change how a record is
+found from its fields: `.{ value = x }` or `cell.value` on a value of unknown type considers the
+program's own records, library records imported unqualified and the pervasive carrier records
+(`Carrier`, `Applicative`), never a library record reached only through a namespace such as
+`Won.Node`. `pakman/` is
 the stable public prefix for the recipe API stored in `tooling/pakman/api/`
 (see `tooling/pakman/README.md`); its modules are analyzed only for programs that import one,
 so other programs don't pay for them. Importing a library module gives the same module the rest of the program sees, not a copy. A local folder

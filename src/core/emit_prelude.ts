@@ -464,7 +464,7 @@ const __wm_c_struct_to_buffer = (name, value) => {
     fromList: __wm_list_to_array,
   },
 };`,
-    `const Text = {
+    `const __wm_basis_Text = {
   of: __wm_text_of,
 };`,
     `const __wm_basis_Option = {

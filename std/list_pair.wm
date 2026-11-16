@@ -1,109 +1,38 @@
-from "./basis.wm" import * as Basis;
 from "basis/list_pair.wm" import * as SubsetListPair;
+from "basis/list.wm" import * as SubsetList;
+from "basis/result.wm" import * as SubsetResult;
 
-// Basis `LIST_PAIR`. The plain functions ignore the excess of the longer list; the `Eq` functions
-// return `Err(Basis.UnequalLengths)` instead. Arguments come data-first so pipes work, and fold
-// functions take `(a, b, accumulator)` as in the spec.
+// `ListPair` is the SubsetML Basis `ListPair` plus the operations below, which the Basis doesn't
+// define. Like the Basis's `zip` and `map`, each checks the lengths first and returns
+// `Err(UnequalLengths)` without calling `f` when they differ (markdown/basis-authority-plan.md).
+export from "basis/list_pair.wm" import *;
 
-let rec zip = match(left, right) => {
-  ([a, ..restA], [b, ..restB]) => { [(a, b), ..zip(restA, restB)] },
-  (_, _) => { [] }
+let forEach = (left, right, f) => {
+  SubsetResult.map(SubsetListPair.zip(left, right), (pairs) => {
+    SubsetList.forEach(pairs, (pair) => { let (a, b) = pair; f(a, b) })
+  })
 };
 
-let rec zipEq = match(left, right) => {
-  ([], []) => { Ok([]) },
-  ([a, ..restA], [b, ..restB]) => {
-    match(zipEq(restA, restB)) {
-      Ok(rest) => { Ok([(a, b), ..rest]) },
-      Err(error) => { Err(error) }
-    }
-  },
-  (_, _) => { Err(Basis.UnequalLengths) }
+let foldLeft = (left, right, initial, f) => {
+  SubsetResult.map(SubsetListPair.zip(left, right), (pairs) => {
+    SubsetList.foldLeft(pairs, initial, (pair, acc) => { let (a, b) = pair; f(a, b, acc) })
+  })
 };
 
-// The SubsetML Basis's zip and map are strict (a Result on unequal lengths), so only unzip is
-// shared; the truncating forms here and the Eq forms keep their Basis Library behavior.
-let unzip = SubsetListPair.unzip;
-
-let rec app = match(left, right, f) => {
-  ([a, ..restA], [b, ..restB], f) => {
-    f(a, b);
-    app(restA, restB, f)
-  },
-  (_, _, _) => { void }
+let foldRight = (left, right, initial, f) => {
+  SubsetResult.map(SubsetListPair.zip(left, right), (pairs) => {
+    SubsetList.foldRight(pairs, initial, (pair, acc) => { let (a, b) = pair; f(a, b, acc) })
+  })
 };
 
-let rec appEq = match(left, right, f) => {
-  ([], [], _) => { Ok(void) },
-  ([a, ..restA], [b, ..restB], f) => {
-    f(a, b);
-    appEq(restA, restB, f)
-  },
-  (_, _, _) => { Err(Basis.UnequalLengths) }
+let all = (left, right, predicate) => {
+  SubsetResult.map(SubsetListPair.zip(left, right), (pairs) => {
+    SubsetList.all(pairs, (pair) => { let (a, b) = pair; predicate(a, b) })
+  })
 };
 
-let rec map = match(left, right, f) => {
-  ([a, ..restA], [b, ..restB], f) => {
-    let head = f(a, b);
-    [head, ..map(restA, restB, f)]
-  },
-  (_, _, _) => { [] }
-};
-
-let rec mapEq = match(left, right, f) => {
-  ([], [], _) => { Ok([]) },
-  ([a, ..restA], [b, ..restB], f) => {
-    let head = f(a, b);
-    match(mapEq(restA, restB, f)) {
-      Ok(rest) => { Ok([head, ..rest]) },
-      Err(error) => { Err(error) }
-    }
-  },
-  (_, _, _) => { Err(Basis.UnequalLengths) }
-};
-
-let rec foldl = match(left, right, initial, f) => {
-  ([a, ..restA], [b, ..restB], initial, f) => { foldl(restA, restB, f(a, b, initial), f) },
-  (_, _, initial, _) => { initial }
-};
-
-let rec foldr = match(left, right, initial, f) => {
-  ([a, ..restA], [b, ..restB], initial, f) => { f(a, b, foldr(restA, restB, initial, f)) },
-  (_, _, initial, _) => { initial }
-};
-
-let rec foldlEq = match(left, right, initial, f) => {
-  ([], [], initial, _) => { Ok(initial) },
-  ([a, ..restA], [b, ..restB], initial, f) => { foldlEq(restA, restB, f(a, b, initial), f) },
-  (_, _, _, _) => { Err(Basis.UnequalLengths) }
-};
-
-let rec all = match(left, right, predicate) => {
-  ([a, ..restA], [b, ..restB], predicate) => {
-    if (predicate(a, b)) { all(restA, restB, predicate) } else { false }
-  },
-  (_, _, _) => { true }
-};
-
-let rec exists = match(left, right, predicate) => {
-  ([a, ..restA], [b, ..restB], predicate) => {
-    if (predicate(a, b)) { true } else { exists(restA, restB, predicate) }
-  },
-  (_, _, _) => { false }
-};
-
-let rec allEq = match(left, right, predicate) => {
-  ([], [], _) => { true },
-  ([a, ..restA], [b, ..restB], predicate) => {
-    if (predicate(a, b)) { allEq(restA, restB, predicate) } else { false }
-  },
-  (_, _, _) => { false }
-};
-
-let foldrEq = (left, right, initial, f) => {
-  if (allEq(left, right, (_, _) => { true })) {
-    Ok(foldr(left, right, initial, f))
-  } else {
-    Err(Basis.UnequalLengths)
-  }
+let exists = (left, right, predicate) => {
+  SubsetResult.map(SubsetListPair.zip(left, right), (pairs) => {
+    SubsetList.exists(pairs, (pair) => { let (a, b) = pair; predicate(a, b) })
+  })
 };

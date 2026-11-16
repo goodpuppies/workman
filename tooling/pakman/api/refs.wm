@@ -19,7 +19,7 @@ let rec parts = (text) => {
 };
 
 let refsInText = (text) => {
-  parts(text) :> List.mapPartial(match { Ref(path) => { Some(path) }, ShellRef(path) => { Some(path) }, _ => { None } })
+  parts(text) :> List.filterMap(match { Ref(path) => { Some(path) }, ShellRef(path) => { Some(path) }, _ => { None } })
 };
 
 let refsInOp = (op) => {
@@ -43,7 +43,7 @@ let runtimePlan = (pkg: Package) => {
 };
 
 let instances = (pkg: Package) => {
-  refsOf(pkg) :> List.mapPartial(match {
+  refsOf(pkg) :> List.filterMap(match {
     Instance(name, selector, _) => { Some(PackageRequest(name, selector)) },
     _ => { None }
   }) :> unique
@@ -68,22 +68,22 @@ let mapRefs = (pkg: Package, f) => {
 };
 
 let storePaths = (pkg: Package) => {
-  refsOf(pkg) :> List.mapPartial(match { StorePath(store, _) => { Some(store) }, _ => { None } }) :> unique
+  refsOf(pkg) :> List.filterMap(match { StorePath(store, _) => { Some(store) }, _ => { None } }) :> unique
 };
 
 -- The other pakman packages this one needs, by name.
 let dependencies = (pkg: Package) => {
-  refsOf(pkg) :> List.mapPartial(match { Of(name, _) => { Some(name) }, _ => { None } }) :> unique
+  refsOf(pkg) :> List.filterMap(match { Of(name, _) => { Some(name) }, _ => { None } }) :> unique
 };
 
 -- Absolute paths the base system must provide.
 let baseFiles = (pkg: Package) => {
-  refsOf(pkg) :> List.mapPartial(match { Base(path) => { Some(path) }, _ => { None } }) :> unique
+  refsOf(pkg) :> List.filterMap(match { Base(path) => { Some(path) }, _ => { None } }) :> unique
 };
 
 -- References to another package's file, as (package, path) pairs.
 let foreignFiles = (pkg: Package) => {
-  refsOf(pkg) :> List.mapPartial(match { Of(name, path) => { Some((name, path)) }, _ => { None } })
+  refsOf(pkg) :> List.filterMap(match { Of(name, path) => { Some((name, path)) }, _ => { None } })
 };
 
 -- Where a reference points on the running system: under `base`, the scope
@@ -130,7 +130,10 @@ let rec dropCommon = (left, right) => {
 };
 
 let relativePath = (linkPath, target) => {
-  let linkDir = List.reverse(List.drop(List.reverse(segments(linkPath)), 1));
+  let linkDir = match(List.reverse(segments(linkPath))) {
+    [_, ..parents] => { List.reverse(parents) },
+    [] => { [] }
+  };
   let (up, down) = dropCommon(linkDir, segments(target));
   appendAll(mapAll(up, (_) => { ".." }), down) :> join("/")
 };

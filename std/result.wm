@@ -1,17 +1,16 @@
 from "./monad.wm" import { Carrier };
 from "../host/js/debug.wm" import * as Debug;
 from "basis/result.wm" import * as SubsetResult;
+from "basis/list.wm" import * as SubsetList;
 
-// The operations the SubsetML Basis defines come from SubsetResult; this module adds WM's
-// carrier record, the multi-argument maps and the list helpers.
+// `Result` is the SubsetML Basis `Result` plus WM's carrier record, the multi-argument maps and
+// the list helpers. A name the Basis exports is never redefined here
+// (markdown/basis-authority-plan.md).
+export from "basis/result.wm" import *;
 
 let succeed = (value) => {
   Ok(value)
 };
-
-let map = SubsetResult.map;
-
-let andThen = SubsetResult.andThen;
 
 let toBool = match(r) => {
   Ok(v) => {
@@ -23,12 +22,6 @@ let toBool = match(r) => {
   Err(_) => {false}
 };
 
-let via = SubsetResult.via;
-
-let mapErr = SubsetResult.mapErr;
-
-let viaError = SubsetResult.viaError;
-
 let map2 = match(a, b, f) => {
   (Ok(left), Ok(right), f) => { Ok(f(left, right)) },
   (Err(error), _, _) => { Err(error) },
@@ -36,16 +29,14 @@ let map2 = match(a, b, f) => {
 };
 
 let carrier = .{
-  via = via,
-  viaError = viaError,
+  via = SubsetResult.via,
+  viaError = SubsetResult.viaError,
   succeed = succeed,
-  map = map,
-  mapErr = mapErr,
+  map = SubsetResult.map,
+  mapErr = SubsetResult.mapErr,
   map2 = map2,
-  andThen = andThen,
+  andThen = SubsetResult.andThen,
 };
-
-let getOr = SubsetResult.getOr;
 
 let debug = match(result) => {
   Ok(value) => { value },
@@ -70,35 +61,10 @@ let map4 = match(a, b, c, d, f) => {
   (_, _, _, Err(error), _) => { Err(error) }
 };
 
-let rec reverseAcc = match(items, acc) => {
-  ([], acc) => { acc },
-  ([head, ..rest], acc) => {
-    reverseAcc(rest, [head, ..acc])
-  }
-};
-
-let reverse = (items) => {
-  reverseAcc(items, [])
-};
-
-let rec traverseAcc = match(items, f, acc) => {
-  ([], _, acc) => { Ok(reverse(acc)) },
-  ([item, ..rest], f, acc) => {
-    match(f(item)) {
-      Err(error) => { Err(error) },
-      Ok(value) => {
-        traverseAcc(rest, f, [value, ..acc])
-      }
-    }
-  }
-};
-
-let traverse = (items, f) => {
-  traverseAcc(items, f, [])
-};
+let traverse = SubsetList.traverse;
 
 let all = (items) => {
-  items :> Js.Array.toList :> traverse((item) => { item }) :> map(Js.Array.fromList)
+  items :> Js.Array.toList :> traverse((item) => { item }) :> SubsetResult.map(Js.Array.fromList)
 };
 
 let collectList = (items) => {

@@ -71,9 +71,16 @@ export function inferLambdaTy(
       }),
     }));
   const dialect = lambdaTypingDialect(expr, context.dialect);
-  const params = expr.params.map((p) =>
-    inferParam(p, local, typeEnv, strEnv, adts, binders, facts, provenance)
-  );
+  const dialectDomain = lambdaTypingDialect(expr, context.dialect).domain;
+  const params = expr.params.map((p, index) => {
+    const annotated = annotations[index];
+    const target = annotated ? prune(annotated) : undefined;
+    const recordAnnotation = dialectDomain !== "gpu" && target?.tag === "named" &&
+        typeInfoById(typeEnv, target.id)?.recordFields
+      ? annotated
+      : undefined;
+    return inferParam(p, local, typeEnv, strEnv, adts, binders, facts, provenance, recordAnnotation);
+  });
   paramHints?.forEach((hint, index) => {
     if (hint && index < params.length) {
       constrainAt(params[index], hint, expr.params[index], undefined, [], provenance, {

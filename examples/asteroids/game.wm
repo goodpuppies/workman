@@ -221,7 +221,7 @@ let takeHit = (bullets, target, radius) => {
       [b, ..rest] => {
         let bullet: Bullet = b;
         if (withinSq(bullet.pos, target, radius + bulletRadius)) {
-          Some(List.foldLeft(before, rest, (result, earlier) => {
+          Some(List.foldLeft(before, rest, (earlier, result) => {
             [earlier, ..result]
           }))
         } else {
@@ -255,7 +255,7 @@ let resolveHits = (asteroids, bullets, r) => {
           Some(shotsAfterHit) => {
             let (fragments, nextSeed) = shatter(asteroid, seed);
             let rocksWithFragments =
-              List.foldLeft(fragments, rocksBefore, (result, fragment) => {
+              List.foldLeft(fragments, rocksBefore, (fragment, result) => {
                 [fragment, ..result]
               });
             resolve(
@@ -278,7 +278,7 @@ let hitsShip = (s: Ship, a: Asteroid) => {
 };
 
 let strikesShip = (s: Ship, asteroids: List<Asteroid>) => {
-  s.alive && s.invuln <= 0 && List.any(asteroids, (a) => { hitsShip(s, a) })
+  s.alive && s.invuln <= 0 && List.exists(asteroids, (a) => { hitsShip(s, a) })
 };
 
 let stepPlaying = (g: Game, input: Input, dt: Real64) => {

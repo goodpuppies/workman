@@ -125,13 +125,11 @@ This is namespace availability, rather than an unqualified pervasive `compare` f
 its constructors. The shared Basis comparison functions below require imports.
 See [default pervasive values](pervasives.md) for the unqualified library functions.
 
-Import the additional comparison functions and their supporting namespaces explicitly:
+The comparison functions live in the Basis namespaces `Order`, `Text`, `Unicode` and `Char`,
+which need no import; import a name to use it unqualified:
 
 ```wm
 from "basis/order.wm" import { compareInt, compareReal };
-from "basis/text.wm" import * as Text;
-from "basis/unicode.wm" import * as Unicode;
-from "basis/char.wm" import * as Char;
 ```
 
 | Expression | Type |

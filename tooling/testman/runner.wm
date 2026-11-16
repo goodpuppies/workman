@@ -34,7 +34,7 @@ let duration = (ms: Real64.Real) => {
   gray("(" ++ whole ++ "ms)")
 };
 
-let plural = (count, word) => {
+let plural = (count: Int32.Int, word) => {
   Text.of(count) ++ " " ++ word ++ (if (count == 1) { "" } else { "s" })
 };
 
@@ -116,7 +116,7 @@ let failureOf = (o: Outcome) => {
 
 -- Prints the summary and returns the number of failed tests.
 let report = (outcomes: List<Outcome>, ms) => {
-  let failures = List.mapPartial(outcomes, failureOf);
+  let failures = List.filterMap(outcomes, failureOf);
   let failed = List.length(failures);
   let passed = List.length(outcomes) - failed;
   match(failures) {

@@ -1,16 +1,8 @@
-from "./basis.wm" import * as Basis;
 from "basis/option.wm" import * as SubsetOption;
 
-// map, andThen, getOr, isSome and toResult come from the SubsetML Basis. filter stays SML's
-// Option.filter, which wraps a plain value; SubsetOption.filter filters an Option.
-
-let map = SubsetOption.map;
-
-let andThen = SubsetOption.andThen;
-
-let getOr = SubsetOption.getOr;
-
-let toResult = SubsetOption.toResult;
+// `Option` is the SubsetML Basis `Option` plus the additions below, which the Basis doesn't
+// define. A name the Basis exports is never redefined here (markdown/basis-authority-plan.md).
+export from "basis/option.wm" import *;
 
 let map2 = match(a, b, f) => {
   (Some(left), Some(right), f) => { Some(f(left, right)) },
@@ -37,34 +29,20 @@ let collectList = (items) => {
   traverse(items, (item) => { item })
 };
 
-// Basis `OPTION` functions with no existing Workman name. `getOpt` is `getOr` and
-// `mapPartial` is `andThen`. Arguments come data-first so pipes work.
-
-let isSome = SubsetOption.isSome;
-
-let valOf = match(option) => {
-  Some(value) => { Ok(value) },
-  None => { Err(Basis.Option) }
-};
-
-let filter = (value, predicate) => {
-  if (predicate(value)) { Some(value) } else { None }
-};
-
 let join = match(option) => {
   Some(inner) => { inner },
   None => { None }
 };
 
-let app = match(option, f) => {
+let forEach = match(option, f) => {
   (Some(value), f) => { f(value) },
   (None, _) => { void }
 };
 
 let compose = (f, g) => {
-  (value) => { map(g(value), f) }
+  (value) => { SubsetOption.map(g(value), f) }
 };
 
 let composePartial = (f, g) => {
-  (value) => { andThen(g(value), f) }
+  (value) => { SubsetOption.andThen(g(value), f) }
 };

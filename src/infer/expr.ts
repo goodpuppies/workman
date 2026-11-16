@@ -13,6 +13,7 @@ import {
   freshNumeric,
   ftv,
   instantiate,
+  fieldSelectableRecordTypes,
   knownTypeInfos,
   named,
   Real64Ty,
@@ -61,6 +62,14 @@ import { gpuOperatorId } from "../gpu_operators.ts";
 import { elaborateConstraint } from "./constraints.ts";
 import { callInvocationPlan } from "../pipe_elaboration.ts";
 import { inferDomainInvocation } from "./invocation.ts";
+
+function nominalRecordExpectation(expected: Ty | undefined, typeEnv: TypeEnv): Ty | undefined {
+  if (!expected) return undefined;
+  const target = prune(expected);
+  return target.tag === "named" && typeInfoById(typeEnv, target.id)?.recordFields
+    ? expected
+    : undefined;
+}
 
 // Literals written directly under unary minus, so `-2147483648` is range-checked as one value.
 const negatedLiterals = new WeakSet<Expr>();
@@ -165,7 +174,8 @@ function inferExprInner(expr: Expr, context: InferContext, expected?: Ty): Ty {
           }
           return inferExpr(value, context);
         },
-        undefined,
+        // A literal whose context expects a nominal record (a call argument, say) is that record.
+        nominalRecordExpectation(expected, typeEnv),
         warnings,
         diagnostics,
         facts,
@@ -642,7 +652,7 @@ function inferRecordMember(
   if (
     target.tag !== "struct" && !record?.recordFields &&
     !(target.tag === "var" &&
-      knownTypeInfos(context.typeEnv).some((info) =>
+      fieldSelectableRecordTypes(context.typeEnv).some((info) =>
         !info.foreign && info.recordFields?.some((field) => {
           if (field.name !== expr.path[0]) return false;
           // A known data field cannot supply a method call on an unknown

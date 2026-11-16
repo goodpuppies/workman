@@ -151,11 +151,6 @@ function sessionModuleName(name: string): string {
 }
 
 const REPL_PERVASIVES_FILE = sessionModuleName("pervasives");
-const REPL_TEXT_FILE = sessionModuleName("text");
-// Keep the polymorphic renderer alongside Basis Unicode text operations.
-const REPL_TEXT_SOURCE = `export from "basis/text.wm" import *;
-let of = Text.of;
-`;
 const REPL_PERVASIVES_SOURCE = `from js.global("Deno") import { exit as hostExit };
 // Never returns, so a call fits wherever a value of any type is expected.
 let quit = () => {
@@ -164,18 +159,11 @@ let quit = () => {
   unreachable()
 };
 `;
-// A session is an ordinary module, so these are ordinary imports, loaded at startup and shadowed
-// like any others. They're what an SML session has at top level; modules that `std` already
-// provides, such as `List`, don't need a line here. `Io` and `Text` are SubsetML's counterparts of
-// `TextIO` and Unicode text.
+// A session is an ordinary module, so this is an ordinary import, loaded at startup and shadowed
+// like any other. The Basis and std namespaces (`List`, `OS`, `Text`, …) are implicit in every
+// module, so the session needs only the REPL's own `quit`.
 export const REPL_SESSION_HEADER = [
   `from "./${REPL_PERVASIVES_FILE}" import { quit };`,
-  `from "basis/bool.wm" import * as Bool;`,
-  `from "basis/char.wm" import * as Char;`,
-  `from "basis/io.wm" import * as Io;`,
-  `from "basis/os.wm" import * as OS;`,
-  `from "basis/string_cvt.wm" import * as StringCvt;`,
-  `from "./${REPL_TEXT_FILE}" import * as Text;`,
 ].join("\n");
 
 /**
@@ -255,7 +243,6 @@ class PhraseSession {
 
   start(): void {
     this.#sources.set(this.#path("pervasives"), REPL_PERVASIVES_SOURCE);
-    this.#sources.set(this.#path("text"), REPL_TEXT_SOURCE);
     // The header's imports are re-exported, so every phrase sees them, as SML's top level does.
     const header = REPL_SESSION_HEADER.split("\n").map((line) => `export ${line}`).join("\n");
     this.#sources.set(this.headerPath, `${header}\n`);

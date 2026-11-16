@@ -21,19 +21,17 @@ async function run(lines: string[], header = ""): Promise<string[]> {
   return new TextDecoder().decode(output.stdout).trimEnd().split("\n");
 }
 
-Deno.test("Option follows OPTION", async () => {
+Deno.test("Option is the Basis Option plus the remaining OPTION functions", async () => {
   assertEquals(
     await run([
       "print(Option.isSome(Some(1)));",
       "print(Option.isSome(None));",
-      "print(Option.valOf(Some(2)));",
-      "print(Option.valOf(None));",
-      "print(Option.filter(3, (x) => { x > 2 }));",
-      "print(Option.filter(1, (x) => { x > 2 }));",
+      "print(Option.filter(Some(3), (x) => { x > 2 }));",
+      "print(Option.filter(Some(1), (x) => { x > 2 }));",
       "print(Option.join(Some(Some(4))));",
       "print(Option.join(Some(None)));",
-      "Option.app(Some(5), print);",
-      "Option.app(None, print);",
+      "Option.forEach(Some(5), print);",
+      "Option.forEach(None, print);",
       "print(Option.compose((x) => { x + 1 }, (y) => { Some(y) })(5));",
       "print(Option.compose((x) => { x + 1 }, (y) => { None })(5));",
       "print(Option.composePartial((x) => { Some(x * 2) }, (y) => { Some(y + 1) })(5));",
@@ -41,8 +39,6 @@ Deno.test("Option follows OPTION", async () => {
     [
       "true",
       "false",
-      "Ok(2)",
-      "Err(Option)",
       "Some(3)",
       "None",
       "Some(4)",
@@ -55,27 +51,27 @@ Deno.test("Option follows OPTION", async () => {
   );
 });
 
-Deno.test("List follows LIST", async () => {
+Deno.test("List is the Basis List plus getItem", async () => {
   assertEquals(
     await run([
-      "print((List.null([]), List.null([1])));",
-      "print((List.hd([1, 2]), List.hd([])));",
-      "print((List.tl([1, 2]), List.tl([])));",
+      "print((List.isEmpty([]), List.isEmpty([1])));",
+      "print((List.head([1, 2]), List.head([])));",
+      "print((List.tail([1, 2]), List.tail([])));",
       "print((List.last([1, 2, 3]), List.last([])));",
       "print((List.getItem([1, 2]), List.getItem([])));",
       "print(List.concat([[1], [2, 3], []]));",
-      "print(List.revAppend([1, 2], [3]));",
-      "List.app([1, 2], print);",
-      "print(List.mapPartial([1, 2, 3], (x) => { if (x == 2) { None } else { Some(x * 10) } }));",
+      "print(List.reverseAppend([1, 2], [3]));",
+      "List.forEach([1, 2], print);",
+      "print(List.filterMap([1, 2, 3], (x) => { if (x == 2) { None } else { Some(x * 10) } }));",
       "print((List.find([1, 2, 3], (x) => { x > 1 }), List.find([1], (x) => { x > 1 })));",
       "print(List.partition([1, 2, 3, 4], (x) => { x % 2 == 0 }));",
       "print((List.tabulate(3, (i) => { i * i }), List.tabulate(0, (i) => { i })));",
     ]),
     [
       "(true, false)",
-      "(Ok(1), Err(Empty))",
-      "(Ok(Cons(2, Nil)), Err(Empty))",
-      "(Ok(3), Err(Empty))",
+      "(Ok(1), Err(EmptyList))",
+      "(Ok(Cons(2, Nil)), Err(EmptyList))",
+      "(Ok(3), Err(EmptyList))",
       "(Some(1, Cons(2, Nil)), None)",
       "Cons(1, Cons(2, Cons(3, Nil)))",
       "Cons(2, Cons(1, Cons(3, Nil)))",
@@ -84,42 +80,37 @@ Deno.test("List follows LIST", async () => {
       "Cons(10, Cons(30, Nil))",
       "(Some(2), None)",
       "(Cons(2, Cons(4, Nil)), Cons(1, Cons(3, Nil)))",
-      "(Cons(0, Cons(1, Cons(4, Nil))), Nil)",
+      "(Ok(Cons(0, Cons(1, Cons(4, Nil)))), Ok(Nil))",
     ],
   );
 });
 
-Deno.test("ListPair follows LIST_PAIR", async () => {
+Deno.test("ListPair is the Basis ListPair plus length-checked folds and predicates", async () => {
   assertEquals(
     await run([
-      'print(ListPair.zip([1, 2, 3], ["a", "b"]));',
-      'print((ListPair.zipEq([1], ["a", "b"]), ListPair.zipEq([1], ["a"])));',
+      'print((ListPair.zip([1, 2, 3], ["a", "b"]), ListPair.zip([1], ["a"])));',
       'print(ListPair.unzip([(1, "a"), (2, "b")]));',
-      "print(ListPair.map([1, 2], [10, 20, 30], (a, b) => { a + b }));",
-      "print((ListPair.mapEq([1], [2, 3], (a, b) => { a + b }), ListPair.mapEq([1], [2], (a, b) => { a + b })));",
-      "print(ListPair.foldl([1, 2], [3, 4], [], (a, b, acc) => { [a * b, ..acc] }));",
-      "print(ListPair.foldr([1, 2], [3, 4], [], (a, b, acc) => { [a * b, ..acc] }));",
-      "print(ListPair.foldlEq([1], [2, 3], 0, (a, b, acc) => { acc + a + b }));",
-      "print(ListPair.foldrEq([1, 2], [3, 4], 0, (a, b, acc) => { acc + a * b }));",
-      "print((ListPair.all([1, 2], [1], (a, b) => { a == b }), ListPair.allEq([1, 2], [1], (a, b) => { a == b })));",
+      "print((ListPair.map([1], [2, 3], (a, b) => { a + b }), ListPair.map([1, 2], [10, 20], (a, b) => { a + b })));",
+      "print(ListPair.foldLeft([1, 2], [3, 4], [], (a, b, acc) => { [a * b, ..acc] }));",
+      "print(ListPair.foldRight([1, 2], [3, 4], [], (a, b, acc) => { [a * b, ..acc] }));",
+      "print(ListPair.foldLeft([1], [2, 3], 0, (a, b, acc) => { acc + a + b }));",
+      "print((ListPair.all([1, 2], [1, 3], (a, b) => { a == b }), ListPair.all([1, 2], [1], (a, b) => { a == b })));",
       "print((ListPair.exists([1, 2], [0, 2], (a, b) => { a == b }), ListPair.exists([1], [0], (a, b) => { a == b })));",
-      'ListPair.app([1, 2], ["x", "y", "z"], (a, b) => { print((a, b)) });',
-      "print(ListPair.appEq([1], [], (a, b) => { print(a) }));",
+      'print(ListPair.forEach([1, 2], ["x", "y"], (a, b) => { print((a, b)) }));',
+      "print(ListPair.forEach([1], [], (a, b) => { print(a) }));",
     ]),
     [
-      "Cons((1, a), Cons((2, b), Nil))",
       "(Err(UnequalLengths), Ok(Cons((1, a), Nil)))",
       "(Cons(1, Cons(2, Nil)), Cons(a, Cons(b, Nil)))",
-      "Cons(11, Cons(22, Nil))",
-      "(Err(UnequalLengths), Ok(Cons(3, Nil)))",
-      "Cons(8, Cons(3, Nil))",
-      "Cons(3, Cons(8, Nil))",
+      "(Err(UnequalLengths), Ok(Cons(11, Cons(22, Nil))))",
+      "Ok(Cons(8, Cons(3, Nil)))",
+      "Ok(Cons(3, Cons(8, Nil)))",
       "Err(UnequalLengths)",
-      "Ok(11)",
-      "(true, false)",
-      "(true, false)",
+      "(Ok(false), Err(UnequalLengths))",
+      "(Ok(true), Ok(false))",
       "(1, x)",
       "(2, y)",
+      "Ok(void)",
       "Err(UnequalLengths)",
     ],
   );
@@ -314,4 +305,25 @@ Deno.test("library modules name Js.* only in the signatures of their primitive i
     }
   }
   assertEquals(leaks, []);
+});
+
+Deno.test("std modules that extend a Basis module never redefine its names", () => {
+  const topLevel = (source: string) =>
+    new Set([...source.matchAll(/^let (?:rec )?([A-Za-z_]\w*)/gm)].map((match) => match[1]));
+  const extensions: string[] = [];
+  const clashes: string[] = [];
+  for (const [path, source] of Object.entries(librarySources)) {
+    if (!path.startsWith("std/")) continue;
+    const reexport = source.match(/^export from "basis\/(\w+)\.wm" import \*;/m);
+    if (!reexport) continue;
+    extensions.push(path);
+    const basis = librarySources[`subml-basis/subset_${reexport[1]}.wm`];
+    assertEquals(typeof basis, "string", `${path} re-exports a Basis module the assets lack`);
+    const basisNames = topLevel(basis);
+    for (const name of topLevel(source)) {
+      if (basisNames.has(name)) clashes.push(`${path}: ${name}`);
+    }
+  }
+  assertEquals(extensions.length >= 6, true, `expected the Basis extensions, found ${extensions}`);
+  assertEquals(clashes, []);
 });

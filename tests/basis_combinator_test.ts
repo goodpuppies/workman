@@ -70,9 +70,9 @@ Deno.test("Result and Option combinators infer generically", async () => {
   expectBinding(result.env, "opt", { type: "Option<Real64.Real>", vars: 0 });
   expectBinding(result.env, "plain", { type: "Real64.Real", vars: 0 });
   expectBinding(result.env, "listMapped", { type: "List<Real64.Real>", vars: 0 });
-  expectBinding(result.env, "listLength", { type: "Real64.Real", vars: 0 });
-  expectBinding(result.env, "listItem", { type: "Option<Real64.Real>", vars: 0 });
-  expectBinding(result.env, "missingListItem", { type: "Option<Real64.Real>", vars: 0 });
+  expectBinding(result.env, "listLength", { type: "Int32.Int", vars: 0 });
+  expectBinding(result.env, "listItem", { type: "Result<Real64.Real, Error>", vars: 0 });
+  expectBinding(result.env, "missingListItem", { type: "Result<Real64.Real, Error>", vars: 0 });
   expectBinding(result.env, "filtered", { type: "List<Real64.Real>", vars: 0 });
   expectBinding(result.env, "reversed", { type: "List<Real64.Real>", vars: 0 });
   expectBinding(result.env, "traversed", { type: "Result<List<Real64.Real>, 'a!>!", vars: 0 });
@@ -130,7 +130,7 @@ Deno.test("Result.debug exposes its intentional typed hole", async () => {
   const result = await runCli(["run", input]);
 
   assertEquals(result.code, 1);
-  assertStringIncludes(result.stderr, "error[type.typed-hole std/result.wm:54:4]");
+  assertStringIncludes(result.stderr, "error[type.typed-hole std/result.wm:45:4]");
   assertStringIncludes(result.stderr, "typed hole; expected type: 'a");
   assertEquals(result.stderr.includes("Panic:"), false);
 });
@@ -173,9 +173,9 @@ Deno.test("expanded List helpers evaluate with current argument order", async ()
         print(List.drop([1, 2, 3], 2));
         print(List.at([1, 2, 3], 1));
         print(List.at([1, 2, 3], 8));
-        print(List.foldLeft([1, 2, 3], 0, (sum, n) => { sum + n }));
+        print(List.foldLeft([1, 2, 3], 0, (n, sum) => { sum + n }));
         print(List.reverse([1, 2, 3]));
-        print(List.any([1, 2, 3], (n) => { n > 2 }));
+        print(List.exists([1, 2, 3], (n) => { n > 2 }));
         print(List.all([1, 2, 3], (n) => { n > 0 }))
       };
     `,
@@ -190,10 +190,10 @@ Deno.test("expanded List helpers evaluate with current argument order", async ()
     "3\n" +
       "Cons(1, Cons(2, Cons(3, Cons(4, Nil))))\n" +
       "Cons(3, Cons(4, Nil))\n" +
-      "Cons(1, Cons(2, Nil))\n" +
-      "Cons(3, Nil)\n" +
-      "Some(2)\n" +
-      "None\n" +
+      "Ok(Cons(1, Cons(2, Nil)))\n" +
+      "Ok(Cons(3, Nil))\n" +
+      "Ok(2)\n" +
+      "Err(OutOfBounds)\n" +
       "6\n" +
       "Cons(3, Cons(2, Cons(1, Nil)))\n" +
       "true\n" +

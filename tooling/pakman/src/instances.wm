@@ -97,7 +97,7 @@ let choose = (info: Packages.PackageInfo, selector, candidates: List<Candidate>)
 -- Requests are evaluated independently; byte-identical instances share IDs.
 let rec visit = (paths: Paths, info: Packages.PackageInfo, entry: LockEntry, ancestors: List<String>, graph: Graph) => {
   identity(info, entry) :> via Task (id, programHash) => {
-    if (List.any(ancestors, (ancestor) => { ancestor == id })) {
+    if (List.exists(ancestors, (ancestor) => { ancestor == id })) {
       Task.fail("cyclic private dependency through " ++ info.name)
     } else {
       match(List.find(graph.nodes, (n: Node) => { n.id == id })) {

@@ -5,7 +5,7 @@
 
 from "basis/text.wm" import * as UnicodeText;
 
-let smaller = (a: Real64, b: Real64) => if (a < b) { a } else { b };
+let smaller = (a: Int32, b: Int32) => if (a < b) { a } else { b };
 
 -- Edit distance (insertions, deletions and substitutions) between two lists of characters,
 -- computed one row of the dynamic-programming table at a time.
@@ -25,7 +25,7 @@ let editDistance = (source, target) => {
       [] => above,
       [char, ..more] => rows([index, ..fill(above, target, char, index)], more, index + 1)
     };
-  let first = List.tabulate(List.length(target) + 1, (i) => i);
+  let first = List.tabulate(List.length(target) + 1, (i) => i) :> Result.getOr([]);
   let rec last = (row) => match(row) { [only] => only, [_, ..more] => last(more), [] => 0 };
   last(rows(first, source, 1))
 };
@@ -36,7 +36,7 @@ let suggestName = (name: String, candidates: Js.Array<String>) => {
   match(UnicodeText.explode(name)) {
     Err(_) => None,
     Ok(wanted) => {
-      let limit = if (List.length(wanted) < 3) { 1 } else { List.length(wanted) / 3 };
+      let limit = if (List.length(wanted) < 3) { 1 } else { Int32.div(List.length(wanted), 3) };
       let rec best = (items, found) =>
         match(items) {
           [] => found,

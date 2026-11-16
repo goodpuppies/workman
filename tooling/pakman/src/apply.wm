@@ -81,7 +81,7 @@ let isSafePath = (path) => {
     Err(_) => { false },
     Ok(parts) => {
       path != "" && !(UnicodeText.isPrefix(path, "/") :> Result.getOr(true))
-        && !List.any(parts, (part) => { part == ".." || part == "" })
+        && !List.exists(parts, (part) => { part == ".." || part == "" })
     }
   }
 };
@@ -127,7 +127,7 @@ let triggers = concatAll([triggersFor("usr/share"), triggersFor(".local/share"),
 let runTriggers = (root, changed: List<String>) => {
   let touches = (t: Trigger) => {
     (root == "/" || !t.live)
-      && List.any(changed, (path) => { UnicodeText.isPrefix(path, t.dir) :> Result.getOr(false) })
+      && List.exists(changed, (path) => { UnicodeText.isPrefix(path, t.dir) :> Result.getOr(false) })
   };
   let runCommand = (c: Command) => {
     runQuiet(c.cmd, c.args)

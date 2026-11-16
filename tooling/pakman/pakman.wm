@@ -213,7 +213,7 @@ let planOf = (p) => {
 -- The named packages plus every package their plans reference, transitively.
 -- The edges are ordinary data: refs.wm's `dependencies` walks each plan.
 let rec withDependencies = (p, queue, found) => {
-  let isFound = (name) => { List.any(found, (info: Packages.PackageInfo) => { info.name == name }) };
+  let isFound = (name) => { List.exists(found, (info: Packages.PackageInfo) => { info.name == name }) };
   match(queue) {
     [] => { Task.succeed(found) },
     [name, ..rest] => {
@@ -274,7 +274,7 @@ let installWithOptions = (p, root, args, force, pinVersion, refreshSelection) =>
     Install.current(p, root) :> Task.map((generation) => { (stored, generation) })
   };
   let switchToNew = via Task (stored, generation) => {
-    Install.switchTo(p, root, List.foldLeft(stored, generation.packages, Install.withPackage))
+    Install.switchTo(p, root, List.foldLeft(stored, generation.packages, (entry, packages) => { Install.withPackage(packages, entry) }))
   };
   resolveRequested()
     :> via Task => { withDependencies(p, mapAll(args, nameOf), []) }
@@ -289,9 +289,9 @@ let install = (p, root, args) => { installWithOptions(p, root, args, false, fals
 
 let remove = (p, root, names) => {
   let removeFrom = via Task (generation) => {
-    let isInstalled = (name) => { List.any(generation.packages, (installed) => { installed.name == name }) };
+    let isInstalled = (name) => { List.exists(generation.packages, (installed) => { installed.name == name }) };
     match(filterAll(names, (name) => { !isInstalled(name) })) {
-      [] => { Install.switchTo(p, root, List.foldLeft(names, generation.packages, Install.withoutPackage)) },
+      [] => { Install.switchTo(p, root, List.foldLeft(names, generation.packages, (name, packages) => { Install.withoutPackage(packages, name) })) },
       Var(unknown) => { Task.fail("not installed in " ++ root ++ ": " ++ join(unknown, ", ")) }
     }
   };
@@ -339,7 +339,7 @@ let listVersions = (p, info: Packages.PackageInfo) => {
         ++ join(notes, ", ")
     };
     -- An onlyLatest package holding a build upstream has replaced.
-    let held = if (pick != "" && !List.any(candidates, (c: Candidate) => { c.version == pick })) {
+    let held = if (pick != "" && !List.exists(candidates, (c: Candidate) => { c.version == pick })) {
       ["* " ++ pad(pick, 32) ++ pad(info.channel, 9) ++ pad("", 12) ++ "locked, held until the newest is "
         ++ Text.of(minAgeDays(info)) ++ " days old"]
     } else { [] };
@@ -406,9 +406,9 @@ let rollback = (p, root) => {
 
 -- Groups (root, item) pairs by root, keeping the order roots first appear in.
 let groupByRoot = (pairs) => {
-  let add = (groups, pair) => {
+  let add = (pair, groups) => {
     let (root, item) = pair;
-    if (List.any(groups, (g) => { let (r, _) = g; r == root })) {
+    if (List.exists(groups, (g) => { let (r, _) = g; r == root })) {
       mapAll(groups, (g) => { let (r, items) = g; if (r == root) { (r, appendAll(items, [item])) } else { g } })
     } else {
       appendAll(groups, [(root, [item])])

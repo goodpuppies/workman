@@ -41,7 +41,7 @@ let matches = (selector, version) => {
 
 -- Finder ordering is not necessarily numeric (2.8.10 must beat 2.8.9).
 let newest = (candidates: List<Candidate>) => {
-  List.foldLeft(candidates, None, (best: Option<Candidate>, candidate: Candidate) => {
+  List.foldLeft(candidates, None, (candidate: Candidate, best: Option<Candidate>) => {
     match(best) {
       None => { Some(candidate) },
       Some(previous) => {

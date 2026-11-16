@@ -61,9 +61,15 @@ export function hideLibraryPervasives(env: Map<string, { standardLibrary?: boole
   }
 }
 
-/** Type projections use the same named-import semantics, but have no runtime aliases. */
+/**
+ * Type projections use the same named-import semantics, but have no runtime aliases. The carrier
+ * records are here so a `.{ succeed, map, … }` literal finds them by its fields without an import
+ * (field-based record inference only considers library records in scope unqualified).
+ */
 export const LIBRARY_PERVASIVE_TYPES = Object.freeze([
   Object.freeze({ modulePath: "subml-basis/subset_order.wm", name: "Order" }),
+  Object.freeze({ modulePath: "std/monad.wm", name: "Carrier" }),
+  Object.freeze({ modulePath: "std/monad.wm", name: "Applicative" }),
 ]);
 
 export function pervasiveSourceName(binding: (typeof LIBRARY_PERVASIVES)[number]): string {

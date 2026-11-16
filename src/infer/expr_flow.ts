@@ -610,8 +610,10 @@ export function inferParam(
   binders: Set<string>,
   facts: TypeFacts,
   provenance: TypeProvenance,
+  /** A nominal record annotation, which a record pattern needs to select its type. */
+  recordAnnotation?: Ty,
 ): Ty {
-  const expected = fresh();
+  const expected = param.pattern.kind === "PRecord" && recordAnnotation ? recordAnnotation : fresh();
   return inferPattern(
     param.pattern,
     expected,

@@ -3,6 +3,10 @@ from "basis/string.wm" import * as Strings;
 from "basis/list.wm" import * as Lists;
 from "basis/result.wm" import * as Results;
 
+// `String` is the SubsetML Basis `String` plus `toList` and `isSubsequence`
+// (markdown/basis-authority-plan.md).
+export from "basis/string.wm" import *;
+
 // Portable byte-string convenience. Any conversion error returns an empty list.
 let toList = (value: String) => {
   Results.getOr(

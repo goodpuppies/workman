@@ -3,13 +3,14 @@
 Workman's own library: what the SubsetML Basis in [`../subml-basis/`](../subml-basis/) doesn't
 provide. That includes the carriers, `Task`, `Map` and the binary decoding in `binary.wm`, and the
 modules that need host types SubsetML doesn't have yet: the words (`Word8`–`Word64`), vectors,
-`Pack*`, `Float32`/`Float64`, `Real` and `Math`. Portable modules can later move into the SubsetML
+`Pack*`, `Real32`, `Real64` and `Math`. Portable modules can later move into the SubsetML
 Basis. See [`../markdown/subsetml-basis.md`](../markdown/subsetml-basis.md).
 
-The SubsetML Basis is the primary portable API. Duplicate implementations still
-present here are transitional and will be removed later as callers migrate;
-their differing signatures or error types do not define a second portable Basis.
-Default pervasives should project the shared Basis where it provides the operation.
+The SubsetML Basis owns its names. A std module named like a Basis module (`list.wm`,
+`option.wm`, `result.wm`, `string.wm`, `list_pair.wm`, `int32.wm`) extends it: it starts with
+`export from "basis/x.wm" import *;` and only adds names the Basis module doesn't define.
+`tests/basis_conformance_test.ts` enforces this. Default pervasives project the shared Basis
+where it provides the operation.
 
 `string.wm` adds `String.toList: String -> List<String>`, also projected as the
 pervasive `toList`. It composes shared Basis byte conversions and returns `[]` on any

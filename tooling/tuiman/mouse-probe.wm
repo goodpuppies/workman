@@ -16,7 +16,7 @@ let main = () => {
       Ansi.esc ++ "[<65;12;7M",
   )
     :> List.map(show)
-    :> List.foldLeft("", (text, item) => {
+    :> List.foldLeft("", (item, text) => {
       if (text == "") { item } else { text ++ "\n" ++ item }
     })
     :> print

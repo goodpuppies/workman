@@ -157,11 +157,11 @@ let rec drain = (chunks, fd) => {
       let count = List.length(pending);
 
       let submit = via Result (iov) => {
-        match((Int32.fromReal64(fd), Int32.fromReal64(count))) {
-          (Some(descriptor), Some(vectors)) => {
-            Ok(Int64.toReal64(writev(descriptor, Some(Pointer.fromBytes(iov)), vectors)))
+        match(Int32.fromReal64(fd)) {
+          Some(descriptor) => {
+            Ok(Int64.toReal64(writev(descriptor, Some(Pointer.fromBytes(iov)), count)))
           },
-          _ => { Err(NullPointer) },
+          None => { Err(NullPointer) },
         }
       };
 

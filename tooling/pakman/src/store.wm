@@ -149,7 +149,7 @@ let manifestJson = (def: PackageInfo, pkg: Package, hash, files: List<(String, S
   let fileJson = (path, target) => { JSON{ path: path, link: target } };
   let foreignJson = (name, path) => { JSON{ pkg: name, path: path } };
   let runtime = runtimePlan(pkg);
-  let privateUses = refsOf(runtime) :> List.mapPartial(match {
+  let privateUses = refsOf(runtime) :> List.filterMap(match {
     StorePath(tree, path) => { Some(JSON{ tree: tree, path: path }) }, _ => { None }
   });
   JSON{
@@ -190,7 +190,7 @@ let build = (paths: Paths, def: PackageInfo, pkg: Package, sources: List<LockedS
         removeTree(work)
       | :> Task.map(ignore)
     };
-    let buildSources = if (List.any(pkg.install, match { Build(_, _) => { true }, _ => { false } })) { sources } else { [] };
+    let buildSources = if (List.exists(pkg.install, match { Build(_, _) => { true }, _ => { false } })) { sources } else { [] };
     Task|mkdirp(out), mkdirp(inputs), each(buildSources, stage),
       each(pkg.install, runOp(out, base, sourcePath, def, entry, inputs, work)), walkEntries(out)|
       :> Task.map((_, _, _, _, files) => { files })
@@ -212,12 +212,12 @@ let build = (paths: Paths, def: PackageInfo, pkg: Package, sources: List<LockedS
 let realizePlanWith = (paths: Paths, def: PackageInfo, entry: LockEntry, privateInstance: Bool) => {
   (pkg: Package) => {
     let hashInputs = via Task (sources) => {
-      let tools = pkg.install :> List.mapPartial(match { Build(_, tools) => { Some(tools) }, _ => { None } }) :> concatAll;
+      let tools = pkg.install :> List.filterMap(match { Build(_, tools) => { Some(tools) }, _ => { None } }) :> concatAll;
       let identity = if (List.length(List.filter(pkg.install, match { Build(_, _) => { true }, _ => { false } })) == 0) {
         -- Even without a callback, private instance identity includes its recipe.
         if (privateInstance) { sha256File(def.program) } else { Task.succeed("") }
       } else { buildIdentity(def.program, tools) };
-      let commandIdentity = if (List.any(pkg.install, match { BuildCommand(_) => { true }, _ => { false } })) {
+      let commandIdentity = if (List.exists(pkg.install, match { BuildCommand(_) => { true }, _ => { false } })) {
         commandBuildIdentity()
       } else { Task.succeed("") };
       Task|identity, commandIdentity| :> Task.map((recipe, backend) => { recipe ++ backend }) :> via Task (builder) => {
@@ -255,7 +255,7 @@ let realizePlan = (paths, def, entry) => { realizePlanWith(paths, def, entry, fa
 
 -- Build children first from the saved graph. No upstream discovery during build.
 let rec realizeNode = (paths: Paths, graph: Instances.Graph, id, ancestors: List<String>, privateInstance: Bool) => {
-  if (List.any(ancestors, (parent) => { parent == id })) { Task.fail("cyclic instance graph") } else {
+  if (List.exists(ancestors, (parent) => { parent == id })) { Task.fail("cyclic instance graph") } else {
     Instances.find(graph, id) :> Task.fromResult
       :> Task.andThen((node: Instances.Node) => {
         Packages.describeProgram(node.name, node.program) :> Monad.via Task (info: PackageInfo) => {
@@ -283,7 +283,7 @@ let rec realizeNode = (paths: Paths, graph: Instances.Graph, id, ancestors: List
                 };
                 make(info, node.entry.version, node.entry.ref) :> Monad.via Task (plan: Package) => {
                   let bound = mapRefs(plan, bind);
-                  let uses = refsOf(bound) :> List.mapPartial(match {
+                  let uses = refsOf(bound) :> List.filterMap(match {
                     StorePath(tree, path) => { Some((tree, path)) }, _ => { None }
                   });
                   each(uses, (tree, path) => { checkInstanceFile(tree, path) })

@@ -227,7 +227,7 @@ export function basisUnaryOperatorDescriptor(
 /** Layer-0 values implemented by the compiler, followed by the JS host's. */
 export const BASIS_VALUES: readonly BasisValueDescriptor[] = Object.freeze([
   { exportName: "print", profiles, runtimeName: "print" },
-  { exportName: "Text.of", profiles, runtimeName: "Text.of" },
+  { exportName: "Text.of", profiles, runtimeName: "__wm_basis_Text.of" },
   ...[
     "div",
     "mod",

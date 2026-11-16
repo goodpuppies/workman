@@ -59,13 +59,13 @@ Deno.test("emits only reachable standard-library modules", async () => {
 
   assertStringIncludes(js, "let __wm_std_Monad");
   assertStringIncludes(js, "let __wm_std_Result");
-  assertEquals(js.includes("let __wm_std_List"), false);
-  assertEquals(js.includes("let __wm_std_Map"), false);
-  assertEquals(js.includes("let __wm_std_Option"), false);
-  assertEquals(js.includes("let __wm_std_Task"), false);
-  assertEquals(js.includes("let __wm_std_Traverse"), false);
+  assertEquals(/let __wm_std_List\b/.test(js), false);
+  assertEquals(/let __wm_std_Map\b/.test(js), false);
+  assertEquals(/let __wm_std_Option\b/.test(js), false);
+  assertEquals(/let __wm_std_Task\b/.test(js), false);
+  assertEquals(/let __wm_std_Traverse\b/.test(js), false);
   assertStringIncludes(js, "const Text = {");
-  assertStringIncludes(js, '"map": __wm_std_Result["map"]');
+  assertStringIncludes(js, "const Result = __wm_std_Result;");
   assertEquals(js.includes("...__wm_basis_Result"), false);
   assertEquals(js.includes("...__wm_std_Result"), false);
   assertEquals(js.includes("__wm_legacy_"), false);

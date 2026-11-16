@@ -1,78 +1,13 @@
-from "./basis.wm" import * as Basis;
 from "basis/order.wm" import { Less, Equal, Greater };
 from "basis/list.wm" import * as SubsetList;
 
-// Functions that behave the same as the SubsetML Basis's come from SubsetList, which is
-// tail-recursive throughout. length (Int32.Int there), foldLeft (whose callback takes the accumulator
-// second there) and the forgiving at/take/drop keep WM's own definitions.
-
-let map = SubsetList.map;
-
-let length = (items) => {
-  let rec loop = match(remaining, count) => {
-    ([], count) => { count },
-    ([_, ..rest], count) => { loop(rest, count + 1) }
-  };
-  loop(items, 0)
-};
-
-let append = SubsetList.append;
-
-let filter = SubsetList.filter;
-
-let rec take = match(items, count) => {
-  ([], _) => { [] },
-  (_, 0) => { [] },
-  ([head, ..rest], count) => {
-    [head, ..take(rest, count - 1)]
-  }
-};
-
-let rec drop = match(items, count) => {
-  (items, 0) => { items },
-  ([], _) => { [] },
-  ([_, ..rest], count) => {
-    drop(rest, count - 1)
-  }
-};
-
-let rec at = match(items, index) => {
-  ([], _) => { None },
-  ([head, .._], 0) => { Some(head) },
-  ([_, ..rest], index) => {
-    at(rest, index - 1)
-  }
-};
-
-let rec foldLeft = match(items, initial, f) => {
-  ([], initial, _) => { initial },
-  ([head, ..rest], initial, f) => {
-    foldLeft(rest, f(initial, head), f)
-  }
-};
-
-let foldRight = SubsetList.foldRight;
-
-let reverse = SubsetList.reverse;
-
-let rec any = match(items, predicate) => {
-  ([], _) => { false },
-  ([head, ..rest], predicate) => {
-    if (predicate(head)) {
-      true
-    } else {
-      any(rest, predicate)
-    }
-  }
-};
-
-let all = SubsetList.all;
+// `List` is the SubsetML Basis `List` plus the additions below, which the Basis doesn't define.
+// A name the Basis exports is never redefined here (markdown/basis-authority-plan.md).
+export from "basis/list.wm" import *;
 
 let collectWith = (empty, combine, items) => {
-  foldRight(items, empty, combine)
+  SubsetList.foldRight(items, empty, combine)
 };
-
-
 
 let rec joinRaw = match(items) => {
   [] => { "" },
@@ -87,68 +22,13 @@ let toString = (items) => {
 };
 
 let toStringRender = (items, render) => {
-  toString(map(items, render))
-};
-
-// Basis `LIST` functions with no existing Workman name. Existing names cover `@` (`append`), `nth`
-// (`at`), `take`, `drop`, `rev` (`reverse`), `foldl`/`foldr` (`foldLeft`/`foldRight`) and `exists`
-// (`any`). Arguments come data-first so pipes work.
-
-let null = match(items) => {
-  [] => { true },
-  _ => { false }
-};
-
-let hd = match(items) => {
-  [head, .._] => { Ok(head) },
-  [] => { Err(Basis.Empty) }
-};
-
-let tl = match(items) => {
-  [_, ..rest] => { Ok(rest) },
-  [] => { Err(Basis.Empty) }
-};
-
-let rec last = match(items) => {
-  [] => { Err(Basis.Empty) },
-  [item] => { Ok(item) },
-  [_, ..rest] => { last(rest) }
+  toString(SubsetList.map(items, render))
 };
 
 let getItem = match(items) => {
   [head, ..rest] => { Some((head, rest)) },
   [] => { None }
 };
-
-let rec revAppend = match(left, right) => {
-  ([], right) => { right },
-  ([head, ..rest], right) => { revAppend(rest, [head, ..right]) }
-};
-
-let concat = SubsetList.concat;
-
-let rec app = match(items, f) => {
-  ([], _) => { void },
-  ([head, ..rest], f) => {
-    f(head);
-    app(rest, f)
-  }
-};
-
-let mapPartial = (items, f) => {
-  let rec loop = match(remaining, kept) => {
-    ([], kept) => { reverse(kept) },
-    ([head, ..rest], kept) => {
-      match(f(head)) {
-        Some(value) => { loop(rest, [value, ..kept]) },
-        None => { loop(rest, kept) }
-      }
-    }
-  };
-  loop(items, [])
-};
-
-let find = SubsetList.find;
 
 let rec findMap = match(items, f) => {
   ([], _) => { None },
@@ -157,21 +37,6 @@ let rec findMap = match(items, f) => {
       Some(value) => { Some(value) },
       None => { findMap(rest, f) }
     }
-  }
-};
-
-let partition = SubsetList.partition;
-
-let tabulate = (count: Real64.Real, f) => {
-  if (count < 0 || count % 1 != 0) {
-    Panic("Size: List.tabulate count must be a non-negative integer")
-  } else {
-    let rec loop = match(index, built) => {
-      (index, built) => {
-        if (index < 0) { built } else { loop(index - 1, [f(index), ..built]) }
-      }
-    };
-    loop(count - 1, [])
   }
 };
 

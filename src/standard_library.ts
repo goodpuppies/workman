@@ -4,7 +4,7 @@ import { posix } from "node:path";
 import { libraryJsSources, librarySources } from "./generated/assets.ts";
 import type { InferModuleOptions, InferResult, InitialImport } from "./infer.ts";
 import { analyzeModuleGraph, type StagedAnalysisOptions } from "./staged_analysis.ts";
-import { cloneTypeEnv } from "./types.ts";
+import { cloneTypeEnv, knownTypeInfos, markLibraryTypes } from "./types.ts";
 import { parseCompilerModule } from "./compiler_frontend.ts";
 import { type ModuleId, moduleId, type ModuleMap } from "./module_id.ts";
 import { BASIS_PROFILES, initialBasis } from "./initial_basis.ts";
@@ -85,14 +85,26 @@ async function loadStandardLibraryUncached(): Promise<InitialImport[]> {
 }
 
 /**
- * `std/` modules are opened as namespaces in every program. Host helper modules (`host/js/`, BD17)
- * and the SubsetML Basis (`subml-basis/`) are never opened as implicit namespaces. Selected Basis
- * values and types are projected through the library pervasive tables; other members require explicit imports
- * (`js.host("table")`, `"basis/won.wm"`), and `std/` builds on the Basis.
+ * `std/` modules and the public SubsetML Basis modules (`subml-basis/subset_*.wm`) are opened as
+ * namespaces in every program. A Basis module that a std module of the same name extends is
+ * opened through that std module instead (markdown/basis-authority-plan.md). The Basis's host
+ * adapters and the host helper modules (`host/js/`, BD17) are never opened implicitly.
  */
-function isAutoOpened(path: string): boolean {
-  return path.startsWith("std/");
+function isAutoOpened(
+  path: string,
+  sources: Readonly<Record<string, string>> = librarySources,
+): boolean {
+  if (path.startsWith("std/")) return true;
+  const basis = path.match(/^subml-basis\/subset_(\w+)\.wm$/);
+  if (!basis || INTERNAL_BASIS_MODULES.has(basis[1])) return false;
+  return !(`std/${basis[1]}.wm` in sources);
 }
+
+/** Basis modules that implement other Basis modules for a host, not a public interface. */
+const INTERNAL_BASIS_MODULES = new Set(["host", "text_host"]);
+
+/** Basis namespaces whose SML name isn't the capitalized file name. */
+const BASIS_NAMESPACE_NAMES: Readonly<Record<string, string>> = { os: "OS" };
 
 /**
  * Library modules inferred only for a program that imports one of them (`"pakman/…"`, `"testman/…"`), so other
@@ -288,6 +300,10 @@ async function analyzeLibraryModules(
     onTiming: libraryLoadObserver?.onTiming,
     afterStep: libraryLoadObserver?.afterStep,
   });
+  for (const module of modules) {
+    const result = results.get(moduleId(module.path));
+    if (result) markLibraryTypes(knownTypeInfos(result.typeEnv));
+  }
   return modules.map((module) => {
     const id = moduleId(module.path);
     return composeInitialStructure({
@@ -386,9 +402,14 @@ function libraryEmitName(module: { path: string; alias: string }): string {
 
 /**
  * Namespace alias of a library module, derived from its snake_case file name:
- * `std/list.wm` defines `List` and `std/word8_vector.wm` defines `Word8Vector`.
+ * `std/list.wm` defines `List`, `std/word8_vector.wm` defines `Word8Vector` and the Basis module
+ * `subml-basis/subset_string_cvt.wm` defines `StringCvt` (`subset_os.wm` is SML's `OS`).
  */
 export function libraryModuleAlias(path: string): string {
+  const basis = path.match(/^subml-basis\/subset_(\w+)\.wm$/);
+  if (basis && !INTERNAL_BASIS_MODULES.has(basis[1])) {
+    return BASIS_NAMESPACE_NAMES[basis[1]] ?? libraryModuleAlias(`${basis[1]}.wm`);
+  }
   return posix.basename(path, ".wm")
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
@@ -424,13 +445,14 @@ export async function discoverStandardModules(
   const byAlias = new Map<string, string>();
   for (const module of modules) {
     // Only auto-opened modules are bound by alias; import-only ones are named by their importer.
-    const existing = isAutoOpened(module.path) ? byAlias.get(module.alias) : undefined;
+    const opened = isAutoOpened(module.path, sources);
+    const existing = opened ? byAlias.get(module.alias) : undefined;
     if (existing) {
       throw new Error(
         `library modules ${existing} and ${module.path} both define namespace ${module.alias}`,
       );
     }
-    if (isAutoOpened(module.path)) byAlias.set(module.alias, module.path);
+    if (opened) byAlias.set(module.alias, module.path);
     for (const decl of module.module.decls) {
       if (decl.kind !== "JsImportDecl" || decl.target.kind !== "JsModule") continue;
       const { specifier } = decl.target;

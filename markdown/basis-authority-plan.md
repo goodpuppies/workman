@@ -33,6 +33,33 @@ A qualified name can mean two different things depending on imports:
 4. A conformance test enforces rule 2: no auto-opened std module may define a name its Basis
    module exports.
 
+## Status (2026-11-16)
+
+Steps 1–4 are done. Deviations from the table below, decided during the work:
+
+- `Option.app` became `Option.forEach` (§3 names), and `Option.valOf` was removed.
+- `ListPair` keeps `forEach`, `foldLeft`, `foldRight`, `all` and `exists` as additions; each
+  checks the lengths first and returns `Err(UnequalLengths)`, like the Basis `zip` and `map`.
+  The non-`Eq` forms that silently truncated, and the `Eq` duplicates, are gone.
+- The Basis's host adapters (`subset_host`, `subset_text_host`) stay import-only. Every other
+  Basis module is opened, including the helpers (`OptionValue`, `Source`, `WonParser`, …).
+- An unbound compiler-owned structure (`Text` in a `@no-prelude` module) now names its prelude
+  object `__wm_basis_Text`, as `Int32` already did.
+- Opening `Won` made `Won.Node = { path, value }` compete with user records in field-based
+  record inference (`.{ value = x } => …`, `x.value` on an unknown type), which searched every
+  registered record. Decided: a library record reachable only through a namespace no longer
+  takes part; it needs an annotation, its qualified constructor, or an unqualified import. The
+  program's own records, including those of namespace-imported user modules, still take part
+  (`fieldSelectableRecordTypes` in `src/types.ts`). `Carrier` and `Applicative` from
+  `std/monad.wm` are pervasive types (`LIBRARY_PERVASIVE_TYPES`), so a carrier literal
+  `.{ succeed, map, … }` still needs no import. A record pattern parameter with a nominal record annotation,
+  `(.{ via }: Monad.Carrier<…>) =>`, now takes its type from the annotation instead of a
+  field search.
+- Startup cost: none measurable (`wm check` of a one-liner, 1.3 s before and after).
+
+Not done: explicitly importing a std module that overlays a compiler structure
+(`from "std/int32.wm" import * as Int32`) still drops the compiler's members.
+
 ## Today
 
 This runs after the numeric rename in [numeric-names-plan.md](numeric-names-plan.md) (step 1

@@ -9,6 +9,7 @@ import {
   freshIntegerLiteral,
   instantiate,
   instantiateRecordFields,
+  fieldSelectableRecordTypes,
   knownTypeInfos,
   named,
   Real64Ty,
@@ -672,7 +673,7 @@ function recordPatternTarget(
 }
 
 function findRecordTypes(typeEnv: TypeEnv, names: string[]): TypeInfo[] {
-  return knownTypeInfos(typeEnv).filter((info) => {
+  return fieldSelectableRecordTypes(typeEnv).filter((info) => {
     if (!info.recordFields) return false;
     const fields = info.recordFields.map((field) => field.name);
     return names.every((name) => fields.includes(name));

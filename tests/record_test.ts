@@ -787,7 +787,7 @@ Deno.test("exported field requirements accept caller-owned nominal types and pre
       let result = Access.mapToken(session, (token) => { token ++ "!" });
       let main = () => {
         print(sessionToken ++ "/" ++ keptSession.did);
-        print(feedsToken + List.length(keptFeeds.posts));
+        print(feedsToken + Int32.toReal64(List.length(keptFeeds.posts)));
         print(result);
         print(Access.same(session))
       };
@@ -955,4 +955,15 @@ Deno.test("recursive field relationships merge without unfolding or losing recei
     type: "('a, 'a) -> 'a where 'a.next: 'a",
     vars: 1,
   });
+});
+
+Deno.test("records of the implicit library namespaces never make a field access ambiguous", async () => {
+  // `Won.Node` is `{ path, value }`; it is reachable only through the implicit `Won` namespace.
+  const result = await checkSource(`
+    record Cell = { value: Real64 };
+    let read = (.{ value = x }) => { x };
+    let get = (cell) => { cell.value };
+    let both = (read(Cell(1)), get(Cell(2)));
+  `);
+  expectBinding(result.env, "read", { type: "Cell -> Real64.Real", vars: 0 });
 });

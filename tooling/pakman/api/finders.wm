@@ -110,7 +110,7 @@ let githubTagCandidates = (repo, versionOf) => {
   fetchDocument(url ++ "/tags?per_page=100") :> Task.andThen((document) => {
     Document.items(Ok(document), decodeGithubTag) :> Result.mapErr(Document.problemText) :> Task.fromResult
   }) :> Task.andThen((items) => {
-    let selected = items :> List.mapPartial((tag: GithubTag) => {
+    let selected = items :> List.filterMap((tag: GithubTag) => {
       versionOf(tag.name) :> Option.map((version) => { (version, tag.sha) })
     });
     series(selected, (version, sha) => {
@@ -123,7 +123,7 @@ let githubTagCandidates = (repo, versionOf) => {
 };
 
 let hasAsset = (release: Release, name) => {
-  List.any(release.assets, (asset: ReleaseAsset) => { asset.name == name })
+  List.exists(release.assets, (asset: ReleaseAsset) => { asset.name == name })
 };
 let releaseChecksums = (release: Release) => {
   release.assets :> filterAll((asset: ReleaseAsset) => { asset.sha256 != "" })
@@ -163,14 +163,14 @@ let releaseCandidates = (options: ReleaseOptions) => {
   let candidate = (release: Release) => {
     options.versionOf(release.tag)
       :> Option.andThen((version) => {
-        let missingAsset = List.any(options.assets(version), (name) => { !hasAsset(release, name) });
+        let missingAsset = List.exists(options.assets(version), (name) => { !hasAsset(release, name) });
         if (options.accept(release) && !missingAsset) {
           options.ref(release, version)
             :> Option.map((ref) => { Candidate(version, release.published, options.channel, releaseChecksums(release), ref) })
         } else { None }
       })
   };
-  (releases: List<Release>) => { releases :> List.mapPartial(candidate) }
+  (releases: List<Release>) => { releases :> List.filterMap(candidate) }
 };
 
 -- Where `url` finally redirects to, and its Last-Modified date ("" if unknown):

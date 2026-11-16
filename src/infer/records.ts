@@ -9,6 +9,7 @@ import {
   fresh,
   instantiate,
   instantiateRecordFields,
+  fieldSelectableRecordTypes,
   knownTypeInfos,
   named,
   prune,
@@ -331,7 +332,7 @@ function inferRecordField(
     return { type: found.type, record: info };
   }
   if (target.tag === "var") {
-    const hasNominalLabel = knownTypeInfos(typeEnv).some((info) =>
+    const hasNominalLabel = fieldSelectableRecordTypes(typeEnv).some((info) =>
       info.recordFields?.some((item) => item.name === field)
     );
     if (hasNominalLabel && occurrence) {
@@ -520,7 +521,7 @@ function findRecordTypes(
   mode: "exact" | "contains",
 ): TypeInfo[] {
   const wanted = [...names].sort();
-  return knownTypeInfos(typeEnv).filter((info) => {
+  return fieldSelectableRecordTypes(typeEnv).filter((info) => {
     if (!info.recordFields) return false;
     const fields = info.recordFields.map((field) => field.name);
     if (mode === "contains") return wanted.every((name) => fields.includes(name));
@@ -531,7 +532,7 @@ function findRecordTypes(
 
 /** Records sharing the most field names, when they share at least half of the supplied ones. */
 function closestRecordTypes(typeEnv: TypeEnv, names: string[]): TypeInfo[] {
-  const scored = knownTypeInfos(typeEnv).flatMap((info) => {
+  const scored = fieldSelectableRecordTypes(typeEnv).flatMap((info) => {
     if (!info.recordFields) return [];
     const fields = info.recordFields.map((field) => field.name);
     const shared = names.filter((name) => fields.includes(name)).length;

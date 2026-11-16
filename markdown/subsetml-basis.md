@@ -144,6 +144,10 @@ program uses (or caching their interfaces) is needed before this is acceptable.
 
 ## Imports (2026-10-23)
 
+Superseded 2026-11-16 by [basis-authority-plan.md](basis-authority-plan.md): every public
+Basis module is now an implicit namespace under its SML name (`Won`, `StringCvt`, `OS`), and a
+std module of the same name extends the Basis module instead of redefining it.
+
 `std/` is preloaded; `subml-basis/` namespaces require imports such as `from "basis/won.wm"` (the file
 `subml-basis/subset_won.wm`). `"std/<file>.wm"` imports a std module explicitly. Both resolve in
 `libraryImport` (`src/host_modules.ts`) next to `js.host(...)`, before relative resolution. The

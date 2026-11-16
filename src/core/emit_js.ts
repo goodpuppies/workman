@@ -22,6 +22,7 @@ import {
   basisIntrinsicDescriptorBySemanticId,
   basisOperatorDescriptor,
   basisUnaryOperatorDescriptor,
+  BASIS_VALUES,
 } from "../basis_manifest.ts";
 import type { CompilerSemanticId } from "../compiler_semantics.ts";
 import { emitRuntimePrelude } from "./emit_prelude.ts";
@@ -58,6 +59,11 @@ export function emitCoreProgram(program: CoreProgram, options: CoreEmitOptions =
   const target = options.target ?? "executable";
   const standardIds = new Set(program.standardNamespaces?.map((item) => item.id) ?? []);
   const requiredStandardIds = collectRequiredStandardModules(program, standardIds);
+  emittedNamespaceNames = new Set(
+    (program.standardNamespaces ?? []).filter((namespace) =>
+      !namespace.importOnly && requiredStandardIds.has(namespace.id)
+    ).map((namespace) => namespace.publicName),
+  );
   const emittedOrder = program.order.filter((moduleId) =>
     !standardIds.has(moduleId) || requiredStandardIds.has(moduleId)
   );
@@ -2481,8 +2487,19 @@ function dynamicExportLocalRef(item: CoreDynamicExport, localName: string): stri
   return id(localName);
 }
 
+/** Library namespaces the program being emitted binds at top level (`List`, `Int32`, …). */
+let emittedNamespaceNames: ReadonlySet<string> = new Set();
+
 function valueRefName(name: string, bindingId: BindingId | StructureId | undefined): string {
-  return bindingId === undefined ? id(name) : bindingName(name, bindingId);
+  if (bindingId !== undefined) return bindingName(name, bindingId);
+  if (emittedNamespaceNames.has(name)) return id(name);
+  // A compiler-owned structure (`Text`, for `Text.of`) reached without a library namespace in
+  // scope, as in a `@no-prelude` module, is its prelude object.
+  const prelude = `__wm_basis_${name}`;
+  const hostStructure = BASIS_VALUES.some((descriptor) =>
+    descriptor.runtimeName.startsWith(`${prelude}.`)
+  );
+  return hostStructure ? prelude : id(name);
 }
 
 function pinnedPatternValueRef(pattern: Extract<CorePattern, { kind: "CorePPinned" }>): string {

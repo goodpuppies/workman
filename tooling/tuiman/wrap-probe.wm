@@ -1,7 +1,7 @@
 from "./draw.wm" import * as Draw;
 
 let show = (rows) => {
-  rows :> List.foldLeft("", (acc, row) => {
+  rows :> List.foldLeft("", (row, acc) => {
     if (acc == "") { row } else { `${acc}|${row}` }
   })
 };

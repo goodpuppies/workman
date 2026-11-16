@@ -210,6 +210,28 @@ export function knownTypeInfos(typeEnv: TypeEnv): TypeInfo[] {
   return [...infos.values()];
 }
 
+const libraryTypeIds = new Set<number>();
+
+/** Records the types the shipped library declares (`std/`, `subml-basis/`, `host/`). */
+export function markLibraryTypes(infos: Iterable<TypeInfo>): void {
+  for (const info of infos) libraryTypeIds.add(info.id);
+}
+
+/**
+ * Record types a field name can select. A library record reachable only through a namespace
+ * (`Won.Node`) takes part only when its name is in scope unqualified, so the implicit library
+ * namespaces never make an unrelated field access ambiguous; it is otherwise chosen by
+ * annotation or by its qualified constructor. Records of the program's own modules always
+ * take part.
+ */
+export function fieldSelectableRecordTypes(typeEnv: TypeEnv): TypeInfo[] {
+  const unqualified = new Set<number>();
+  for (const [name, info] of typeEnv) if (!name.includes(".")) unqualified.add(info.id);
+  return knownTypeInfos(typeEnv).filter((info) =>
+    info.recordFields && (!libraryTypeIds.has(info.id) || unqualified.has(info.id))
+  );
+}
+
 export function cloneTypeEnv(typeEnv: TypeEnv): TypeEnv {
   const cloned = new Map(typeEnv);
   const registry = typeRegistries.get(typeEnv);
