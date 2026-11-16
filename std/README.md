@@ -12,6 +12,13 @@ The SubsetML Basis owns its names. A std module named like a Basis module (`list
 `tests/basis_conformance_test.ts` enforces this. Default pervasives project the shared Basis
 where it provides the operation.
 
+Implicit namespaces and explicit imports expose the same compiler and source members. For example,
+`from "std/int32.wm" import * as I;` retains `I.toReal64`, `I.checkedAdd` and the Basis parsers.
+Numeric types use sized names (`Int32`, `Int64`, `Real32`, `Real64`, `Word8`–`Word64`); bare names
+in type positions resolve to their module's `Self` type. Integer literals default to `Int32`
+when in range, while fractional literals use `Real64`. See [numeric literals](../docs/numbers.md)
+for contextual typing, GPU defaults and JS boundaries.
+
 `string.wm` adds `String.toList: String -> List<String>`, also projected as the
 pervasive `toList`. It composes shared Basis byte conversions and returns `[]` on any
 conversion error, including non-byte input. It uses no direct JS FFI.

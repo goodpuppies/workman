@@ -4,13 +4,16 @@ The repository includes a local content mapper for TypeScript **7.1.0-beta**. It
 project import `.wm` modules with types inferred by Workman, without generating intermediate files
 on disk.
 
-The first implementation supports `Real64`, `Bool`, `String`, `Void`, tuples, structural records,
+The first implementation supports `Int32`, `Real64`, `Bool`, `String`, `Void`, tuples, structural records,
 functions, currying, and unconstrained polymorphic functions. Types come from wm's semantic
 analysis; TypeScript does not infer them from a translated function body. wm syntax and type errors
 are reported through the mapper, retaining independently valid declarations. Hover, signature help,
 and emitted declarations preserve exported names and available source parameter names, including
 tuple parameters and curried stages. Primed names use readable, collision-free TS spellings where a
 local TS identifier is required.
+
+Both `Int32` and `Real64` project to TypeScript `number`. Workman's integer range, overflow checks,
+and distinction between already typed integer and real values still apply in WM source.
 
 ## Try the example
 

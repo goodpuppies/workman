@@ -169,7 +169,7 @@ body can omit braces:
 let square = x => x * x;
 let addCurried = x => y => x + y;
 let mapped = map([1, 2, 3], x => x * x);
-let typed = x: Number => x * x;
+let typed = x: Real64 => x * x;
 ```
 
 A bare parameter may also be a single delimited pattern, such as
@@ -186,7 +186,7 @@ do not replace declaration semicolons.
 An expression body extends through the following expression, including nested
 lambdas and whitespace application, until its enclosing delimiter or semicolon.
 For example, `apply x => x + 1` means `apply(x => x + 1)`. Use parentheses when a
-lambda must be grouped as an operand. Bare `x: Number => ...` annotates the
+lambda must be grouped as an operand. Bare `x: Real64 => ...` annotates the
 parameter; `(x): Real64 => ...` annotates the function's return.
 
 Use `_` as a whole argument in a parenthesized call to create a function:
@@ -614,8 +614,8 @@ let getFirst = match(nested) => {
 
 ### Literal Patterns
 
-Real64, string, boolean, and `void` patterns are supported. Character literals like `'a'` are shown
-as intended syntax below, but they are **not supported yet** in current `wm`.
+Integer, real, character, string, boolean, and `void` patterns are supported. Integer patterns
+take their numeric type from context, just as literal expressions do.
 
 ```workman
 let isZero = match(n) => {
@@ -623,12 +623,11 @@ let isZero = match(n) => {
   _ => { false }
 };
 
--- Planned only:
--- let checkChar = match(c) => {
---   'a' => { "it's an a" },
---   'b' => { "it's a b" },
---   _ => { "something else" }
--- };
+let checkChar = match(c) => {
+  'a' => { "it's an a" },
+  'b' => { "it's a b" },
+  _ => { "something else" }
+};
 ```
 
 ### First-Class Match
@@ -1291,7 +1290,6 @@ These features are not supported yet or are only partially supported:
 - **Opaque type declarations:** `type Handle;` is planned/design syntax, not current syntax.
 - **Match guards:** `pattern when cond => ...` is listed as intended syntax, but guards are not
   implemented.
-- **Character literals:** use strings for now; `'a'` is not implemented.
 - **Early return:** there is no `return`; blocks return their final expression.
 - **Loops:** use recursion and lists for now.
 - **Mutation/refs:** no mutable variables or SML refs yet.

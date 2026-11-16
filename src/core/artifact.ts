@@ -25,6 +25,7 @@ import {
 } from "./ids.ts";
 import type { MaterializedGpuArtifacts, VisualShaderArtifactV1 } from "../gpu_artifact.ts";
 import { type ModuleId, moduleId, type ModuleMap } from "../module_id.ts";
+import { basisRuntimeExports } from "../basis.ts";
 
 export type CoreConstructorInfo = {
   id: CtorId;
@@ -40,6 +41,8 @@ export type CoreConstructorInfo = {
 
 export type CoreDynamicExport = {
   name: string;
+  /** Initial-basis implementation when this export has no source declaration. */
+  runtimeName?: string;
   bindingId?: BindingId;
   ctorId?: CtorId;
   structureId?: StructureId;
@@ -91,7 +94,7 @@ export function coreProgramFromAnalysis(
   },
 ): CoreProgram {
   const ids = elaboration?.ids ?? new CoreIdAllocator();
-  const bindingFacts = elaboration?.bindings ?? resolveProgramBindingFacts(graph, ids);
+  const bindingFacts = elaboration?.bindings ?? resolveProgramBindingFacts(graph, ids, results);
   const nominalFacts = elaboration?.nominalFacts ?? resolveProgramNominalFacts(graph, results, ids);
   const gpuOnlyBindings = elaboration?.gpuOnlyBindings ??
     gpuOnlyBindingIds(graph.order.map((id) => ({
@@ -145,6 +148,10 @@ export function coreProgramFromAnalysis(
     modules.get(id)!.dynamicExports = dynamicExports(
       modules.get(id)!.module,
       (target) => modules.get(target)?.dynamicExports ?? [],
+      basisRuntimeExports(results.get(id)!.exportedStructure.valEnv).map((item) => ({
+        ...item,
+        bindingId: bindingFacts.get(id)!.exports.get(item.name),
+      })),
     );
   }
   return {
@@ -226,8 +233,9 @@ function collectShaderArtifacts(
 export function dynamicExports(
   module: CoreModule,
   exportsOf: (target: ModuleId) => CoreDynamicExport[] = () => [],
+  initialExports: CoreDynamicExport[] = [],
 ): CoreDynamicExport[] {
-  const exports: CoreDynamicExport[] = [];
+  const exports: CoreDynamicExport[] = [...initialExports];
   for (const decl of module.decls) {
     if (decl.kind === "CoreImport" && decl.exported && decl.target) {
       const imported = exportsOf(decl.target);

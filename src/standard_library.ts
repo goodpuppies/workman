@@ -212,7 +212,10 @@ export async function withStandardLibrary(
 }
 
 export function usesStandardLibrary(graph: ModuleGraph): boolean {
-  return ![...graph.nodes.values()].every((node) => node.module.prelude === "none");
+  return [...graph.nodes.values()].some((node) =>
+    node.module.prelude !== "none" ||
+    node.imports.some((edge) => libraryImport(edge.specifier) !== undefined)
+  );
 }
 
 /** The synchronous half of `withStandardLibrary`, for callers that already hold the library. */

@@ -149,12 +149,12 @@ explicit offsets. No permanent keepalive array or fixed-size string ring is used
 
 The 64-bit types carry JavaScript bigints. Use `Int64.fromReal64`,
 `Int64.fromString`, `Int64.toReal64`, `Int64.toString`, or the existing `Word64`
-operations. Number conversions reject inexact values. Constants such as
+operations. Conversions from `Real64` reject inexact values. Constants such as
 `INVALID_SOCKET` also preserve every bit. Wider C integers are unsupported.
 
 Calls pass existing `Int64` and `Word64` values directly as bigints, including
 64-bit results. CFFI does not implicitly cast a `Real64` to these types; use an
-explicit conversion when the value comes from a Number-based API.
+explicit conversion when the value comes from a `Real64` API.
 
 Known named C imports called with literal tuple arguments use fixed-argument
 JavaScript entry points, avoiding the temporary WM argument tuple. Argument and
@@ -173,8 +173,8 @@ Ordinary integer literals take their type from reflected parameters and aggregat
 fields. For example, `calloc(1, 1024)` and `htons(8080)` select the exact ABI types
 without explicit conversions. See [numeric literals](numbers.md) for ranges and defaults.
 
-Convert ordinary byte counts to `Int32` when a C function expects `int`, and use
-`Int32.toReal64` when a returned C integer is needed for Number-based pointer byte
+Convert `Real64` byte counts to `Int32` when a C function expects `int`, and use
+`Int32.toReal64` when a returned C integer is needed for `Real64` pointer byte
 offsets. Unsigned word conversions retain the existing standard library semantics.
 
 ## Windows HTTP example

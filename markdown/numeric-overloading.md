@@ -1,7 +1,9 @@
 # Numeric overloading with one literal spelling
 
 > **Renamed (2026-11-16):** `Number` is now `Real64.Real` and `I32` is `Int32.Int`; see
-> [numeric-names-plan.md](numeric-names-plan.md), which also plans the literal default.
+> [numeric-names-plan.md](numeric-names-plan.md). Integer literals now default to `Int32` when
+> in range, with the documented GPU and JS-boundary rules. The older `Number` default below is
+> historical; [docs/numbers.md](../docs/numbers.md) describes current behavior.
 
 Status: literal slice implemented 2026-10-30; operator slice remains next.
 

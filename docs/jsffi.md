@@ -5,6 +5,11 @@ FFI surface that feels close to JavaScript while keeping the Workman core ML-sha
 
 This document describes the current user-facing FFI.
 
+TypeScript `number` reflects as `Real64`. An existing `Int32` value can be passed to a JS number
+parameter, and `Int32` receivers support JavaScript Number methods. Returned numbers remain
+`Real64`; ordinary WM calls do not implicitly convert between integer and real values. See
+[numeric literals](numbers.md) for contextual typing and declaration-level defaults.
+
 ## Import Forms
 
 Import from a JavaScript global object:

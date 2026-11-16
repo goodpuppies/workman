@@ -3,6 +3,11 @@
 > **Superseded naming (2026-11-16):** the type is now `Int32.Int`, written `Int32`, and SubsetML's
 > `Int` became `SubsetInt32`; see [numeric-names-plan.md](numeric-names-plan.md). The range,
 > operator and runtime decisions below still hold.
+>
+> **Superseded literal default (2026-11-16):** undecided integer literals in range now default to
+> `Int32`, rather than `Number`. The literal domain also includes sized words and `Int64` when
+> context selects them. See [docs/numbers.md](../docs/numbers.md) for the current rules; the
+> original default and parser contracts below are historical.
 
 Status: decided 2026-10-23; steps 1–5 in wm-mini, step 6 in SubsetML (`make test` passes). Background:
 [docs/integer-investigation.md](../docs/integer-investigation.md) and SubsetML's

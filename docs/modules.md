@@ -129,6 +129,11 @@ The [default pervasives](pervasives.md) include data-first list and option funct
 the shared SubsetML Basis, plus selected WM extras. In particular, bare `length` returns `Int32`,
 both bare folds use element-first callbacks, and bare `concat` flattens lists.
 
+Explicit imports expose the same complete namespace as implicit lookup, including compiler-owned
+members. For example, `from "std/int32.wm" import * as I;` provides both `I.parseDecimal` from the
+portable Basis and `I.toReal64` from the compiler. Named imports and re-exports preserve those
+members too. `-- @no-prelude` omits implicit library bindings but still permits explicit imports.
+
 ## Interface artifact
 
 The per-module, per-project-snapshot `ModuleInterface` is the sole semantic API for tooling: it

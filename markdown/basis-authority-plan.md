@@ -1,6 +1,6 @@
 # The SubsetML Basis owns its names
 
-**Status:** planned 2026-11-16. Extends [subsetml-basis.md](subsetml-basis.md), whose
+**Status:** implemented 2026-11-16 (`9fb7015`). Extends [subsetml-basis.md](subsetml-basis.md), whose
 "transitional duplicates" this removes. API shape questions are answered by SubsetML's
 [`docs/basis-conventions.md`](../subm/SubsetML/docs/basis-conventions.md).
 
@@ -57,8 +57,13 @@ Steps 1–4 are done. Deviations from the table below, decided during the work:
   field search.
 - Startup cost: none measurable (`wm check` of a one-liner, 1.3 s before and after).
 
-Not done: explicitly importing a std module that overlays a compiler structure
-(`from "std/int32.wm" import * as Int32`) still drops the compiler's members.
+Follow-up completed: explicit imports of a library module that overlays a compiler structure now
+retain compiler-owned runtime exports as well as source definitions. This covers namespace, named,
+and open imports, re-exports, and explicit imports under `-- @no-prelude`. The type-checker already
+exposed these members; the missing part was their runtime exports and binding identities.
+
+The step list below is the original migration plan. Numeric naming and literal defaulting are
+also complete; see [numeric-names-plan.md](numeric-names-plan.md).
 
 ## Today
 

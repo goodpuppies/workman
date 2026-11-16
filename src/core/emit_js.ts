@@ -18,11 +18,11 @@ import {
   emitCtorValue,
 } from "./ctor_layout.ts";
 import {
+  BASIS_VALUES,
   basisIntrinsicDescriptor,
   basisIntrinsicDescriptorBySemanticId,
   basisOperatorDescriptor,
   basisUnaryOperatorDescriptor,
-  BASIS_VALUES,
 } from "../basis_manifest.ts";
 import type { CompilerSemanticId } from "../compiler_semantics.ts";
 import { emitRuntimePrelude } from "./emit_prelude.ts";
@@ -2477,7 +2477,7 @@ function ctorPayloadParts(
 }
 
 function emitExportRef(item: CoreDynamicExport): string {
-  return dynamicExportLocalRef(item, item.name);
+  return item.runtimeName ?? dynamicExportLocalRef(item, item.name);
 }
 
 function dynamicExportLocalRef(item: CoreDynamicExport, localName: string): string {

@@ -136,7 +136,7 @@ export async function compile(
   };
   const program = await withStandardLibrary(graph, new Map([[id, result]]));
   const ids = new CompilerIdAllocator();
-  const bindings = resolveProgramBindingFacts(program.graph, ids);
+  const bindings = resolveProgramBindingFacts(program.graph, ids, program.results);
   assertCaptureContracts(bindings.values());
   const nominalFacts = resolveProgramNominalFacts(program.graph, program.results, ids);
   const fragmentSelections = resolveGpuFragmentSelections([{

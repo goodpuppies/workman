@@ -1,5 +1,29 @@
-import { BASIS_TYPES } from "./basis_manifest.ts";
+import { BASIS_INTRINSICS, BASIS_TYPES, BASIS_VALUES } from "./basis_manifest.ts";
 import type { TypeExpr } from "./ast.ts";
+import { basisValueId } from "./compiler_semantics.ts";
+import type { Scheme } from "./types.ts";
+import type { ValueId } from "./ids.ts";
+
+const runtimeValues: ReadonlyMap<ValueId, string> = new Map(
+  [...BASIS_VALUES, ...BASIS_INTRINSICS].flatMap((value) =>
+    value.runtimeName ? [[basisValueId(value.exportName), value.runtimeName] as const] : []
+  ),
+);
+
+/** Compiler-owned exports added to a library's public environment without source declarations. */
+export function basisRuntimeExports(values: ReadonlyMap<string, Scheme>): {
+  name: string;
+  runtimeName: string;
+}[] {
+  return [...values].flatMap(([name, scheme]) => {
+    const runtimeName = scheme.valueId !== undefined
+      ? runtimeValues.get(scheme.valueId)
+      : scheme.basis && scheme.status === "constructor"
+      ? basisCtorJsName(basisCtorId(name) ?? NaN)
+      : undefined;
+    return runtimeName ? [{ name, runtimeName }] : [];
+  });
+}
 
 export type BasisCtorDecl = {
   name: string;

@@ -1,9 +1,17 @@
 # SML-shaped numeric type names
 
-**Status:** planned 2026-11-16. Supersedes the naming decision in [i32-plan.md](i32-plan.md)
+**Status:** implemented 2026-11-16. Supersedes the naming decision in [i32-plan.md](i32-plan.md)
 (`I32`, and renaming SubsetML's `Int` to `I32`) and the `Number` default in
 [numeric-overloading.md](numeric-overloading.md). Operator rules, ranges and runtime
 representations are unchanged.
+
+Completed: the `Self` lookup rule (`f5b89bc`), numeric rename (`5aab97a`), Basis-authority migration
+(`9fb7015`), and integer-literal defaulting (`1bafa71`). User-facing numeric and Basis documentation
+has been updated. The problem description and step list below record the original migration.
+
+Remaining follow-ups are optional removal of translator literal ascriptions and the explicitly
+deferred infix-overloading work. JS boundaries accept existing `Int32` values as numbers; ordinary
+WM values do not widen. Undecided integer literals in GPU code retain the `Real64` default.
 
 ## Problem
 
@@ -60,7 +68,7 @@ The existing rule that a bare namespace name in an expression means `Lib.carrier
   `Self` with parameters takes them as written (`Lib<a>` is `Lib.Self<a>`).
 
 `Self` is an ordinary type declaration in the module, usually an alias: `std/int32.wm` declares
-`type Self = Int;`. Nothing in the Basis needs to know about it, so SubsetML keeps emitting
+`type Self = Int32.Int;`. Nothing in the Basis needs to know about it, so SubsetML keeps emitting
 `Int32.Int`. Ordinary types win, so a user's own type of the same name, or an existing generic
 such as `Option<a>`, is unaffected. `Self` and `carrier` are separate because a module such as
 `Result` can want both.
@@ -91,8 +99,9 @@ Diagnostics, hovers and the REPL print the type's own name (`Int32.Int`).
 ### 2. Integer literals default to `Int32`
 
 An integer literal whose type nothing decides becomes `Int32` instead of `Real64`. Decimal-point and
-exponent literals stay `Real64`. Literals outside the `Int32` range keep their current treatment
-(`Real64` only), so `let big = 10000000000` still works.
+exponent literals stay `Real64`. Literals outside the `Int32` range default to `Real64`, so
+`let big = 10000000000` still works. Context can select another sized numeric type when the
+literal fits that type's range.
 
 Consequences to check:
 

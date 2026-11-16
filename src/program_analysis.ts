@@ -61,7 +61,7 @@ export function buildCoreProgramAnalysis(
   results: ModuleMap<InferResult>,
 ): CoreProgramAnalysis {
   const ids = new CompilerIdAllocator();
-  const bindings = resolveProgramBindingFacts(graph, ids);
+  const bindings = resolveProgramBindingFacts(graph, ids, results);
   assertCaptureContracts(bindings.values());
   const nominalFacts = resolveProgramNominalFacts(graph, results, ids);
   const sharedCore = new Map(
@@ -195,7 +195,7 @@ export function buildPartialProjectSnapshot(
   const factsGraph = extended.graph;
   const factsResults = extended.results;
   const ids = new CompilerIdAllocator();
-  const bindings = resolveProgramBindingFacts(factsGraph, ids);
+  const bindings = resolveProgramBindingFacts(factsGraph, ids, factsResults);
   const nominalFacts = resolveProgramNominalFacts(factsGraph, factsResults, ids);
   const patternFacts = resolveProgramPatternFacts(
     factsGraph,

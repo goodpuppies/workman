@@ -45,13 +45,13 @@ form.
 | `if a then b else c`                     | `if (a) { b } else { c }`                                  | Workman always requires `else` |
 | `let dec in e end`                       | `{ dec; e }`                                                | Workman blocks may also mix declarations and expressions |
 | expression-valued function body          | final block expression                                      | Neither language needs an early `return` |
-| `(x, y)` / `int * string`                | `(x, y)` / `(Real64, String)`                               | |
+| `(x, y)` / `int * string`                | `(x, y)` / `(Int32, String)`                               | |
 | `t1 -> t2`                               | `T1 -> T2`                                                  | Function type |
 | expression constraint `(e : t)`          | `(e : T)`                                                   | A constraint checks; it does not cast |
 | typed pattern `(p : t)`                  | `(p : T)`                                                   | The pattern and written type must agree |
 | `datatype a = A of b and b = B of a`     | `type A = AValue<B> and B = BValue<A>;`                     | Mutually recursive datatype group |
-| `type a = int and b = string`            | `type A = Real64 and B = String;`                           | Simultaneous non-recursive aliases |
-| `datatype t = A \| B of int`             | `type T = A \| B<Real64>;`                                  | Constructor payloads remain one logical argument |
+| `type a = int and b = string`            | `type A = Int32 and B = String;`                           | Simultaneous non-recursive aliases |
+| `datatype t = A \| B of int`             | `type T = A \| B<Int32>;`                                  | Constructor payloads remain one logical argument |
 | `datatype t = Only`                      | `type T = \| Only;`                                         | Leading `\|` distinguishes a nominal datatype from an alias |
 | `type t = u`                             | `type T = U;`                                               | Type abbreviation/alias; no fresh nominal identity |
 | `type 'a t = 'a option`                  | `type T<A> = Option<A>;`                                    | |
@@ -62,7 +62,10 @@ form.
 | `()` / `unit`                            | `void` / `Void`                                             | |
 | `true`, `false` / `bool`                 | `true`, `false` / `Bool`                                    | |
 | string literal / `string`                | string literal / `String`                                   | Workman also has backtick multiline strings |
-| integer or real literal                  | number literal / `Real64`                                   | Workman has one JS-oriented numeric type |
+| integer literal / `int` | integer literal / `Int32` | Context may select another numeric type; undecided literals in range default to `Int32` |
+| real literal / `real` | decimal-point or exponent literal / `Real64` | WM uses IEEE 754 doubles |
+| `0w1` / `Word8.word` | `(1: Word8)` | WM uses ordinary integer literals for words; context selects the width |
+| `#"a"` / `char` | `'a'` / `Char` | WM literals contain one Unicode scalar; portable Basis byte operations validate their narrower domain |
 | value annotation `val x : t = e`         | `let x: T = e;`                                             | Lambda parameters and results can also be annotated |
 | wildcard pattern `_`                     | `_`                                                         | |
 | tuple, constructor, and literal patterns | corresponding Workman pattern                              | Match-arm bare names are pinned; use `Var(x)` for a fresh binder |
@@ -91,8 +94,6 @@ form.
 | `while ... do ...` | Not implemented; use recursion |
 | layered/as patterns `x as p` | No direct syntax; the common “whole value plus components” use case can be expressed with an outer binding or match-function parameter |
 | flexible record patterns `{x, ...}` and structural record types | No direct equivalent; use a nominal record, tuple, list, or datatype according to the data shape |
-| character literals and the `char` type | Intentionally omitted; use one-character `String` values |
-| word literals/types and SML's distinct `int`/`real` numeric types | Not implemented; Workman uses `Real64` |
 | user symbolic identifiers, `op`, `infix`, `infixr`, `nonfix` | Not implemented; Workman has a fixed operator table |
 | explicit equality variables such as `''a` | Intentionally omitted |
 | `local dec1 in dec2 end` | No exact declaration form; use lexical blocks where applicable |
@@ -105,9 +106,17 @@ form.
 | functor declarations and applications | Not implemented |
 | structure/type sharing constraints | Not implemented |
 
-Arrays, vectors, I/O, and most other library facilities are Basis Library features rather than
-grammar forms. They are also absent unless a Workman library or the JavaScript FFI supplies an
-alternative.
+Arrays, vectors, I/O, and other library facilities are Basis Library features rather than
+grammar forms. Workman uses the portable SubsetML Basis and WM std extensions; their APIs follow
+[the Basis conventions](../subm/SubsetML/docs/basis-conventions.md), rather than promising the
+entire Standard ML Basis Library unchanged.
+
+Numeric annotations use sized modules: `Int32` means `Int32.Int`, and `Real64` means
+`Real64.Real`, through the ordinary `Self` lookup rule. Integers and reals remain distinct.
+Integer defaults are chosen at top-level declaration boundaries; larger literals and undecided
+GPU literals default to `Real64`, and context can select words or `Int64`. JS number parameters
+accept existing `Int32` values, but WM functions do not implicitly widen them. See
+[numeric literals](numbers.md) for ranges and operator limits.
 
 ## Values And Bindings
 
@@ -161,7 +170,7 @@ let answer = 1 + 1;
 ```
 
 ```text
-answer = 2 : Real64.Real
+answer = 2 : Int32.Int
 ```
 
 A bare top-level expression is treated like SML's implicit `it` binding:
@@ -171,7 +180,7 @@ A bare top-level expression is treated like SML's implicit `it` binding:
 ```
 
 ```text
-it = 2 : Real64.Real
+it = 2 : Int32.Int
 ```
 
 Pattern declarations report every introduced binder, and datatype and record declarations report
@@ -292,7 +301,7 @@ Workman:
 ```wm
 type Color = Red | Green | Blue;
 type Option<T> = None | Some<T>;
-type Tree = Leaf | Node<Real64, Tree, Tree>;
+type Tree = Leaf | Node<Int32, Tree, Tree>;
 ```
 
 ### Alias Versus One-Constructor Datatype
@@ -359,7 +368,7 @@ int list
 Workman writes type application with angle brackets:
 
 ```wm
-List<Real64>
+List<Int32>
 Option<A>
 ```
 
@@ -375,7 +384,7 @@ Type abbreviations can also be declared simultaneously:
 
 ```wm
 type Name = String
-and Count = Real64;
+and Count = Int32;
 ```
 
 ## Function Types

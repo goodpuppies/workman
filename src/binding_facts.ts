@@ -14,6 +14,8 @@ import type { ModuleId, ModuleMap } from "./module_id.ts";
 import type { AstNode } from "./source.ts";
 import type { FrontendDiagnostic } from "./diagnostic_model.ts";
 import { analyzeClosureCaptures, type LexicalCapture } from "./closure_captures.ts";
+import { basisRuntimeExports } from "./basis.ts";
+import type { InferResult } from "./infer.ts";
 
 export type BindingScopeSnapshot = Readonly<{
   values: ReadonlyMap<string, BindingId>;
@@ -77,6 +79,7 @@ type StructureBinding = {
 export function resolveProgramBindingFacts(
   graph: ModuleGraph,
   ids: CompilerIdAllocator,
+  analyses?: ReadonlyMap<ModuleId, InferResult>,
 ): ModuleMap<BindingFacts> {
   const results = new Map<ModuleId, BindingFacts>();
   for (const id of graph.order) {
@@ -87,7 +90,12 @@ export function resolveProgramBindingFacts(
       clause: edge.clause,
       facts: results.get(edge.target),
     }));
-    results.set(id, resolveModuleBindingFacts(node.module, ids, imports));
+    const facts = resolveModuleBindingFacts(node.module, ids, imports);
+    const environment = analyses?.get(id)?.exportedStructure.valEnv;
+    for (const { name } of environment ? basisRuntimeExports(environment) : []) {
+      if (!facts.exports.has(name)) facts.exports.set(name, ids.binding());
+    }
+    results.set(id, facts);
   }
   return results;
 }

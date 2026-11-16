@@ -108,10 +108,9 @@ The current rounding helpers return `Result<Real64, Basis.Error>`, report NaN as
 `Err(Basis.Domain)`, and panic on infinity. `print` remains available separately
 with its existing generic display and newline behavior.
 
-The older preloaded `List` namespace still contains some transitional std APIs:
-`List.length` returns `Real64`, and its `List.foldLeft` callback is accumulator-first.
-The new bare functions use the shared Basis API instead. To name that same owner
-explicitly, import it:
+The implicit `List` namespace extends the shared Basis. `List.length` and bare `length`
+both return `Int32`, and `List.foldLeft` and bare `foldLeft` both pass `(element, accumulator)`
+to their callbacks. Explicit imports retain the same operations; choose an alias when useful:
 
 ```wm
 from "basis/list.wm" import * as Lists;
@@ -121,5 +120,6 @@ let count: Int32 = Lists.length([1, 2]);
 Local declarations, parameters and explicit imports shadow pervasive values under
 the ordinary scope rules. Pervasives do not become exports of every module.
 `-- @no-prelude` selects the kernel profile and omits these library projections;
-its existing `print` binding remains available. Other Basis operations and whole
-`Subset*` namespaces are not implicitly opened.
+its existing `print` binding remains available. Public Basis modules are available as implicit
+namespaces such as `Char`, `OS` and `StringCvt`; only the selected pervasives are unqualified.
+Host-adapter modules remain import-only. Explicit library imports also work under `-- @no-prelude`.
