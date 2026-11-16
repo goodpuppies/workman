@@ -1,6 +1,8 @@
 # 0.8.0 release plan
 
-Status: 2026-11-16, planning. Nothing is implemented, tagged or published for 0.8.0.
+Status: 2026-11-16, in progress. Done: 1 (`viaErr`), 3 (missing counterparts). Step 8 is under
+way: the [gap audit](subml-gap-audit.md) records what porting frontend-v2 to SML added. Nothing
+is tagged or published.
 
 0.8.0 is a minor release with breaking API changes. It ships the numeric work since 0.7.0
 (`Int32`/`Real64`/`Real32` names, Basis-owned names, `Int32` literal default), extends the
