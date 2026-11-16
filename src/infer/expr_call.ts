@@ -1,6 +1,6 @@
 import { callInvocationPlan, type InvocationPlan } from "../pipe_elaboration.ts";
 import { FrontendDiagnosticError } from "../diagnostic_model.ts";
-import type { Expr } from "../ast.ts";
+import { type Expr, pathOf } from "../ast.ts";
 import {
   addJsConstraint,
   fn,
@@ -9,9 +9,9 @@ import {
   instantiateRecordFields,
   JsBoundaryError,
   named,
-  Real64Ty,
   prune,
   quoteType,
+  Real64Ty,
   show,
   tuple,
   type Ty,
@@ -33,6 +33,7 @@ import { callArg } from "./shared.ts";
 import { basisTypeIsHostOwned } from "../basis_manifest.ts";
 import type { InferContext } from "./context.ts";
 import { inferExpr } from "./expr.ts";
+import { lookupLongValue } from "./environment.ts";
 import {
   recordConsumedFfiUse,
   recordExpectedExprType,
@@ -106,7 +107,7 @@ export function inferApplication(invocation: InvocationPlan, context: InferConte
     // Establish earlier arguments before checking later callbacks. The final
     // whole-application constraint still owns the authored collision diagnostic.
     if (index < args.length - 1 && expectedArgs[index]) {
-      const actual = calleeExpr.kind === "Var" && env.get(calleeExpr.name)?.jsImport
+      const actual = isJsImportCallee(calleeExpr, context)
         ? jsImportActualArg(expectedArgs[index]!, argumentType, typeEnv)
         : argumentType;
       const parameterSource = sourceForTypedExpr(calleeExpr, callee, provenance).fnParams?.[0];
@@ -191,7 +192,7 @@ export function inferApplication(invocation: InvocationPlan, context: InferConte
     const argExpr = args.length === 1 ? args[0] : expr;
     const calleeRelated = callCalleeRelated(calleeExpr, calleeFn);
     const callDepth = maxCallDepth([...calleeRelated, ...calleeProvenance]) + 1;
-    const isJsImport = calleeExpr.kind === "Var" && env.get(calleeExpr.name)?.jsImport;
+    const isJsImport = isJsImportCallee(calleeExpr, context);
     const expectedArg = calleeFn.params[0];
     let jsBoundaryVar = false;
     const actualArg = isJsImport
@@ -392,6 +393,19 @@ export function ffiGetResultTy(typeEnv: TypeEnv, value: Ty): Ty {
   return named(result, [value, named(jsError)]);
 }
 
+function isPrim(type: Ty, name: string): boolean {
+  return type.tag === "prim" && type.name === name;
+}
+
+/** A call to a JS import, named directly (`max`) or through its namespace (`Raylib.H.DrawRectangle`). */
+function isJsImportCallee(callee: Expr, context: InferContext): boolean {
+  if (callee.kind !== "Var") return false;
+  if (context.env.get(callee.name)?.jsImport) return true;
+  const path = pathOf(callee);
+  return path.qualifiers.length > 0 && context.strEnv.has(path.qualifiers[0]) &&
+    !!lookupLongValue(context.strEnv, path)?.jsImport;
+}
+
 function jsImportActualArg(
   expected: Ty,
   actual: Ty,
@@ -406,6 +420,11 @@ function jsImportActualArg(
   if (actualType.tag === "var" && actualType.numeric && isJsValueType(expectedType, typeEnv)) {
     unify(actualType, Real64Ty);
     actualType = prune(actualType);
+  }
+  // An Int32 is a JS number at runtime, so it may go wherever JS takes a number. Only values
+  // flowing into JS widen; a number JS hands back still has to be the Real64 it is.
+  if (intoJs && isPrim(expectedType, "Real64.Real") && isPrim(actualType, "Int32.Int")) {
+    return expectedType;
   }
   if (isJsArrayType(expectedType, typeEnv) && isJsArrayType(actualType, typeEnv)) {
     return actualType;
@@ -532,7 +551,8 @@ function isRecordType(type: Ty, typeEnv: TypeEnv): boolean {
 function isJsPrimitiveType(type: Ty): boolean {
   const t = prune(type);
   return t.tag === "prim" &&
-    (t.name === "String" || t.name === "Real64.Real" || t.name === "Bool" || t.name === "Void");
+    (t.name === "String" || t.name === "Real64.Real" || t.name === "Int32.Int" ||
+      t.name === "Bool" || t.name === "Void");
 }
 
 function assertPrintable(type: Ty) {

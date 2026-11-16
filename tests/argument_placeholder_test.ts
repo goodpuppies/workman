@@ -8,8 +8,8 @@ import { expectBinding } from "./type_helpers.ts";
 
 Deno.test("argument placeholders select positions, preserve order and belong to the nearest call", async () => {
   const source = `
-    let z = (n, flag) => if (flag) { n + 1 } else { n };
-    let x = f => f(4);
+    let z = (n: Real64, flag) => if (flag) { n + 1 } else { n };
+    let x = f => f(4.0);
     let p = z(_, true);
     let subtract = (a, b) => a - b;
     let reverse = subtract(_, _);
@@ -55,14 +55,14 @@ Deno.test("placeholder lambdas infer generically without capturing authored name
     let partial = identity(_);
     let n = partial(1);
     let s = partial("text");
-    let _value = 10;
+    let _value: Real64 = 10;
     let add = (a, b) => a + b;
     let named = add(_value, _);
     let n2 = named(2);
     let ignored = List.map([1, 2], _ => 5);
     let pattern = Some(4) :> match { Some(_) => 7, None => 0 };
   `);
-  expectBinding(result.env, "n", { type: "Real64.Real", vars: 0 });
+  expectBinding(result.env, "n", { type: "Int32.Int", vars: 0 });
   expectBinding(result.env, "s", { type: "String", vars: 0 });
   expectBinding(result.env, "n2", { type: "Real64.Real", vars: 0 });
 });
@@ -103,7 +103,7 @@ Deno.test("placeholder formatting preserves call scope and wildcard lambdas", as
 Deno.test("placeholder lambdas defer callee and fixed-argument effects until each invocation", async () => {
   const source = `
     let make = () => { print("callee"); (a, b) => { print("call"); a + b } };
-    let fixed = () => { print("fixed"); 10 };
+    let fixed = () => { print("fixed"); 10.0 };
     let main = () => {
       let p = make()(_, fixed());
       print("created");

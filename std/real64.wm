@@ -39,8 +39,8 @@ type Self = Real64.Real;
 record ManExp = { man: Real64.Real, exp: Real64.Real };
 record Split = { whole: Real64.Real, frac: Real64.Real };
 
-let radix = 2;
-let precision = 53;
+let radix: Real64.Real = 2;
+let precision: Real64.Real = 53;
 let maxFinite = MAX_VALUE;
 let minPos = MIN_VALUE;
 let minNormalPos = primPow(2, -1022);

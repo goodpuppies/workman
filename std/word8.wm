@@ -18,7 +18,7 @@ from js.module("./js/word.js") import unsafe {
 /** The type a bare `Word8` names in annotations (docs/modules.md). */
 type Self = Word8.Word;
 
-let wordSize = 8;
+let wordSize: Real64.Real = 8;
 let fromReal64 = word8FromNumber;
 let toReal64 = primToReal64;
 let andb = word8Andb;

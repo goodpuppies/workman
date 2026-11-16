@@ -299,7 +299,7 @@ Deno.test("unsafe async receiver members and direct multiargument adapters prese
       await compile(`
       from js.module("${absoluteFixture}") import unsafe { box, pairLater };
       from js.module("${absoluteFixture}") import unsafe { taskPrimitive as ready: Void -> Task<Real64.Real, Js.Error> };
-      let higher = (f) => { f(4, 5) };
+      let higher = (f) => { f(4.0, 5.0) };
       let main = () => {
         let value = box();
         value.readLater() :> Task.andThen((number) => {

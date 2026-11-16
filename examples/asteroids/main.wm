@@ -21,14 +21,14 @@ let raylibpath = "./libraylib.so";
 let title = "Asteroids - Workman";
 let seed = Rng.Seed(20260823);
 
-let keySpace = 32;
-let keyRight = 262;
-let keyLeft  = 263;
-let keyUp    = 265;
-let keyEnter = 257;
-let keyW = 87;
-let keyA = 65;
-let keyD = 68;
+let keySpace: Real64 = 32;
+let keyRight: Real64 = 262;
+let keyLeft: Real64 = 263;
+let keyUp: Real64 = 265;
+let keyEnter: Real64 = 257;
+let keyW: Real64 = 87;
+let keyA: Real64 = 65;
+let keyD: Real64 = 68;
 
 let black  = Color(0,   0,   0,   255);
 let white  = Color(255, 255, 255, 255);
@@ -49,11 +49,11 @@ let sidesOf = match(size) => {
   Small => { 6 },
 };
 
-let shotRadius = 2;
-let hudMargin = 10;
+let shotRadius: Real64 = 2;
+let hudMargin: Real64 = 10;
 let outlineWidth = 1.5;
 
-let bit = (b: Bool) => {
+let bit = (b: Bool): Real64 => {
   if (b) { 1 } else { 0 }
 };
 

@@ -80,11 +80,11 @@ record FrameState = {
 
 type PollStep = PollAgain<FrameState> | PollDone<FrameState>;
 
-let width = 960;
-let height = 640;
-let simulationWidth = 480;
-let simulationHeight = 320;
-let generationsPerFrame = 8;
+let width: Real64 = 960;
+let height: Real64 = 640;
+let simulationWidth: Real64 = 480;
+let simulationHeight: Real64 = 320;
+let generationsPerFrame: Real64 = 8;
 
 let bootstrapShade = (_coord) => {
   @gpu;

@@ -62,7 +62,7 @@ Deno.test("inline nominal records support nested fields, aliases, and generic de
   expectBinding(result.env, "outer", { type: "Outer", vars: 0 });
   expectBinding(result.env, "value", { type: "Int32.Int", vars: 0 });
   expectBinding(result.env, "empty", { type: "Empty", vars: 0 });
-  expectBinding(result.env, "number", { type: "Real64.Real", vars: 0 });
+  expectBinding(result.env, "number", { type: "Int32.Int", vars: 0 });
   expectBinding(result.env, "text", { type: "String", vars: 0 });
   expectBinding(result.env, "container", { type: "Container", vars: 0 });
 });
@@ -174,7 +174,7 @@ Deno.test("inline references preserve generic parameters without specializing th
     let callback = (x: Callback<a>{run: a -> a}) => { x };
     let callbackAgain = (x: Callback<b>{run: b -> b}) => { callback(x) };
   `);
-  expectBinding(result.env, "number", { type: "Real64.Real", vars: 0 });
+  expectBinding(result.env, "number", { type: "Int32.Int", vars: 0 });
   expectBinding(result.env, "text", { type: "String", vars: 0 });
   for (
     const source of [

@@ -36,7 +36,7 @@ let take = (bytes, offset: Real64.Real, width: Real64.Real) => {
 // Read element 0 of a part returned by `take`. The part is exactly one element wide, so the read
 // can't fail; its `Result` is mapped to `Bounds` only to keep the error type.
 let readFirst = (read, part, offset, convert) => {
-  match(read(part, 0)) {
+  match(read(part, (0: Real64.Real))) {
     Ok(value) => { Ok(convert(value)) },
     Err(_) => { bounds(offset, Word8VectorSlice.length(part), Word8VectorSlice.length(part)) }
   }

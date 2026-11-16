@@ -13,7 +13,10 @@ Deno.test("Result.filter preserves the success and error types through direct ca
     let retained = jsError :> Result.filter(x => x > 0, Js.Error("not positive"));
     let mapped = jsError :> Result.mapErr(_ => "original") :> Result.filter(x => x > 0, "not positive");
   `);
-  for (const name of ["kept", "rejected", "existing", "converted", "mapped"]) {
+  for (const name of ["kept", "rejected", "converted"]) {
+    expectBinding(result.env, name, { type: "Result<Int32.Int, String>", vars: 0 });
+  }
+  for (const name of ["existing", "mapped"]) {
     expectBinding(result.env, name, { type: "Result<Real64.Real, String>", vars: 0 });
   }
   expectBinding(result.env, "retained", { type: "Result<Real64.Real, Js.Error>", vars: 0 });

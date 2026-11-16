@@ -7,10 +7,10 @@ let taskTraverse = (items, transform) => {
 };
 
 let parseNumber = (text) => {
-  if (text == "one") { Ok(1) } else { Err("not a number") }
+  if (text == "one") { Ok(1.0) } else { Err("not a number") }
 };
 
-let requirePositive = (number) => {
+let requirePositive = (number: Real64) => {
   if (number > 0) { Ok(number) } else { Err("not positive") }
 };
 

@@ -13,7 +13,7 @@ Deno.test("Workman elaboration snapshots show declaration-ordered generalized le
   expectStepBinding(steps, 0, "id", { type: "'a -> 'a", vars: 1 });
   expectStepMissing(steps, 0, "use_number");
   expectStepBinding(steps, 1, "id", { type: "'a -> 'a", vars: 1 });
-  expectStepBinding(steps, 1, "use_number", { type: "Real64.Real", vars: 0 });
+  expectStepBinding(steps, 1, "use_number", { type: "Int32.Int", vars: 0 });
   expectStepBinding(steps, 2, "use_string", { type: "String", vars: 0 });
 });
 
@@ -48,7 +48,7 @@ Deno.test("wmsml elaboration snapshots match SML val generalization boundaries",
 
   expectStepBinding(steps, 0, "id", { type: "'a -> 'a", vars: 1 });
   expectStepMissing(steps, 0, "use_number");
-  expectStepBinding(steps, 1, "use_number", { type: "Real64.Real", vars: 0 });
+  expectStepBinding(steps, 1, "use_number", { type: "Int32.Int", vars: 0 });
   expectStepBinding(steps, 2, "use_string", { type: "String", vars: 0 });
 });
 
@@ -68,8 +68,8 @@ Deno.test("wmsml datatype elaboration snapshots expose constructors before later
   expectStepBinding(steps, 0, "NONE", { type: "option<a>", vars: 1 });
   expectStepBinding(steps, 0, "SOME", { type: "a -> option<a>", vars: 1 });
   expectStepMissing(steps, 0, "one");
-  expectStepBinding(steps, 1, "one", { type: "option<Real64.Real>", vars: 0 });
-  expectStepBinding(steps, 2, "get", { type: "option<Real64.Real> -> Real64.Real", vars: 0 });
+  expectStepBinding(steps, 1, "one", { type: "option<Int32.Int>", vars: 0 });
+  expectStepBinding(steps, 2, "get", { type: "option<Int32.Int> -> Int32.Int", vars: 0 });
 });
 
 Deno.test("Workman simultaneous non-recursive and-group snapshots publish only after group inference", async () => {
@@ -81,7 +81,7 @@ Deno.test("Workman simultaneous non-recursive and-group snapshots publish only a
 
   expectStepBinding(steps, 0, "id_a", { type: "'a -> 'a", vars: 1 });
   expectStepBinding(steps, 0, "id_b", { type: "'a -> 'a", vars: 1 });
-  expectStepBinding(steps, 1, "use_a", { type: "Real64.Real", vars: 0 });
+  expectStepBinding(steps, 1, "use_a", { type: "Int32.Int", vars: 0 });
   expectStepBinding(steps, 2, "use_b", { type: "String", vars: 0 });
 });
 
@@ -93,7 +93,7 @@ Deno.test("Workman recursive group snapshots generalize after solving the group"
   `);
 
   expectStepBinding(steps, 0, "id", { type: "'a -> 'a", vars: 1 });
-  expectStepBinding(steps, 1, "use_number", { type: "Real64.Real", vars: 0 });
+  expectStepBinding(steps, 1, "use_number", { type: "Int32.Int", vars: 0 });
   expectStepBinding(steps, 2, "use_string", { type: "String", vars: 0 });
 });
 
@@ -106,9 +106,9 @@ Deno.test("Workman local declaration snapshots do not leak block-local values", 
     let use_outer = outer();
   `);
 
-  expectStepBinding(steps, 0, "outer", { type: "Void -> Real64.Real", vars: 0 });
+  expectStepBinding(steps, 0, "outer", { type: "Void -> Int32.Int", vars: 0 });
   expectStepMissing(steps, 0, "local_id");
-  expectStepBinding(steps, 1, "use_outer", { type: "Real64.Real", vars: 0 });
+  expectStepBinding(steps, 1, "use_outer", { type: "Int32.Int", vars: 0 });
 });
 
 Deno.test("wmsml simultaneous val groups do not expose earlier bindings in the same group", async () => {
@@ -149,8 +149,8 @@ Deno.test("Workman annotation type variables are scoped across one let-and group
   );
 
   const steps = await checkSourceSteps("let x: t = 1 and y: t = 2;");
-  expectStepBinding(steps, 0, "x", { type: "Real64.Real", vars: 0 });
-  expectStepBinding(steps, 0, "y", { type: "Real64.Real", vars: 0 });
+  expectStepBinding(steps, 0, "x", { type: "Int32.Int", vars: 0 });
+  expectStepBinding(steps, 0, "y", { type: "Int32.Int", vars: 0 });
 });
 
 Deno.test("wmsml annotation type variables are scoped across one val-and group", async () => {
@@ -161,6 +161,6 @@ Deno.test("wmsml annotation type variables are scoped across one val-and group",
   );
 
   const steps = await checkSourceSteps("val x: 'a = 1 and y: 'a = 2", { surface: "wmsml" });
-  expectStepBinding(steps, 0, "x", { type: "Real64.Real", vars: 0 });
-  expectStepBinding(steps, 0, "y", { type: "Real64.Real", vars: 0 });
+  expectStepBinding(steps, 0, "x", { type: "Int32.Int", vars: 0 });
+  expectStepBinding(steps, 0, "y", { type: "Int32.Int", vars: 0 });
 });

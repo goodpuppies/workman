@@ -10,7 +10,7 @@ from "./model.wm" import *;
 from "./refs.wm" import { parts };
 from "./won.wm" import * as D;
 
-let protocol = 11;
+let protocol: Real64.Real = 11;
 
 let targetName = match(target) => {
   Host => { "Host" },

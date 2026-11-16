@@ -55,8 +55,8 @@ record FrameState = {
 
 type PollStep = PollAgain<FrameState> | PollDone<FrameState>;
 
-let width = 960;
-let height = 640;
+let width: Real64 = 960;
+let height: Real64 = 640;
 
 let bootstrapShade = (_coord) => {
   @gpu;
@@ -71,8 +71,8 @@ let updateShade = (inputs: UpdateInputs) => {
     let y = Gpu.i32(coord.y);
     let centerPixel = inputs.previous.Load((x, y, 0));
     let resolution = inputs.resolution + (0.0, 0.0);
-    let width = Gpu.i32(resolution.x);
-    let height = Gpu.i32(resolution.y);
+    let width: Real64 = Gpu.i32(resolution.x);
+    let height: Real64 = Gpu.i32(resolution.y);
     let frame = Gpu.i32(inputs.frame);
 
     let hash = (px, py, salt) => {

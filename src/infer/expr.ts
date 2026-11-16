@@ -7,17 +7,17 @@ import { diagnosticError } from "../diagnostic_model.ts";
 import {
   BoolTy,
   CharTy,
+  fieldSelectableRecordTypes,
   fresh,
   freshFfi,
   freshIntegerLiteral,
   freshNumeric,
   ftv,
   instantiate,
-  fieldSelectableRecordTypes,
   knownTypeInfos,
   named,
-  Real64Ty,
   prune,
+  Real64Ty,
   StringTy,
   tuple,
   type Ty,
@@ -88,7 +88,7 @@ function inferExprInner(expr: Expr, context: InferContext, expected?: Ty): Ty {
   switch (expr.kind) {
     // Integer literals carry candidate types until context or defaulting selects one.
     case "Int":
-      t = freshIntegerLiteral(expr, negatedLiterals.has(expr));
+      t = freshIntegerLiteral(expr, negatedLiterals.has(expr), context.dialect.domain === "gpu");
       break;
     case "Float":
       t = Real64Ty;
@@ -513,7 +513,7 @@ function inferExprInner(expr: Expr, context: InferContext, expected?: Ty): Ty {
         const operand = expr.value.kind === "Ascribed" ? expr.value.value : expr.value;
         if (operand.kind === "Int") negatedLiterals.add(operand);
         const numeric = operand.kind === "Int"
-          ? freshIntegerLiteral(operand, true)
+          ? freshIntegerLiteral(operand, true, context.dialect.domain === "gpu")
           : freshNumeric();
         recordExpectedExprType(facts, expr.value, numeric);
         let value: Ty;

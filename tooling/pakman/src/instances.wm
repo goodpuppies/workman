@@ -16,7 +16,7 @@ record Edge = { name: String, selector: String, node: String };
 record Node = { id: String, name: String, program: String, programHash: String, entry: LockEntry, edges: List<Edge> };
 record Graph = { root: String, nodes: List<Node> };
 
-let protocol = 3;
+let protocol: Real64 = 3;
 
 let via = Monad.via;
 

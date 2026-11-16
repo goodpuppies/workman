@@ -348,7 +348,7 @@ record BinaryOperand = { node: SurfaceNode, span: Span };
 record BinaryItem = { operator: SurfaceToken, operand: BinaryOperand };
 
 // How tightly an operator binds, loosest first. The grammar has already accepted the text.
-let binaryLevel = (operator: SurfaceToken) => {
+let binaryLevel: SurfaceToken -> Real64 = (operator: SurfaceToken) => {
   match(operator.text) {
     "||" => { 0 },
     "&&" => { 1 },

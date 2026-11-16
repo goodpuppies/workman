@@ -29,7 +29,7 @@ let clamp = (minimum, maximum, value) => {
   }
 };
 
-let nonNegative = (value) => {
+let nonNegative = (value: Real64) => {
   if (value < 0) { 0 } else { value }
 };
 

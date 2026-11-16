@@ -37,14 +37,14 @@ record Input = { thrust: Vec2, start: Bool, restart: Bool, wheel: Real64 };
 
 -- ---- world constants ------------------------------------------------------
 
-let screenW = 960;
-let screenH = 540;
+let screenW: Real64 = 960;
+let screenH: Real64 = 540;
 let sun = .{ x = 480, y = 270 };
-let sunG = 2600000;
-let sunRadius = 28;
-let collectRadius = 18;
-let thrustAccel = 540;
-let maxFuel = 100;
+let sunG: Real64 = 2600000;
+let sunRadius: Real64 = 28;
+let collectRadius: Real64 = 18;
+let thrustAccel: Real64 = 540;
+let maxFuel: Real64 = 100;
 
 -- ---- small pure helpers ---------------------------------------------------
 

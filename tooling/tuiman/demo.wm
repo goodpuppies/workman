@@ -15,7 +15,7 @@ record Model = {
 
 let initial = Model(Navigation, 0);
 
-let itemCount = 5;
+let itemCount: Real64 = 5;
 
 let move = (delta, model) => {
   let next = Geometry.clamp(0, itemCount - 1, model.selected + delta);
@@ -39,7 +39,7 @@ let update = match(key, model) => {
   _ => { Command.Continue(model) },
 };
 
-let navRows = (selected) => {
+let navRows = (selected: Real64) => {
   [
     if (selected == 0) { "› Timeline" } else { "  Timeline" },
     if (selected == 1) { "› Profile" } else { "  Profile" },
@@ -49,7 +49,7 @@ let navRows = (selected) => {
   ]
 };
 
-let contentRows = (selected) => {
+let contentRows = (selected: Real64) => {
   match(selected) {
     0 => { ["Timeline", "", "The AppView feed will live here."] },
     1 => { ["Profile", "", "Authenticated account summary."] },

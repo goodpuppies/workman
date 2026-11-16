@@ -56,7 +56,7 @@ Deno.test("explicit nominal record expressions select their record and infer typ
   `);
 
   expectBinding(result.env, "user", { type: "User", vars: 0 });
-  expectBinding(result.env, "box", { type: "Box<Real64.Real>", vars: 0 });
+  expectBinding(result.env, "box", { type: "Box<Int32.Int>", vars: 0 });
   expectBinding(result.env, "empty", { type: "Empty", vars: 0 });
 });
 
@@ -101,8 +101,8 @@ Deno.test("polymorphic record fields preserve type parameters", async () => {
     let second = pair.second;
   `);
 
-  expectBinding(result.env, "pair", { type: "Pair<Real64.Real, Bool>", vars: 0 });
-  expectBinding(result.env, "first", { type: "Real64.Real", vars: 0 });
+  expectBinding(result.env, "pair", { type: "Pair<Int32.Int, Bool>", vars: 0 });
+  expectBinding(result.env, "first", { type: "Int32.Int", vars: 0 });
   expectBinding(result.env, "second", { type: "Bool", vars: 0 });
 });
 
@@ -118,11 +118,11 @@ Deno.test("record declarations expose ordered polymorphic constructors", async (
     vars: 2,
   });
   expectBinding(result.env, "numberText", {
-    type: "Pair<Real64.Real, String>",
+    type: "Pair<Int32.Int, String>",
     vars: 0,
   });
   expectBinding(result.env, "boolNumber", {
-    type: "Pair<Bool, Real64.Real>",
+    type: "Pair<Bool, Int32.Int>",
     vars: 0,
   });
 });
@@ -139,7 +139,7 @@ Deno.test("record constructor applications retain non-expansive generalization",
     type: "Identity<'a>",
     vars: 1,
   });
-  expectBinding(result.env, "number", { type: "Real64.Real", vars: 0 });
+  expectBinding(result.env, "number", { type: "Int32.Int", vars: 0 });
   expectBinding(result.env, "text", { type: "String", vars: 0 });
 });
 
@@ -279,7 +279,7 @@ Deno.test("record literals support spread update and field punning", async () =>
   const source = `
     record Point = { x: Real64.Real, y: Real64.Real };
     let p1: Point = .{ x = 10, y = 20 };
-    let x = 100;
+    let x: Real64 = 100;
     let p2 = .{ ..p1, x };
     let p3: Point = .{ ..p2, y = 30 };
   `;
@@ -638,7 +638,7 @@ Deno.test("ambiguous receivers satisfy every projected field regardless of proje
         ${declarations.join("\n")}
         let render = (feed) => {
           ${statements}
-          (cursor, List.map(posts, (post) => { post + 1 }))
+          (cursor, List.map(posts, (post: Real64) => { post + 1 }))
         };
         let result = render(Right(None, [1]));
       `);
@@ -654,7 +654,7 @@ Deno.test("projection groups merge when independent receivers become aliases", a
     record Right = { cursor: Option<String>, posts: List<Real64.Real> };
     let render = (first, second) => {
       let cursor = first.cursor;
-      let posts = List.map(second.posts, (post) => { post + 1 });
+      let posts = List.map(second.posts, (post: Real64) => { post + 1 });
       let keep = if (true) { first } else { second };
       (keep, cursor, posts)
     };
@@ -678,10 +678,10 @@ Deno.test("candidate checks share generic parameters across projected fields", a
     let value = read(Different(2, "text"));
   `);
   expectBinding(result.env, "read", {
-    type: "'a -> (Real64.Real, String) where 'a.first: Real64.Real, 'a.second: String",
+    type: "'a -> (Int32.Int, String) where 'a.first: Int32.Int, 'a.second: String",
     vars: 1,
   });
-  expectBinding(result.env, "value", { type: "(Real64.Real, String)", vars: 0 });
+  expectBinding(result.env, "value", { type: "(Int32.Int, String)", vars: 0 });
   assertEquals(result.warnings, []);
 });
 
@@ -698,7 +698,7 @@ Deno.test("nested projection requirements eliminate incompatible outer record ca
     };
   `);
   expectBinding(result.env, "read", {
-    type: "'a -> ('b, Real64.Real) where 'a.cursor: 'b, 'a.item: 'c, 'c.value: Real64.Real",
+    type: "'a -> ('b, Int32.Int) where 'a.cursor: 'b, 'a.item: 'c, 'c.value: Int32.Int",
     vars: 3,
   });
   assertEquals(result.warnings, []);
@@ -729,7 +729,7 @@ Deno.test("joint projection resolution survives imports and emits the selected n
       from "./records.wm" import * as Records;
       let render = (feed) => {
         let cursor = feed.cursor;
-        let posts = List.map(feed.posts, (post) => { post + 1 });
+        let posts = List.map(feed.posts, (post: Real64) => { post + 1 });
         List.length(posts)
       };
       let main = () => { print(render(Records.Right(None, [1, 2]))) };
@@ -828,7 +828,7 @@ Deno.test("field obligations retain shared generic parameters at each call", asy
     let read = (record) => { (record.first + 1, record.second ++ "!") };
   `;
   const good = await checkSource(source + 'let pair = read(Different(1, "text"));');
-  expectBinding(good.env, "pair", { type: "(Real64.Real, String)", vars: 0 });
+  expectBinding(good.env, "pair", { type: "(Int32.Int, String)", vars: 0 });
   await assertRejects(() => checkSource(source + "let bad = read(Same(1, 2));"), Error);
 });
 

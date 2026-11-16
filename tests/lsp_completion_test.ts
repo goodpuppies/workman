@@ -16,7 +16,7 @@ Deno.test("ordinary completion returns lexical values with semantic type detail"
   assertEquals(items.map(({ label, kind, detail }) => ({ label, kind, detail })), [{
     label: "outer",
     kind: 6,
-    detail: "Real64.Real",
+    detail: "Int32.Int",
   }]);
 });
 
@@ -162,7 +162,7 @@ Deno.test("ordinary completion lists project and basis namespace members", async
   );
   assertEquals(
     projectItems.find(({ label }) => label === "answer")?.detail,
-    "Real64.Real",
+    "Int32.Int",
   );
   assertEquals(gpuItems.some(({ label }) => label === "fragment"), true);
 });
@@ -371,7 +371,7 @@ Deno.test("import completion excludes names already selected in the clause", asy
 
   assertEquals(items.map(({ label, detail }) => ({ label, detail })), [{
     label: "second",
-    detail: "Real64.Real",
+    detail: "Int32.Int",
   }]);
 });
 

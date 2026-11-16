@@ -376,7 +376,7 @@ Deno.test("generated Workman wmslang library returns validated typed H0 tables",
   );
 
   const specializedInput = await gpuInput(`
-    let helper = (x) => { x + 0 };
+    let helper = (x: Real64) => { x + 0 };
     let integerA = (x) => { @gpu; helper(x) };
     let integerB = (x) => { @gpu; helper(x + 1) };
     let floating = (x) => { @gpu; helper(x) * 0.5 };
@@ -427,7 +427,7 @@ Deno.test("generated Workman wmslang library returns validated typed H0 tables",
   );
 
   const recursiveInput = await gpuInput(`
-    let rec descend = (x) => {
+    let rec descend = (x: Real64) => {
       if (x <= 0) { x } else { descend(x - 1) }
     };
     let shade = (x) => { @gpu; descend(x) };
@@ -452,7 +452,7 @@ Deno.test("generated Workman wmslang library returns validated typed H0 tables",
   );
 
   const mutualInput = await gpuInput(`
-    let rec even = (x) => {
+    let rec even = (x: Real64) => {
       if (x <= 0) { true } else { odd(x - 1) }
     } and odd = (x) => {
       if (x <= 0) { false } else { even(x - 1) }

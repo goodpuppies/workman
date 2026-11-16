@@ -60,7 +60,7 @@ Deno.test("REPL snapshots are captured only for the entry and cannot reuse a sna
       cache.take();
       const repl = await coreFile(path("entry.wm"), { ...options, captureEntrySteps: true });
       assertEquals(cache.take(), ["entry.wm"]);
-      assertEquals(repl.results.get(repl.graph.entry)?.steps.at(-1)?.env.get("it")?.type, "Real64.Real");
+      assertEquals(repl.results.get(repl.graph.entry)?.steps.at(-1)?.env.get("it")?.type, "Int32.Int");
       const dependency = [...repl.results.entries()].find(([id]) => id !== repl.graph.entry);
       assertEquals(dependency?.[1].steps, []);
       await coreFile(path("entry.wm"), { ...options, captureEntrySteps: true });
@@ -89,7 +89,7 @@ Deno.test("a changed module is analyzed again with everything that imports it", 
     const cache = new RecordingCache();
     await code(path("c.wm"), { moduleAnalysisCache: cache });
     cache.take();
-    await Deno.writeTextFile(path("a.wm"), 'export from "./lib.wm" import *;\nlet a = 7;\n');
+    await Deno.writeTextFile(path("a.wm"), 'export from "./lib.wm" import *;\nlet a: Real64 = 7;\n');
     const cached = await code(path("c.wm"), { moduleAnalysisCache: cache });
     assertEquals(cache.take(), ["a.wm", "b.wm", "c.wm"]);
     assertEquals(cached, await code(path("c.wm")));

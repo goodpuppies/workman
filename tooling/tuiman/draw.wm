@@ -64,7 +64,7 @@ let separator = Style(
   false,
 );
 
-let repeat = (text, count) => {
+let repeat = (text, count: Real64) => {
   if (count <= 0) {
     ""
   } else {
@@ -85,7 +85,7 @@ let safeText = (value) => {
     :> replace("\t", " ")
 };
 
-let truncate = (text, width) => {
+let truncate = (text, width: Real64) => {
   if (width <= 0) {
     ""
   } else {
@@ -102,7 +102,7 @@ let widthOf = (value) => {
 
 -- A word wider than the line has no break opportunity, so split it by force
 -- rather than letting `truncate` drop the tail.
-let rec chunk = (word, width) => {
+let rec chunk = (word, width: Real64) => {
   if (width <= 0 || widthOf(word) <= width) {
     [word]
   } else {
@@ -119,7 +119,7 @@ let rec chunkAll = match(words, width) => {
   },
 };
 
-let rec pack = (words, width, current, rows) => {
+let rec pack = (words, width: Real64, current, rows) => {
   match(words) {
     [] => {
       if (current == "") { rows } else { List.append(rows, [current]) }
@@ -143,7 +143,7 @@ let words = (value) => {
   value :> .split(" ") :> Result.map(Js.Array.toList) :> Result.getOr([])
 };
 
-let wrapLine = (value, width) => {
+let wrapLine = (value, width: Real64) => {
   if (width <= 0) {
     []
   } else {
@@ -162,7 +162,7 @@ let rec wrapAll = match(values, width) => {
 -- Diagnostics are written for editors, not for an 80-column budget. Wrapping
 -- to the live terminal width keeps a long message readable at any size, and
 -- hard newlines in the source text stay as breaks.
-let wrap = (value: String, width) => {
+let wrap = (value: String, width: Real64) => {
   wrapAll(value :> .split("\n") :> Result.map(Js.Array.toList) :> Result.getOr([]), width)
 };
 
@@ -181,7 +181,7 @@ let styleCode = (style) => {
   Ansi.reset ++ fg ++ bg ++ weight ++ faint ++ inversion
 };
 
-let at = (x, y, text, style) => {
+let at = (x: Real64, y: Real64, text, style) => {
   if (x < 0 || y < 0 || text == "") {
     ""
   } else {

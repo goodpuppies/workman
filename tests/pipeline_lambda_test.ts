@@ -11,7 +11,7 @@ Deno.test("pipeline lambdas execute with independent inputs, blocks and carrier 
     let add = (value, amount) => value + amount;
     let times = (value, amount) => value * amount;
     let apply = (value, f) => f(value);
-    let offset = 9;
+    let offset: Real64 = 9;
     let chain = => :> add(2) :> times(3);
     let braced = => { :> add(2) :> times(3) };
     let nested = => :> apply(=> :> add(1)) :> times(2);
@@ -31,7 +31,7 @@ Deno.test("pipeline lambdas execute with independent inputs, blocks and carrier 
       :> Monad.via Result => { :> safeAdd(2) };
     let task: Task<Real64.Real, String> = Task.succeed(4)
       :> Monad.via Task => :> add(2) :> Task.succeed;
-    let unwrap = result => match(result) { Ok(value) => value, Err(_) => -1 };
+    let unwrap = (result: Result<Real64, String>) => match(result) { Ok(value) => value, Err(_) => -1 };
     let checks = (
       chain(4), braced(4), nested(4), captured(4), placeholder(4), arithmetic(4),
       branch(true), branch(false), tupled(3, 5), block(4), discarded(4), unitFn(void),

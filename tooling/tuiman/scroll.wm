@@ -34,7 +34,7 @@ let settled = (current: Real64, target: Real64) => {
 
 -- Adjacent timeline cards share one border row, hence each complete card
 -- advances by height - 1 rows.
-let advance = (height) => {
+let advance = (height: Real64) => {
   if (height <= 1) { 1 } else { height - 1 }
 };
 

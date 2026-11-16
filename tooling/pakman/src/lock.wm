@@ -19,7 +19,7 @@ record LockedSource = { file: String, url: String, sha256: String, verified: Boo
 -- `ref` is the candidate's ref, handed back to `make` on every build.
 record LockEntry = { name: String, version: String, track: String, ref: String, sources: List<LockedSource> };
 
-let protocol = 3;
+let protocol: Real64 = 3;
 
 let sourceValue = (s: LockedSource) => {
   D.record([("file", D.text(s.file)), ("url", D.text(s.url)), ("sha256", D.text(s.sha256)), ("verified", D.bool(s.verified))])

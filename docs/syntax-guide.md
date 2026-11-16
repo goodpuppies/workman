@@ -1048,7 +1048,7 @@ can help with readability and error messages:
 
 ```workman
 -- Types are inferred
-let double = (x) => { x * 2 };  -- Inferred: Real64 -> Real64
+let double = (x) => { x * 2 };  -- Inferred: Int32 -> Int32
 let identity = (x) => { x };    -- Inferred: forall a. a -> a
 
 -- Annotations help with complex cases or documentation

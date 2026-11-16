@@ -72,7 +72,7 @@ let empty = (root) => { Generation(0, root, [], []) };
 -- ---------------------------------------------------------------------------
 -- Reading and writing generations
 
-let generationProtocol = 1;
+let generationProtocol: Real64 = 1;
 
 let generationValue = (g: Generation) => {
   let installedValue = (i: Installed) => {
@@ -349,7 +349,7 @@ let activate = (paths: Paths, root, before: List<FileEntry>, after: List<FileEnt
   applyPlan(paths, Plan(root, mapAll(toAdd, toPlacement), mapAll(removeOnly, (f: FileEntry) => { f.path })))
 };
 
-let nextNumber = (numbers) => {
+let nextNumber = (numbers: List<Real64>) => {
   List.foldLeft(numbers, 0, (n, highest) => { if (n > highest) { n } else { highest } }) + 1
 };
 

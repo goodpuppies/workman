@@ -653,18 +653,18 @@ Deno.test("lsp server returns ordinary inferred-type inlays", async () => {
   assertEquals(hints, [
     {
       position: { line: 0, character: "let increment = (value".length },
-      label: ": Real64.Real",
+      label: ": Int32.Int",
       kind: 1,
-      tooltip: { kind: "markdown", value: "```workman\nReal64.Real\n```" },
+      tooltip: { kind: "markdown", value: "```workman\nInt32.Int\n```" },
       paddingLeft: false,
       paddingRight: true,
       data: { kind: "workman.inferred-type", category: "parameter" },
     },
     {
       position: { line: 0, character: "let increment = (value)".length },
-      label: ": Real64.Real",
+      label: ": Int32.Int",
       kind: 1,
-      tooltip: { kind: "markdown", value: "```workman\nReal64.Real\n```" },
+      tooltip: { kind: "markdown", value: "```workman\nInt32.Int\n```" },
       paddingLeft: false,
       paddingRight: true,
       data: { kind: "workman.inferred-type", category: "result" },
@@ -1535,7 +1535,7 @@ Deno.test("lsp server returns constructor hover types", async () => {
   };
   assertEquals(
     hover.contents.value,
-    "```wm\nSome\ntype: Real64.Real -> Option<Real64.Real>\ngeneral: T -> Option<T>\n```",
+    "```wm\nSome\ntype: Int32.Int -> Option<Int32.Int>\ngeneral: T -> Option<T>\n```",
   );
 });
 

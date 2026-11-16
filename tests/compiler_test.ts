@@ -299,7 +299,7 @@ Deno.test("inferred match function type reflects constructor payload constraints
       None => { 0 },
     };
   `);
-  expectBinding(result.env, "get", { type: "Option<Real64.Real> -> Real64.Real", vars: 0 });
+  expectBinding(result.env, "get", { type: "Option<Int32.Int> -> Int32.Int", vars: 0 });
 });
 
 Deno.test("single-item alias declarations are transparent in inferred types", async () => {
@@ -338,7 +338,7 @@ Deno.test("emits Workman tuples as packed array literals", async () => {
 
 Deno.test("lowers known primitive operator applications without argument tuples", async () => {
   const js = await compile(`
-    let sum = 1 + 2;
+    let sum = 1.0 + 2;
     let ordered = sum >= 2;
     let equal = sum == 3;
     let sequential = true && false;

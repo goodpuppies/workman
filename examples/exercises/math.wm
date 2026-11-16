@@ -3,7 +3,7 @@ type List<T> = Nil | Cons<T, List<T>>;
 
 type Ordering = Less | Equal | Greater;
 
-let rec myDiv = (n, d) => {
+let rec myDiv = (n: Real64, d: Real64): Real64 => {
   if (n < d) {0}
   else {1 + myDiv(n - d, d)}
 };

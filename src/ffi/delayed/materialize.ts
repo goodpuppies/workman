@@ -5,7 +5,7 @@ import { diagnosticError } from "../../diagnostic_model.ts";
 import type { InferResult } from "../../infer.ts";
 import { recordExprFact, resolveFfiFact } from "../../infer/type_facts.ts";
 import { constrainAt, sourceForFfiConstraint } from "../../infer/provenance.ts";
-import { prune, solveFfi, type Ty, typeFromAst, unify } from "../../types.ts";
+import { prune, Real64Ty, solveFfi, type Ty, typeFromAst, unify } from "../../types.ts";
 import { foreignTypeInfo } from "../../infer/decl.ts";
 import { TypeMismatchError } from "../../type_diff.ts";
 import type { ResolveOptions } from "./types.ts";
@@ -648,6 +648,13 @@ function specializeReflectedBindingCall(
   contextOnly = false,
 ): FfiVariant | undefined {
   if (!variant.callRef || variant.deep) return variant;
+  // A computed numeric argument supplies the same JS number evidence as a literal.
+  // Resolve only undecided variables here; concrete WM integers keep their own types.
+  for (const arg of args) {
+    const inferred = inferredType(result, arg);
+    const type = inferred ? prune(inferred) : undefined;
+    if (type?.tag === "var" && type.numeric) unify(type, Real64Ty);
+  }
   const foreignRefs = foreignTypeRefLookup(ffi.foreignTypeRefs, options?.foreignTypeRefs);
   const usesGeneric = (type: TypeExpr): boolean => {
     if (type.kind === "TName") {

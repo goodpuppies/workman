@@ -44,15 +44,17 @@ async function typeError(main: string): Promise<string> {
   assert(false, "expected a type error");
 }
 
-Deno.test("integer literals default to Real64.Real", async () => {
+Deno.test("integer literals default to Int32 while division selects Real64", async () => {
   assertEquals(
     await runLines(`
       let half = (x) => { x / 2 };
-      let one = 1;
+      let one: Real64 = 1;
       print(half(one));
       print(3 / 2);
+      let integer = 2147483647;
+      print(integer + (0: Int32));
     `),
-    ["0.5", "1.5"],
+    ["0.5", "1.5", "2147483647"],
   );
 });
 

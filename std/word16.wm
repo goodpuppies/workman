@@ -18,7 +18,7 @@ from js.module("./js/word.js") import unsafe {
 /** The type a bare `Word16` names in annotations (docs/modules.md). */
 type Self = Word16.Word;
 
-let wordSize = 16;
+let wordSize: Real64.Real = 16;
 let fromReal64 = word16FromNumber;
 let toReal64 = primToReal64;
 let andb = word16Andb;

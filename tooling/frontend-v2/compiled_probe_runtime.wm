@@ -227,9 +227,9 @@ let matchRecoverableLiteral = (
 };
 
 -- Code-unit lists for literals matched by this runtime, built once rather than on every call.
-let openBraceCodes = [123];
-let jsonCodes = [74, 83, 79, 78];
-let arrowCodes = [61, 62];
+let openBraceCodes: List<Real64> = [123];
+let jsonCodes: List<Real64> = [74, 83, 79, 78];
+let arrowCodes: List<Real64> = [61, 62];
 
 let matchRecoverableOpeningBrace = (
   site: String,

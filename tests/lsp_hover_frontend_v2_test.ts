@@ -16,7 +16,7 @@ Deno.test("lsp hover v2 mode returns top-level simple-let types", async () => {
     { frontend: "v2", frontendV2ModuleUrl },
   );
 
-  assertEquals(hover?.contents.value, "```wm\ncount: Real64.Real\n```");
+  assertEquals(hover?.contents.value, "```wm\ncount: Int32.Int\n```");
 });
 
 Deno.test("lsp hover v2 mode returns simple call callee types", async () => {
@@ -35,7 +35,7 @@ Deno.test("lsp hover v2 mode returns simple call callee types", async () => {
 
   assertEquals(
     hover?.contents.value,
-    "```wm\nprint\ntype: Real64.Real -> Void!\ngeneral: 'a -> Void!\n```",
+    "```wm\nprint\ntype: Int32.Int -> Void!\ngeneral: 'a -> Void!\n```",
   );
 });
 
@@ -53,7 +53,7 @@ Deno.test("lsp hover v2 mode returns variable-use types", async () => {
     { frontend: "v2", frontendV2ModuleUrl },
   );
 
-  assertEquals(hover?.contents.value, "```wm\nvalue: Real64.Real\n```");
+  assertEquals(hover?.contents.value, "```wm\nvalue: Int32.Int\n```");
 });
 
 Deno.test("lsp hover shows the contextual type required by a question-mark hole", async () => {

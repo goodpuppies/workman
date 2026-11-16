@@ -50,7 +50,7 @@ let resourceFieldName = (binding) => { "wm_r_" ++ text(binding) };
 let recursiveResultName = (id) => { "wm_result_" ++ text(id) };
 let recursiveDoneName = (id) => { "wm_done_" ++ text(id) };
 
-let rec listLength = match(items, count) => {
+let rec listLength: (List<t>, Real64) -> Real64 = match(items, count) => {
   ([], Var(count)) => { count },
   ([Var(_item), ..rest], Var(count)) => { listLength(rest, count + 1) }
 };

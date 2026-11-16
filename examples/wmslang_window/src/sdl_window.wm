@@ -31,13 +31,13 @@ record NativeRuntime = {
   close: Void -> Result<Void, NativeError>
 };
 
-let sdlInitVideo = 32;
-let sdlWindowShown = 4;
-let sdlWindowposCentered = 805240832;
-let sdlQuit = 256;
-let sdlMousemotion = 1024;
-let sdlWindowevent = 512;
-let sdlWindoweventSizeChanged = 6;
+let sdlInitVideo: Real64 = 32;
+let sdlWindowShown: Real64 = 4;
+let sdlWindowposCentered: Real64 = 805240832;
+let sdlQuit: Real64 = 256;
+let sdlMousemotion: Real64 = 1024;
+let sdlWindowevent: Real64 = 512;
+let sdlWindoweventSizeChanged: Real64 = 6;
 
 let denoResult = (value) => { value :> Result.mapErr(NativeDenoError) };
 let sdlResult = (value) => { value :> Result.mapErr(NativeSdlError) };
@@ -49,11 +49,11 @@ let expectSome = (label, value) => {
   }
 };
 
-let expectZero = (label, value) => {
+let expectZero = (label, value: Real64) => {
   if (value == 0) { Ok(void) } else { Err(NativeMessage(label)) }
 };
 
-let expectOne = (label, value) => {
+let expectOne = (label, value: Real64) => {
   if (value == 1) { Ok(void) } else { Err(NativeMessage(label)) }
 };
 

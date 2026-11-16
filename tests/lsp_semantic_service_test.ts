@@ -310,7 +310,7 @@ Deno.test("unannotated hover leaves live snapshots intact and refreshes after ed
     overrides.set(path, "let id: Real64.Real -> Real64.Real = (x) => { x + 1 };");
     await service.invalidatePaths([path]);
     const after = await hoverAt(uri, { line: 0, character: 4 }, overrides, {}, service);
-    assertEquals(after?.contents.value, "```wm\nid: Real64.Real -> Real64.Real\n```");
+    assertEquals(after?.contents.value, "```wm\nid: Real64.Real -> Real64.Real\nunannotated: Int32.Int -> Int32.Int\n```");
     assertNotStrictEquals((await service.documentContext(uri))?.project, before?.project);
   } finally {
     await Deno.remove(dir, { recursive: true });

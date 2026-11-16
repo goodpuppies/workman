@@ -153,7 +153,7 @@ Deno.test("[module update T110] every import form preserves independent polymorp
   assertEquals(importedId.vars, exportedId.vars);
   assertEquals(main.exportedStructure.strEnv.has("Namespace"), false);
   for (const name of ["n1", "n2", "n3"]) {
-    expectBinding(main.env, name, { type: "Real64.Real", vars: 0 });
+    expectBinding(main.env, name, { type: "Int32.Int", vars: 0 });
   }
   for (const name of ["s1", "s2", "s3"]) {
     expectBinding(main.env, name, { type: "String", vars: 0 });

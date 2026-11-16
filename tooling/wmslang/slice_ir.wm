@@ -80,7 +80,7 @@ let rec append = match(left, right) => {
   ([Var(head), ..rest], Var(right)) => { [head, ..append(rest, right)] }
 };
 
-let rec listLength = match(items, length) => {
+let rec listLength: (List<t>, Real64) -> Real64 = match(items, length) => {
   ([], Var(length)) => { length },
   ([_, ..rest], Var(length)) => { listLength(rest, length + 1) }
 };

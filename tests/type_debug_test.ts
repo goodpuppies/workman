@@ -25,7 +25,7 @@ Deno.test("type-debug hides the standard-library environment by default", async 
   const output = await typeDebugFile(main);
 
   assertStringIncludes(output, "note: std env hidden");
-  assertStringIncludes(output, "answer: Real64.Real");
+  assertStringIncludes(output, "answer: Int32.Int");
   assertEquals(output.includes("List.map:"), false);
 });
 

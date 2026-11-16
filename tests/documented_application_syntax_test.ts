@@ -50,7 +50,7 @@ Deno.test("documented carrier application grouping survives formatting", async (
 Deno.test("documented via and pipe forms preserve their runtime behavior", async () => {
   const source = `
     let via = Monad.via;
-    let double = (n) => { Ok(n * 2) };
+    let double = (n: Real64) => { Ok(n * 2) };
     let direct: Result<Real64.Real, String> = via Result double(Ok(21));
     let placeholder: Result<Real64.Real, String> = Ok(21) :> via Result double();
     let computed: Result<Real64.Real, String> = Ok(21) :> via Result double;
@@ -64,7 +64,7 @@ Deno.test("documented via and pipe forms preserve their runtime behavior", async
     let bare: Task<Real64.Real, String> = Task.succeed(void) :> via Task => { nextTask };
     let parameter: Task<Real64.Real, String> = Task.succeed(41)
       :> via Task (value) => { Task.succeed(value + 1) };
-    let unwrap = (result) => { match(result) { Ok(value) => { value }, Err(_) => { -1 } } };
+    let unwrap = (result: Result<Real64, String>) => { match(result) { Ok(value) => { value }, Err(_) => { -1 } } };
     let results = (unwrap(direct), unwrap(placeholder), unwrap(computed),
       Result.getOr(traversed == Ok([2, 4]), false));
 

@@ -19,12 +19,12 @@ Deno.test("basis exposes Option and Result constructors", async () => {
   expectBinding(result.env, "None", { type: "Option<T>", vars: 1 });
   expectBinding(result.env, "Ok", { type: "T -> Result<T, E>", vars: 2 });
   expectBinding(result.env, "Err", { type: "E -> Result<T, E>", vars: 2 });
-  expectBinding(result.env, "maybe", { type: "Option<Real64.Real>", vars: 0 });
+  expectBinding(result.env, "maybe", { type: "Option<Int32.Int>", vars: 0 });
   expectBinding(result.env, "missing", { type: "Option<Real64.Real>", vars: 0 });
   expectBinding(result.env, "ok", { type: "Result<String, 'a>", vars: 1 });
   expectBinding(result.env, "err", { type: "Result<String, Real64.Real>", vars: 0 });
-  expectBinding(result.env, "get", { type: "Option<Real64.Real> -> Real64.Real", vars: 0 });
-  expectBinding(result.env, "unwrapped", { type: "Real64.Real", vars: 0 });
+  expectBinding(result.env, "get", { type: "Option<Int32.Int> -> Int32.Int", vars: 0 });
+  expectBinding(result.env, "unwrapped", { type: "Int32.Int", vars: 0 });
 });
 
 Deno.test("no-prelude directive permits a self-contained Result", async () => {
@@ -37,7 +37,7 @@ Deno.test("no-prelude directive permits a self-contained Result", async () => {
   `);
 
   expectBinding(result.env, "Ok", { type: "T -> Result<T, E>", vars: 2 });
-  expectBinding(result.env, "value", { type: "Result<Real64.Real, 'a>", vars: 1 });
+  expectBinding(result.env, "value", { type: "Result<Int32.Int, 'a>", vars: 1 });
   if (result.env.has("Some") || result.env.has("Result.map")) {
     throw new Error("no-prelude module unexpectedly received prelude bindings");
   }
@@ -54,7 +54,7 @@ Deno.test("polymorphic datatype constructors generalize over type parameters", a
   expectBinding(result.env, "None", { type: "Option<T>", vars: 1 });
   expectBinding(result.env, "Some", { type: "T -> Option<T>", vars: 1 });
   expectBinding(result.env, "none", { type: "Option<'a>", vars: 1 });
-  expectBinding(result.env, "some_number", { type: "Option<Real64.Real>", vars: 0 });
+  expectBinding(result.env, "some_number", { type: "Option<Int32.Int>", vars: 0 });
   expectBinding(result.env, "some_string", { type: "Option<String>", vars: 0 });
 });
 
@@ -246,7 +246,7 @@ Deno.test("type alias substitution is applied inside datatype constructor payloa
   `);
 
   expectBinding(result.env, "Box", { type: "(T, T) -> Box<T>", vars: 1 });
-  expectBinding(result.env, "boxed", { type: "Box<Real64.Real>", vars: 0 });
+  expectBinding(result.env, "boxed", { type: "Box<Int32.Int>", vars: 0 });
   expectBinding(result.env, "unbox", { type: "Box<Real64.Real> -> Real64.Real", vars: 0 });
 });
 

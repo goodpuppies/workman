@@ -53,7 +53,7 @@ Deno.test("REPL code evaluates each phrase once and exits without consuming stdi
   assertEquals(result.code, 0, result.stderr);
   assertEquals(result.stderr, "");
   assertEquals(result.stdout.split("once\n").length - 1, 1);
-  assertStringIncludes(result.stdout, "it = 42 : Real64.Real");
+  assertStringIncludes(result.stdout, "it = 42 : Int32.Int");
   assertEquals(result.stdout.includes("unexpected input"), false);
   assertEquals(result.stdout.includes("Workman"), false);
 });
@@ -78,8 +78,8 @@ Deno.test("REPL preload imports relative to cwd and retains values without repea
     assertEquals(result.code, 0, result.stderr);
     assertEquals(result.stderr, "");
     assertEquals(result.stdout.split("loaded once\n").length - 1, 1);
-    assertStringIncludes(result.stdout, "it = 42 : Real64.Real");
-    assertStringIncludes(result.stdout, "it = 43 : Real64.Real");
+    assertStringIncludes(result.stdout, "it = 42 : Int32.Int");
+    assertStringIncludes(result.stdout, "it = 43 : Int32.Int");
   } finally {
     await Deno.remove(dir, { recursive: true });
   }
@@ -92,7 +92,7 @@ Deno.test("v2 preload reports failed phrases and keeps successful startup bindin
   );
   assertEquals(result.code, 0);
   assertStringIncludes(result.stderr, "unknown name Missing");
-  assertStringIncludes(result.stdout, "it = 42 : Real64.Real");
+  assertStringIncludes(result.stdout, "it = 42 : Int32.Int");
 });
 
 Deno.test("wm run repl launches a pakman preload command from the project root", async () => {
@@ -111,7 +111,7 @@ Deno.test("wm run repl launches a pakman preload command from the project root",
     const result = await run(["run", "repl"], "answer;\n", `${dir}/nested`);
     assertEquals(result.code, 0, result.stderr);
     assertEquals(result.stderr, "");
-    assertStringIncludes(result.stdout, "it = 42 : Real64.Real");
+    assertStringIncludes(result.stdout, "it = 42 : Int32.Int");
   } finally {
     await Deno.remove(dir, { recursive: true });
   }

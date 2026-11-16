@@ -16,7 +16,7 @@ Deno.test("resolved pattern facts preserve all Workman grammar contexts and sema
       [
         "/test/main.wm",
         `from "./types.wm" import { Pair, Choice, None, Some };
-         let pinned = 1;
+         let pinned: Real64 = 1;
          let pair = .{ first = 2, second = true };
          let .{ first = fromLet, second = _ } = pair;
          let project = (.{ first = fromParam, second = _ }) => { fromParam };

@@ -35,7 +35,7 @@ Deno.test("pure inference and lowering load without TS reflection or npm resolut
     stderr: "piped",
   }).output();
   assertEquals(result.code, 0, new TextDecoder().decode(result.stderr));
-  assertEquals(new TextDecoder().decode(result.stdout), "Real64.Real\nCoreModule\n1\n");
+  assertEquals(new TextDecoder().decode(result.stdout), "Int32.Int\nCoreModule\n1\n");
 
   // Loading generated diagnostic renderers also works in Deno, so execution
   // alone cannot guard the separation between inference and presentation.

@@ -45,7 +45,7 @@ record Camera2D = { offset: Vec2, target: Vec2, rotation: Real64, zoom: Real64 }
 record Rectangle = { x: Real64, y: Real64, width: Real64, height: Real64 };
 
 let raylibpath = "./examples/raylib/raylib.dll";
-let screenW = 960;
+let screenW: Real64 = 960;
 let center = .{ x = 480, y = 270 };
 
 -- additive blend mode constant (raylib BLEND_ADDITIVE)
@@ -84,7 +84,7 @@ let fuelFill    = .{ r = 120, g = 230, b = 160, a = 255 };
 
 -- ---- tiny pure helpers ----------------------------------------------------
 
-let bit = (b: Bool) => {
+let bit = (b: Bool): Real64 => {
   if (b) { 1 } else { 0 }
 };
 

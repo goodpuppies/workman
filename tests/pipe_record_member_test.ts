@@ -22,7 +22,7 @@ Deno.test("recovery retains imported record pipe projections and calls beside a 
         "/test/members.wm",
         `${records}
         let get = (item) => { item :> .inner :> .value };
-        let call = (item) => { item :> .add(41) };
+        let call = (item) => { item :> .add(41.0) };
       `,
       ],
       [
@@ -59,9 +59,10 @@ Deno.test("pipe members project ordinary records without FFI effects", async () 
   for (const name of ["nested", "text"]) {
     expectBinding(result.env, name, { type: "String", vars: 0 });
   }
-  for (const name of ["computed", "chained", "called", "number"]) {
-    expectBinding(result.env, name, { type: "Real64.Real", vars: 0 });
+  for (const name of ["computed", "chained", "number"]) {
+    expectBinding(result.env, name, { type: "Int32.Int", vars: 0 });
   }
+  expectBinding(result.env, "called", { type: "Real64.Real", vars: 0 });
   assertEquals(result.diagnostics, []);
 });
 
@@ -144,10 +145,10 @@ Deno.test("pipe record fields retain receiver effects and ordinary function cons
     ${records}
     let traced = () => { print("made"); make(42) };
     let value = traced() :> .inner.value;
-    let call = (item) => { item :> .add(41) };
+    let call = (item) => { item :> .add(41.0) };
     let answer = call(make(0));
   `);
-  expectBinding(result.env, "value", { type: "Real64.Real!", vars: 0 });
+  expectBinding(result.env, "value", { type: "Int32.Int!", vars: 0 });
   expectBinding(result.env, "answer", { type: "Real64.Real", vars: 0 });
 });
 

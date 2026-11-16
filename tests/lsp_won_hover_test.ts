@@ -72,7 +72,7 @@ Deno.test("WON hover uses unsaved source and leaves ordinary WM and comments alo
     assertStringIncludes(hover!.contents.value, "WON tag");
     assertStringIncludes(hover!.contents.value, "New");
     const ordinary = await hoverAt(uri, position(changed, "count"), overrides);
-    assertStringIncludes(ordinary!.contents.value, "Real64.Real");
+    assertStringIncludes(ordinary!.contents.value, "Int32.Int");
     const fake = await hoverAt(uri, position(changed, "Fake"), overrides);
     assertEquals(fake?.contents.value.includes("**WON tag**") ?? false, false);
     const comment = await hoverAt(uri, position(changed, "comment"), overrides);

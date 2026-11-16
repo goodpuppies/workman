@@ -69,8 +69,8 @@ let jsResult = (value) => { value :> Result.mapErr(JsError) };
 
 let encoder = TextEncoder.new() :> jsResult;
 
-let eintr = 4;
-let eagain = 11;
+let eintr: Real64 = 4;
+let eagain: Real64 = 11;
 
 let chunkOf = (bytes) => {
   bytes :> .length
@@ -112,7 +112,7 @@ let errnoOf = () => {
 
 -- Drop the chunks the kernel fully consumed, returning what is left and how
 -- far into its new head the write stopped. Pure: no bytes are touched.
-let rec remaining = (chunks, written) => {
+let rec remaining = (chunks: List<Chunk>, written: Real64) => {
   match(chunks) {
     [] => { ([], 0) },
     [head, ..tail] => {
@@ -217,8 +217,8 @@ let file = (fd, buf) => {
     :> Result.map((cap) => { Writer(fd, buf, cap, 0) })
 };
 
-let stdoutFd = 1;
-let stderrFd = 2;
+let stdoutFd: Real64 = 1;
+let stderrFd: Real64 = 2;
 
 let stdout = (buf) => { file(stdoutFd, buf) };
 let stderr = (buf) => { file(stderrFd, buf) };

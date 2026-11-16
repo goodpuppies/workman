@@ -53,7 +53,7 @@ Deno.test("persistent Map preserves old versions and ordered semantics", async (
 
 Deno.test("persistent Map AVL height stays logarithmic for sorted inserts", async () => {
   const source = `
-    let rec fill = match(map, next, limit) => {
+    let rec fill: (Map.Map<Real64, Real64>, Real64, Real64) -> Map.Map<Real64, Real64> = match(map, next, limit) => {
       (map, next, limit) => {
         if (next > limit) {
           map

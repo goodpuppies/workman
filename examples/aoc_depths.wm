@@ -63,7 +63,7 @@ let countWindowIncreases = (depths) => {
   countIncreases(windowSums(depths))
 };
 
-let sampleDepths = [199, 200, 208, 210, 200, 207, 240, 269, 260, 263];
+let sampleDepths: List<Real64> = [199, 200, 208, 210, 200, 207, 240, 269, 260, 263];
 
 let adjustedDepths = map((x) => { x + 1 }, sampleDepths);
 let largeDepths = filter((x) => { x > 200 }, adjustedDepths);

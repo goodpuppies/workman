@@ -95,7 +95,10 @@ function emitRules(
     "};",
   ];
   const scanFunctions = scanners!.functions();
-  const constants = [...moduleConstants].map(([value, name]) => `let ${name} = ${value};`);
+  const constants = [...moduleConstants].map(([value, name]) => {
+    const annotation = name.startsWith("literal_") ? ": List<Real64>" : "";
+    return `let ${name}${annotation} = ${value};`;
+  });
   moduleConstants = undefined;
   return [
     header(grammar, grammarHash, grammar.rules.map((rule) => rule.name)),

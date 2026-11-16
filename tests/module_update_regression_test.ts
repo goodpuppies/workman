@@ -196,10 +196,10 @@ Deno.test({
         "let oldValue = value; " +
         "type Token = | Local; " +
         "let oldToken = Imported; " +
-        "record Thing = { local: Real64.Real }; " +
+        "record Thing = { local: Int32.Int }; " +
         "let value = 2; " +
         "type Option<T> = T; " +
-        "let option: Option<Real64.Real> = 6; " +
+        "let option: Option<Int32.Int> = 6; " +
         "let stillSome = Some(5); " +
         "let print = 3; " +
         'from js.global("console") import unsafe { log: Real64.Real -> Void } as console; ' +

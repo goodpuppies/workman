@@ -71,7 +71,7 @@ Deno.test("generic and complex-pattern functions retain tuple fallback semantics
     let apply = (function, argument) => function(argument);
     let invoke = (function, a: Real64.Real, b: Real64.Real) => function(a, b);
     let genericTuple = identity(1, 2);
-    let existingTuple = (20, 22);
+    let existingTuple: (Real64, Real64) = (20, 22);
     let genericApplied = apply(add, existingTuple);
   `);
   assertEquals(module.genericTuple, [1, 2]);

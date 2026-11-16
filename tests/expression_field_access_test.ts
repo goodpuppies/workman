@@ -180,7 +180,7 @@ Deno.test("a field access on a computed primitive is rejected", async () => {
   await assertRejects(
     () => checkSource("record Named = { did: String }; let read = (1 + 2).did;"),
     Error,
-    "requires a nominal record, got Real64.Real",
+    "requires a nominal record, got Int32.Int",
   );
 });
 

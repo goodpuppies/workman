@@ -21,7 +21,7 @@ type AppError =
 
 let raylibpath = "./examples/raylib/raylib.dll";
 let center = .{ x = 480, y = 270 };
-let bodyCount = 90;
+let bodyCount: Real64 = 90;
 
 let bgColor   = .{ r = 12,  g = 14,  b = 22,  a = 255 };
 let titleColor= .{ r = 232, g = 234, b = 244, a = 255 };

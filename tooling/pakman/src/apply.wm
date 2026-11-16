@@ -31,8 +31,8 @@ record Placement = { path: String, source: String, link: String };
 
 record Plan = { root: String, add: List<Placement>, remove: List<String> };
 
-let planProtocol = 1;
-let ownedProtocol = 1;
+let planProtocol: Real64 = 1;
+let ownedProtocol: Real64 = 1;
 
 let planValue = (plan: Plan) => {
   let placementValue = (p: Placement) => {

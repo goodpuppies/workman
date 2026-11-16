@@ -36,13 +36,13 @@ record Sim = {
 
 -- ---- constants ------------------------------------------------------------
 
-let gridN = 16;
-let maxRes = 6;
-let capacity = 4;
+let gridN: Real64 = 16;
+let maxRes: Real64 = 6;
+let capacity: Real64 = 4;
 let mineRate = 2.5;
 let regrowRate = 0.15;
 let moveSpeed = 2.4;
-let maxAgents = 48;
+let maxAgents: Real64 = 48;
 let home = .{ x = 8, y = 8 };
 
 -- ---- small pure helpers ---------------------------------------------------
@@ -51,7 +51,7 @@ let clamp = (v: Real64, lo: Real64, hi: Real64) => {
   if (v < lo) { lo } else { if (v > hi) { hi } else { v } }
 };
 
-let rec count = match(xs) => {
+let rec count: List<t> -> Real64 = match(xs) => {
   [] => { 0 },
   [_, ..rest] => { 1 + count(rest) }
 };
@@ -154,11 +154,11 @@ let agentsOf = (results) => {
 };
 
 let rec sumDeposits = match(results) => {
-  [] => { 0 },
+  [] => { 0.0 },
   [r, ..rest] => { let (_, _, _, dep) = r; dep + sumDeposits(rest) }
 };
 
-let rec collectHarvests = match(results) => {
+let rec collectHarvests: List<(Agent, Real64, Real64, Real64)> -> List<(Real64, Real64)> = match(results) => {
   [] => { [] },
   [r, ..rest] => {
     let (_, hidx, hamt, _) = r;
@@ -170,7 +170,7 @@ let rec collectHarvests = match(results) => {
   }
 };
 
-let rec harvestedAt = (harvests, i: Real64) => {
+let rec harvestedAt = (harvests: List<(Real64, Real64)>, i: Real64) => {
   match(harvests) {
     [] => { 0 },
     [h, ..rest] => {

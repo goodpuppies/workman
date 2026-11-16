@@ -7,7 +7,7 @@ from js.module("./js/byte_vector.js") import unsafe {
   pack as primPack: (String, Bool, Word32.Word) -> Word8Vector.Vector
 };
 
-let bytesPerElem = 4;
+let bytesPerElem: Real64.Real = 4;
 
 let isBigEndian = true;
 

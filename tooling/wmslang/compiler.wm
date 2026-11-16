@@ -407,9 +407,9 @@ let rec collectLocalBindings = match(pending, expressionRegistry, visited, bound
 };
 
 let rec constantExpression = (
-  expressionId,
-  expressionRegistry,
-  bindingRegistry,
+  expressionId: Real64,
+  expressionRegistry: Map.Map<Real64, GpuExprDto>,
+  bindingRegistry: Map.Map<Real64, GpuBindingDto>,
   visitedExpressions,
   visitedBindings
 ) => {

@@ -224,6 +224,9 @@ export function tyToTypeExpr(type: Ty): TypeExpr {
     case "prim":
       return name(target.name);
     case "var":
+      // Reflection sees an undecided numeric position as a JS number. Its concrete
+      // parameter or result type will solve the HM constraint before defaulting.
+      if (target.numeric) return name("Real64.Real");
       return tvar(target.name ?? `t${target.id}`);
     case "ffi":
       return name("Js.Value");
@@ -254,6 +257,7 @@ export function knownTyToTypeExpr(type: Ty): TypeExpr | undefined {
     case "prim":
       return name(target.name);
     case "var":
+      if (target.numeric) return name("Real64.Real");
       return tvar(target.name ?? `t${target.id}`);
     case "named": {
       const args = target.args.map(knownTyToTypeExpr);
@@ -335,10 +339,12 @@ export function foreignReceiver(
   const target = prune(type);
   if (
     target.tag === "prim" &&
-    (target.name === "String" || target.name === "Real64.Real" || target.name === "Bool")
+    (target.name === "String" || target.name === "Real64.Real" || target.name === "Bool" ||
+      target.name === "Int32.Int")
   ) {
     return {
-      ref: jsPrimitiveValueRef(target.name),
+      // An Int32 is a JS number at runtime, so it has Number's members.
+      ref: jsPrimitiveValueRef(target.name === "Int32.Int" ? "Real64.Real" : target.name),
       type: { kind: "TName", name: target.name, args: [] },
     };
   }

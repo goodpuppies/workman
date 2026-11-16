@@ -18,7 +18,7 @@ from js.module("./js/word.js") import unsafe {
 /** The type a bare `Word32` names in annotations (docs/modules.md). */
 type Self = Word32.Word;
 
-let wordSize = 32;
+let wordSize: Real64.Real = 32;
 let fromReal64 = word32FromNumber;
 let toReal64 = primToReal64;
 let andb = word32Andb;

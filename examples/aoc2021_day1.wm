@@ -1,6 +1,6 @@
 type List<T> = Nil | Cons<T, List<T>>;
 
-let sample =
+let sample: List<Real64> =
   Cons(199,
   Cons(200,
   Cons(208,
@@ -17,7 +17,7 @@ let rec length = match(xs) => {
   Cons(_, rest) => { 1 + length(rest) },
 };
 
-let rec sum = match(xs) => {
+let rec sum: List<Real64> -> Real64 = match(xs) => {
   Nil => { 0 },
   Cons(value, rest) => { value + sum(rest) },
 };

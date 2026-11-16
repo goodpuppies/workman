@@ -2,29 +2,29 @@ from "./vec.wm" import { Vec2, zero, length, withinSq };
 from "./trig.wm" import * as Trig;
 from "./rng.wm" import * as Rng;
 
-let screenW = 800;
-let screenH = 600;
+let screenW: Real64 = 800;
+let screenH: Real64 = 600;
 let center = Vec2(400, 300);
 
-let shipSize = 20;
+let shipSize: Real64 = 20;
 let shipRotationSpeed = 3.5;
-let shipThrust = 220;
-let shipRadius = 12;
-let maxShipSpeed = 380;
+let shipThrust: Real64 = 220;
+let shipRadius: Real64 = 12;
+let maxShipSpeed: Real64 = 380;
 let dragRate = 0.5108;
 
-let bulletSpeed = 520;
+let bulletSpeed: Real64 = 520;
 let bulletLifetime = 1.1;
-let bulletRadius = 2;
+let bulletRadius: Real64 = 2;
 let fireCooldown = 0.25;
 
-let asteroidSpeedMin = 40;
-let asteroidSpeedMax = 110;
-let splitCount = 2;
+let asteroidSpeedMin: Real64 = 40;
+let asteroidSpeedMax: Real64 = 110;
+let splitCount: Real64 = 2;
 
-let startingLives = 3;
-let startingAsteroids = 4;
-let invulnerabilityTime = 2;
+let startingLives: Real64 = 3;
+let startingAsteroids: Real64 = 4;
+let invulnerabilityTime: Real64 = 2;
 let respawnDelay = 1.5;
 
 type AsteroidSize = Large | Medium | Small;
@@ -51,13 +51,13 @@ record Game = {
 
 record Input = { turn: Real64, thrust: Bool, fire: Bool, restart: Bool };
 
-let radiusOf = match(size) => {
+let radiusOf: AsteroidSize -> Real64 = match(size) => {
   Large => { 40 },
   Medium => { 22 },
   Small => { 12 },
 };
 
-let scoreOf = match(size) => {
+let scoreOf: AsteroidSize -> Real64 = match(size) => {
   Large => { 20 },
   Medium => { 50 },
   Small => { 100 },

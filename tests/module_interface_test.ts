@@ -498,7 +498,7 @@ Deno.test("[module update A608] named value imports retain declaration and use-s
       },
       {
         role: "reference",
-        type: "Real64.Real -> Real64.Real",
+        type: "Int32.Int -> Int32.Int",
         generalized: false,
         variables: 0,
       },
@@ -608,7 +608,7 @@ Deno.test("[module update A608] occurrences reference immutable semantic type sn
     generalized: false,
     quantifiedVariables: 0,
   });
-  assertEquals(referenceType.rendered, "Real64.Real -> Real64.Real");
+  assertEquals(referenceType.rendered, "Int32.Int -> Int32.Int");
   assertEquals(Object.isFrozen(main.semanticTypes), true);
   assertEquals(Object.isFrozen(declarationType.shape), true);
 });
@@ -656,7 +656,7 @@ Deno.test("[module update A608] typed-node queries cover expressions, patterns, 
   assertEquals(main.semanticTypes[string.type.id].rendered, "String");
   assertEquals(id.label, "id");
   assertEquals(idUse.label, "id");
-  assertEquals(main.semanticTypes[idUse.type.id].rendered, "Real64.Real -> Real64.Real");
+  assertEquals(main.semanticTypes[idUse.type.id].rendered, "Int32.Int -> Int32.Int");
   assertEquals(main.semanticTypes[idUse.generalType!.id].rendered, "t -> t");
   assertEquals(Object.isFrozen(main.typedNodes), true);
   assertEquals(Object.isFrozen(number), true);
@@ -710,14 +710,14 @@ Deno.test("[module update G21] carrier operations expose immutable compiler sema
         carrier: "Result",
         operands: ["wrapped", "pure"],
         error: "'a",
-        payload: "Real64.Real",
+        payload: "Int32.Int",
       },
       {
         source: "Ok(4) * Ok(5)",
         carrier: "Result",
         operands: ["wrapped", "wrapped"],
         error: "'b",
-        payload: "Real64.Real",
+        payload: "Int32.Int",
       },
     ],
   );
@@ -935,7 +935,7 @@ Deno.test("[module update A610] failed declarations contribute no type-variable 
     false,
   );
   const goodValue = semanticTypedNodeAt(main, source.indexOf("1"))!;
-  assertEquals(main.semanticTypes[goodValue.type.id].rendered, "Real64.Real");
+  assertEquals(main.semanticTypes[goodValue.type.id].rendered, "Int32.Int");
   assertEquals(semanticTypedNodeAt(main, source.indexOf("String")), undefined);
   assertEquals(semanticTypedNodeAt(main, source.lastIndexOf("u")), undefined);
 });
@@ -1073,7 +1073,7 @@ Deno.test("[module update A611] failed semantic phrases do not block independent
   assertEquals(main.publicEnvironment.valEnv.has("after"), true);
   assertEquals(semanticTypedNodeAt(main, source.indexOf('"two"')), undefined);
   const recoveredValue = semanticTypedNodeAt(main, source.lastIndexOf("2"))!;
-  assertEquals(main.semanticTypes[recoveredValue.type.id].rendered, "Real64.Real");
+  assertEquals(main.semanticTypes[recoveredValue.type.id].rendered, "Int32.Int");
 });
 
 Deno.test("[module update A611] dependent and unresolved-import phrases recover independently", async () => {
@@ -1419,7 +1419,7 @@ Deno.test("[module update A608] strict occurrences cover every authored named no
   const lib = [
     "record Point<T> = { x: T, y: T };",
     "type Shape = | Dot<Point<Real64.Real>> | Empty;",
-    "let origin = Point(0, 0);",
+    "let origin: Point<Real64> = Point(0, 0);",
     "let describe = (shape: Shape) => { match(shape) { Dot(p) => { p.x }, Empty => { 0 } } };",
   ].join(" ");
   const main = [
@@ -1488,7 +1488,7 @@ Deno.test("[module update A608] strict scopes reproduce every reference occurren
   const lib = [
     "record Point<T> = { x: T, y: T };",
     "type Shape = | Dot<Point<Real64>> | Empty;",
-    "let origin = Point(0, 0);",
+    "let origin: Point<Real64> = Point(0, 0);",
     "let describe = (shape: Shape) => { match(shape) { Dot(p) => { p.x }, Empty => { 0 } } };",
   ].join(" ");
   const ffi = [

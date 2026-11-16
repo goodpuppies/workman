@@ -15,7 +15,7 @@ let rec filter = match(items, keep) => {
 
 -- Named `count` rather than `length` so it never clashes with vec.wm's vector
 -- length when both are imported into the same module.
-let rec count = match(items) => {
+let rec count: List<t> -> Real64 = match(items) => {
   [] => { 0 },
   [_, ..rest] => { 1 + count(rest) }
 };

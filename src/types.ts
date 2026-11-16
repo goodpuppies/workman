@@ -47,6 +47,8 @@ export type Ty =
       equalityConstraint?: (t: Ty) => void;
       /** Finite admissible types and literal range obligations; never generalized. */
       numeric?: NumericConstraint;
+      /** Part of a constraint on an unresolved JS member, which FFI reflection decides. */
+      awaitsFfi?: boolean;
       /** All field/result obligations on this unresolved nominal receiver. */
       projectionFields?: ProjectionFieldInfo[];
     }
@@ -257,7 +259,8 @@ export const fresh = (name?: string): Ty => ({
 
 export type NumericConstraint = Readonly<{
   candidates: readonly NumericType[];
-  literals: readonly { text: string; node?: Expr["node"] }[];
+  /** `realDefault`: written in `@gpu` code, where an undecided literal is `Real64`. */
+  literals: readonly { text: string; node?: Expr["node"]; realDefault?: boolean }[];
 }>;
 
 /** Numeric variables belong to one synchronous module-inference scope. */
@@ -288,13 +291,14 @@ export function freshNumeric(name?: string): Ty {
 export function freshIntegerLiteral(
   literal: { value: number; exact?: string; node?: Expr["node"] },
   negated = false,
+  realDefault = false,
 ): Ty {
   const text = literal.exact ?? String(literal.value);
   const signed = negated ? (text.startsWith("-") ? text.slice(1) : "-" + text) : text;
   const t = fresh() as Extract<Ty, { tag: "var" }>;
   markNumeric(t, {
     candidates: INTEGER_LITERAL_TYPES,
-    literals: [{ text: signed, node: literal.node }],
+    literals: [{ text: signed, node: literal.node, ...(realDefault ? { realDefault } : {}) }],
   });
   return t;
 }
@@ -356,15 +360,37 @@ function unifyAgainstNumber(
 
 /**
  * Resolve overloaded numeric literals and operators that context left undecided, as SML does
- * at each top-level declaration. Existing WM code therefore keeps its `Real64.Real` meaning.
+ * at each top-level declaration. Context decides first; undecided integer literals prefer Int32.
  */
 export function defaultNumericVars(): void {
   const pending = pendingNumeric;
   pendingNumeric = [];
   for (const t of pending) {
     const target = prune(t);
-    if (target.tag === "var" && target.numeric) unify(target, Real64Ty);
+    if (target.tag !== "var" || !target.numeric) continue;
+    // Reflection decides it; a later declaration's defaulting sees it again if it doesn't.
+    if (target.awaitsFfi) pendingNumeric.push(target);
+    else unify(target, numericDefault(target.numeric));
   }
+}
+
+const INT32_MIN = -(2n ** 31n);
+const INT32_MAX = 2n ** 31n - 1n;
+
+/**
+ * The type an undecided numeric variable takes: `Int32` when it holds integer literals that all
+ * fit, as SML defaults `int`; `Real64` otherwise, including for operators with no literal
+ * (`(a, b) => a + b`), literals outside the `Int32` range and literals in `@gpu` code, where
+ * shader arithmetic is floating point.
+ */
+function numericDefault(constraint: NumericConstraint): Ty {
+  if (constraint.literals.some((literal) => literal.realDefault)) return Real64Ty;
+  const int32 = constraint.candidates.some((candidate) => candidate.name === "Int32.Int");
+  const fits = constraint.literals.length > 0 && constraint.literals.every((literal) => {
+    const value = exactInteger(literal.text);
+    return value >= INT32_MIN && value <= INT32_MAX;
+  });
+  return int32 && fits ? Int32Ty : Real64Ty;
 }
 export const freshFfi = (
   kind: "get" | "call",
@@ -373,16 +399,12 @@ export const freshFfi = (
   args: Ty[] = [],
   node?: Expr["node"],
   binding?: string,
-): Ty => ({
-  tag: "ffi",
-  id: nextFfi++,
-  kind,
-  receiver,
-  path,
-  args,
-  node,
-  binding,
-});
+): Ty => {
+  // Reflection decides literal and inline callback types before declaration defaulting.
+  // Already concrete WM values retain their types.
+  if (kind === "call") args.forEach((arg) => markAwaitingFfi(arg));
+  return { tag: "ffi", id: nextFfi++, kind, receiver, path, args, node, binding };
+};
 export const fn = (params: Ty[], result: Ty): Ty => ({
   tag: "fn",
   params,
@@ -552,6 +574,7 @@ export function unify(
     if (a.numeric && b.tag === "var") markNumeric(b, a.numeric);
     a.instance = bindingTarget(originalB, b);
     if (a.linked && b.tag === "var") b.linked = true;
+    if (a.awaitsFfi && b.tag === "var") b.awaitsFfi = true;
     if (b.tag === "var" && a.projectionFields) {
       const existing = b.projectionFields ?? [];
       b.projectionFields = [...existing, ...a.projectionFields];
@@ -842,6 +865,25 @@ function rememberFfiConstraint(ffi: Extract<Ty, { tag: "ffi" }>, target: Ty): vo
   if (isBroadJsBoundaryConstraint(target)) return;
   ffi.constraints ??= [];
   ffi.constraints.push(target);
+  markAwaitingFfi(target);
+}
+
+/**
+ * Variables in a constraint on an unresolved JS member wait for reflection rather than taking a
+ * numeric default: in `value :> .length :> Result.getOr(0)` the `0` is whatever `.length` is.
+ */
+function markAwaitingFfi(type: Ty, seen = new Set<Ty>()): void {
+  const target = prune(type);
+  if (seen.has(target)) return;
+  seen.add(target);
+  if (target.tag === "var") target.awaitsFfi = true;
+  else if (target.tag === "named") target.args.forEach((item) => markAwaitingFfi(item, seen));
+  else if (target.tag === "tuple") target.items.forEach((item) => markAwaitingFfi(item, seen));
+  else if (target.tag === "struct") {
+    target.fields.forEach((field) => markAwaitingFfi(field.type, seen));
+  } else if (target.tag === "fn") {
+    [...target.params, target.result].forEach((item) => markAwaitingFfi(item, seen));
+  }
 }
 
 function isBroadJsBoundaryConstraint(type: Ty): boolean {
@@ -1169,6 +1211,7 @@ function copyType(
     if (input.gpuConstraint) addGpuConstraint(target, input.gpuConstraint);
     if (input.equalityConstraint) addEqualityConstraint(target, input.equalityConstraint);
     if (input.numeric && target.tag === "var") markNumeric(target, input.numeric);
+    if (input.awaitsFfi && target.tag === "var") target.awaitsFfi = true;
     if (!copiedProjections.has(input.id)) {
       copiedProjections.add(input.id);
       for (const field of input.projectionFields ?? []) {

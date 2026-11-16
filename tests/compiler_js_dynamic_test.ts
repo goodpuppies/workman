@@ -60,7 +60,7 @@ Deno.test("JSON literal variables can settle to primitive types", async () => {
     let value = response("ok", 200);
   `);
 
-  expectBinding(result.env, "response", { type: "(String, Real64.Real) -> Response!", vars: 0 });
+  expectBinding(result.env, "response", { type: "(String, Int32.Int) -> Response!", vars: 0 });
   expectBinding(result.env, "value", { type: "Response!", vars: 0 });
 });
 
@@ -765,7 +765,7 @@ Deno.test("match-bound Workman record fields do not become JS FFI projections", 
     record Binding = { definitionExprId: Real64.Real };
     let field = match(value) => {
       Some(item) => { item.definitionExprId },
-      None => { 0 }
+      None => { 0.0 }
     };
     let answer = field(Some(Binding{ definitionExprId = 42 }));
   `);

@@ -37,7 +37,7 @@ let numberEqual = (left: Real64, right: Real64) => {
   !(left < right) && !(left > right)
 };
 
-let rec listLength = match(items, length) => {
+let rec listLength: (List<t>, Real64) -> Real64 = match(items, length) => {
   ([], Var(length)) => { length },
   ([_, ..rest], Var(length)) => { listLength(rest, length + 1) }
 };
@@ -117,7 +117,7 @@ let fieldNode = (field: GpuSliceEnvironmentFieldDto, context: NumericContext) =>
   if (numericType(field.typeId, context)) { context.fieldOffset + field.id } else { -1 }
 };
 
-let evidence = (representations, node) => {
+let evidence = (representations, node: Real64) => {
   if (node < 0) {
     None
   } else {
@@ -276,7 +276,7 @@ let rec laneContains = match(ids, id) => {
   }
 };
 
-let rec childLaneNodes = match(ids, exprNodes) => {
+let rec childLaneNodes: (List<Real64>, Map.Map<Real64, Real64>) -> List<Real64> = match(ids, exprNodes) => {
   ([], Var(_exprNodes)) => { [] },
   ([Var(id), ..rest], Var(exprNodes)) => {
     let node = match(Map.get(exprNodes, id)) { Some(n) => { n }, None => { -1 } };

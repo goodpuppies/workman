@@ -14,7 +14,7 @@ let writeByte = (buf, i, value) => {
   }
 };
 
-let rec blit = (src, srcIndex, dest, destIndex, count) => {
+let rec blit = (src, srcIndex: Real64, dest, destIndex: Real64, count: Real64) => {
   if (count <= 0) {
     0
   } else {

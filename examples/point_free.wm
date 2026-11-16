@@ -20,7 +20,7 @@ let between = (x, low, high) =>
 let prefix = (text, label) => label ++ text;
 
 // Ordinary unary
-let double = x => x * 2;
+let double = (x: Real64) => x * 2;
 
 // Higher-order, curried
 let tap = effect => value => {
@@ -41,7 +41,7 @@ let process ==>:>
   :> Text.of
   :> prefix("Result: ");
 
-let results = [1, 5, 10, 20, 50]
+let results = [1.0, 5, 10, 20, 50]
   :> List.map(process);
 
 // ["Result: 36", "Result: 60", "Result: 90",
@@ -52,7 +52,7 @@ let results = [1, 5, 10, 20, 50]
 // 2. Inline point-free callbacks
 // ------------------------------------------------------------
 
-let formatted = [10, 20, 30, 40]
+let formatted = [10.0, 20, 30, 40]
   :> List.map(=>
     :> add 5
     :> double
@@ -79,7 +79,7 @@ let filtered = [5, 15, 25, 50, 110]
 // 4. Nested point-free mapping
 // ------------------------------------------------------------
 
-let groups = [
+let groups: List<List<Real64>> = [
   [1, 20, 200],
   [5, 50, 500],
   [10, 100, 1000]

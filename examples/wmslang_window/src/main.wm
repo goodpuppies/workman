@@ -71,8 +71,8 @@ let fragmentFor = (uniforms: MandelbrotUniforms) => {
   Gpu.fragment(mandelbrotShade(uniforms))
 };
 
-let width = 960;
-let height = 640;
+let width: Real64 = 960;
+let height: Real64 = 640;
 let initialState: FrameState = .{
   quit = false,
   resolution = (960.0, 640.0),

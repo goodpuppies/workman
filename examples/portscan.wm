@@ -24,28 +24,30 @@ record ScanConfig = {
 
 let toNumber = (text: String) => { Ok(numberOf(text)) };
 
-let knownService = match(port) => {
-  21    => { "FTP" },
-  22    => { "SSH" },
-  23    => { "Telnet" },
-  25    => { "SMTP" },
-  53    => { "DNS" },
-  80    => { "HTTP" },
-  110   => { "POP3" },
-  143   => { "IMAP" },
-  443   => { "HTTPS" },
-  465   => { "SMTPS" },
-  587   => { "SMTP/submission" },
-  993   => { "IMAPS" },
-  995   => { "POP3S" },
-  3306  => { "MySQL" },
-  3389  => { "RDP" },
-  5432  => { "PostgreSQL" },
-  6379  => { "Redis" },
-  8080  => { "HTTP-alt" },
-  8443  => { "HTTPS-alt" },
-  27017 => { "MongoDB" },
-  _     => { "" },
+let knownService = (port: Real64) => {
+  match(port) {
+    21    => { "FTP" },
+    22    => { "SSH" },
+    23    => { "Telnet" },
+    25    => { "SMTP" },
+    53    => { "DNS" },
+    80    => { "HTTP" },
+    110   => { "POP3" },
+    143   => { "IMAP" },
+    443   => { "HTTPS" },
+    465   => { "SMTPS" },
+    587   => { "SMTP/submission" },
+    993   => { "IMAPS" },
+    995   => { "POP3S" },
+    3306  => { "MySQL" },
+    3389  => { "RDP" },
+    5432  => { "PostgreSQL" },
+    6379  => { "Redis" },
+    8080  => { "HTTP-alt" },
+    8443  => { "HTTPS-alt" },
+    27017 => { "MongoDB" },
+    _     => { "" },
+  }
 };
 
 -- Try to open a TCP connection; recover any error as Closed so the scan never fails.
@@ -59,7 +61,7 @@ let scanPort = (host, port) => {
 };
 
 -- Build an inclusive integer range as a Workman list.
-let rec makeRange = (start, last) => {
+let rec makeRange = (start: Real64, last: Real64) => {
   if (start > last) {
     []
   } else {

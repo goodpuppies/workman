@@ -31,13 +31,13 @@ let log = (text: String) => {
   console.log(text) :> try;
 };
 
-let isAlive = (state) => {
+let isAlive = (state: PetState) => {
   state.hunger < 100 &&
   state.happiness > 0 &&
   state.energy > 0
 };
 
-let mood = (state) => {
+let mood = (state: PetState) => {
   if (!isAlive(state)) {
     Dead
   } else {
@@ -67,7 +67,7 @@ let face = match(currentMood) => {
   Dead => { " ( x.x ) " }
 };
 
-let asciiArt = (state) => {
+let asciiArt = (state: PetState) => {
   `
       /\\_/\\
      ` ++ face(mood(state)) ++ `
@@ -75,7 +75,7 @@ let asciiArt = (state) => {
     `
 };
 
-let hungerText = (state) => {
+let hungerText = (state: PetState) => {
   let text = "Hunger:    " ++ Text.of(Math.max(0, state.hunger) :> try) ++ " / 100";
   if (state.hunger < 50) {
     chalk.default.green(text) :> try
@@ -88,7 +88,7 @@ let hungerText = (state) => {
   }
 };
 
-let happinessText = (state) => {
+let happinessText = (state: PetState) => {
   let text = "Happiness: " ++ Text.of(Math.max(0, state.happiness) :> try) ++ " / 100";
   if (state.happiness > 50) {
     chalk.default.green(text) :> try
@@ -101,7 +101,7 @@ let happinessText = (state) => {
   }
 };
 
-let energyText = (state) => {
+let energyText = (state: PetState) => {
   let text = "Energy:    " ++ Text.of(Math.max(0, state.energy) :> try) ++ " / 100";
   if (state.energy > 50) {
     chalk.default.green(text) :> try
@@ -114,7 +114,7 @@ let energyText = (state) => {
   }
 };
 
-let printStatus = (state) => {
+let printStatus = (state: PetState) => {
   let nameAndAge = "Name: " ++ state.name ++ " (Age: " ++ Text.of(state.age) ++ ")";
   let stats =
     (chalk.default.cyan.bold(nameAndAge) :> try) ++ "\n" ++
@@ -142,7 +142,7 @@ let randomChange = => {
   (Math.floor(random * 10) :> try) + 5
 };
 
-let tick = (state) => {
+let tick = (state: PetState) => {
   let hungerChange = randomChange();
   let happinessChange = randomChange();
   let energyChange = randomChange();
@@ -228,7 +228,7 @@ let spinwait = (starting) => { (finished) => { (duration) => {
     }
 }}};
 
-let feed = (state) => {
+let feed = (state: PetState) => {
   spinwait 
     "Feeding your pet..." 
     "Yum! That was delicious." 
@@ -244,7 +244,7 @@ let feed = (state) => {
     }
 };
 
-let play = (state) => {
+let play = (state: PetState) => {
   spinwait
     "Playing a game..."
     "So much fun!"
@@ -261,7 +261,7 @@ let play = (state) => {
     }
 };
 
-let sleep = (state) => {
+let sleep = (state: PetState) => {
   spinwait
     "Sleeping..."
     "Zzz... Well rested!"
@@ -278,7 +278,7 @@ let sleep = (state) => {
     }
 };
 
-let doNothing = (state) => {
+let doNothing = (state: PetState) => {
   chalk.default.italic("You stare at your pet. It stares back...")
     :> try
     :> log;
@@ -295,7 +295,7 @@ let quit = => {
   Task.succeed void
 };
 
-let doAction = (action, state) => {
+let doAction = (action, state: PetState) => {
   match(action) {
     Feed => { feed(state) },
     Play => { play(state) },
@@ -305,7 +305,7 @@ let doAction = (action, state) => {
   }
 };
 
-let gameOver = (state) => {
+let gameOver = (state: PetState) => {
   console.clear();
   printStatus(state);
   chalk.default.bgRed.white.bold("\n G A M E   O V E R \n")
@@ -319,7 +319,7 @@ let gameOver = (state) => {
     :> log;
 };
 
-let rec petLoop = via Task (state) => {
+let rec petLoop = via Task (state: PetState) => {
   if (isAlive(state)) {
     console.clear();
     printStatus(state);

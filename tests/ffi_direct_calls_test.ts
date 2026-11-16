@@ -33,7 +33,7 @@ Deno.test("JS imports use direct tuple entries across modules and retain higher-
       from "./foreign.wm" import { maximum };
       from js.global("Math") import unsafe { min: (Real64.Real, Real64.Real) -> Real64.Real };
       from js.global("Math") import { max as checkedMax };
-      let higher = (function) => { function(4, 9) };
+      let higher = (function) => { function(4.0, 9.0) };
       let throughTuple = (left, right) => { let pair = (left, right); min(pair) };
       let direct = maximum(4, 9);
       let variadic = checkedMax(4, 9, 2);
@@ -95,7 +95,7 @@ Deno.test("direct JS calls preserve optional values, callbacks, receivers, const
       let order = combine(next(), next());
       let some = optional(Some(4), 3);
       let none = optional(None, 3);
-      let higher = (function) => { function(Some(4), 3) };
+      let higher = (function) => { function(Some(4.0), 3.0) };
       let fromValue = higher(optional);
       let calledBack = callback(4, (left, right) => { left + right });
       let success = throwing(4, 3);

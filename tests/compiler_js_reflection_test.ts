@@ -683,10 +683,10 @@ Deno.test("recursive FFI receiver helpers stay monomorphic across downstream con
   `);
 
   expectBinding(result.env, "readLoop", {
-    type: "(UnsafePointerView, Real64.Real) -> Result<Real64.Real, Js.Error>!",
+    type: "(UnsafePointerView, Int32.Int) -> Result<Int32.Int, Js.Error>!",
     vars: 0,
   });
-  expectBinding(result.env, "value", { type: "Result<Real64.Real, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "value", { type: "Result<Int32.Int, Js.Error>!", vars: 0 });
 });
 
 Deno.test("delayed foreign methods provide callback parameter refs", async () => {

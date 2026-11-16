@@ -32,17 +32,17 @@ Deno.test("ordinary type inlays cover useful binders and inferred parameters", a
         category: "result",
       },
       {
-        label: ": Real64.Real",
+        label: ": Int32.Int",
         position: { line: 2, character: "let increment = (value".length },
         category: "parameter",
       },
       {
-        label: ": Real64.Real",
+        label: ": Int32.Int",
         position: { line: 2, character: "let increment = (value)".length },
         category: "result",
       },
       {
-        label: ": Real64.Real",
+        label: ": Int32.Int",
         position: { line: 4, character: "let (left".length },
         category: "binding",
       },
@@ -72,7 +72,7 @@ Deno.test("ordinary type inlays honor the requested range", async () => {
     new Map([[path, source]]),
   );
 
-  assertEquals(hints.map(({ label }) => label), [": Real64.Real", ": String"]);
+  assertEquals(hints.map(({ label }) => label), [": Int32.Int", ": String"]);
 });
 
 Deno.test("ordinary type inlays include local let binders", async () => {
@@ -120,7 +120,7 @@ Deno.test("empty mismatched match arm becomes a recovery-only hole without hidin
     { typeHints: true, parameterHints: false, recoveryHoles: true },
   );
 
-  assertEquals(hints.map(({ label }) => label), [": Real64.Real", "?", ": 'a", ": 'a"]);
+  assertEquals(hints.map(({ label }) => label), [": Int32.Int", "?", ": 'a", ": 'a"]);
   const hole = hints.find((hint) => hint.label === "?");
   assertEquals(hole?.position.character, source.indexOf("  }") + 2);
   if (!hole || hole.data.kind !== "workman.structural") throw new Error("missing recovery hole");
@@ -147,7 +147,7 @@ Deno.test("direct function inlays respect authored annotations and empty paramet
       category: data.category,
     })),
     [{
-      label: ": Real64.Real",
+      label: ": Int32.Int",
       position: { line: 0, character: source.indexOf("()") + 2 },
       category: "result",
     }],
@@ -313,13 +313,13 @@ Deno.test("type inlays show effect taint and keep it when a label is shortened",
   const labels = hints.filter((hint) => hint.kind === 1 && hint.data.category !== "capture")
     .map((hint) => [hint.position.line, hint.label]);
   assertEquals(labels, [
-    [0, ": Real64.Real!"],
-    [1, ": Real64.Real!"],
+    [0, ": Int32.Int!"],
+    [1, ": Int32.Int!"],
     [2, ": Void -> 'a"],
     [2, ": 'a"],
-    [3, ": List<Real64.Real!>"],
-    [4, ": List<Real64.Real!>!"],
-    [5, ": List<(Real64.Real,...!"],
+    [3, ": List<Int32.Int!>"],
+    [4, ": List<Int32.Int!>!"],
+    [5, ": List<(Int32.Int, S...!"],
   ]);
 });
 
@@ -342,14 +342,14 @@ Deno.test("a bare lambda parameter shows its result after the parameter's own ty
   const labels = hints.filter((hint) => hint.kind === 1 && hint.data.category !== "capture")
     .map((hint) => [hint.position.line, hint.position.character, hint.label]);
   const at = (line: number) => labels.filter((label) => label[0] === line).map((label) => label[2]);
-  assertEquals(at(0), [": Real64.Real", "-> Real64.Real"]);
+  assertEquals(at(0), [": Int32.Int", "-> Int32.Int"]);
   assertEquals(labels.filter((label) => label[0] === 0).map((label) => label[1]), [
     "let bare = x".length,
     "let bare = x".length,
   ]);
-  assertEquals(at(1), [": Real64.Real", "-> Real64.Real"]);
+  assertEquals(at(1), [": Int32.Int", "-> Int32.Int"]);
   assertEquals(at(2), [": 'a", "-> 'a"]);
   assertEquals(at(3).slice(0, 2), [": Real64.Real", "-> Real64.Real -> Rea..."]);
-  assertEquals(at(4), [": Real64.Real", ": Real64.Real"]);
+  assertEquals(at(4), [": Int32.Int", ": Int32.Int"]);
   assertEquals(at(6).includes("-> Real64.Real"), false);
 });

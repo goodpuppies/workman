@@ -1,5 +1,6 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
-import { checkVirtual, compileVirtual } from "../src/compiler.ts";
+import { checkSource, checkVirtual, compileVirtual } from "../src/compiler.ts";
+import { expectBinding } from "./type_helpers.ts";
 
 async function run(source: string, extra = new Map<string, string>()): Promise<string[]> {
   const files = new Map([["/test/main.wm", source], ...extra]);
@@ -67,7 +68,7 @@ Deno.test("hexadecimal literals and patterns preserve exact 64-bit magnitudes", 
   );
 });
 
-Deno.test("unresolved literals retain Real64 defaults and exact types do not coerce existing values", async () => {
+Deno.test("large unresolved literals retain Real64 defaults and exact types do not coerce existing values", async () => {
   assertEquals(
     await run(`
     let number = 9007199254740993;
@@ -88,6 +89,91 @@ Deno.test("unresolved literals retain Real64 defaults and exact types do not coe
   ) {
     await assertRejects(() => checkVirtual("/test/main.wm", new Map([["/test/main.wm", source]])));
   }
+});
+
+Deno.test("integer defaults are fixed at declaration boundaries and respect signed ranges", async () => {
+  const result = await checkSource(`
+    let zero = 0;
+    let minimum = -2147483648;
+    let maximum = 2147483647;
+    let above = 2147483648;
+    let below = -2147483649;
+    let nonNegative = value => if (value < 0) { 0 } else { value };
+    let realNonNegative = (value: Real64) => if (value < 0) { 0 } else { value };
+    let realLiteral = 1.0;
+    let exponent = 1e3;
+    let add = (left, right) => left + right;
+  `);
+  for (const name of ["zero", "minimum", "maximum"]) {
+    expectBinding(result.env, name, { type: "Int32.Int", vars: 0 });
+  }
+  for (const name of ["above", "below", "realLiteral", "exponent"]) {
+    expectBinding(result.env, name, { type: "Real64.Real", vars: 0 });
+  }
+  expectBinding(result.env, "nonNegative", { type: "Int32.Int -> Int32.Int", vars: 0 });
+  expectBinding(result.env, "realNonNegative", { type: "Real64.Real -> Real64.Real", vars: 0 });
+  expectBinding(result.env, "add", { type: "(Real64.Real, Real64.Real) -> Real64.Real", vars: 0 });
+  for (
+    const source of [
+      "let n = 1; let real: Real64 = n;",
+      "let nonNegative = x => if (x < 0) { 0 } else { x }; nonNegative(1.5);",
+    ]
+  ) await assertRejects(() => checkSource(source));
+});
+
+Deno.test("Int32 values use JS number parameters and methods without widening WM calls", async () => {
+  assertEquals(
+    await run(`
+    from js.global("Math") import unsafe { max };
+    from js.global("Math") import unsafe * as Math;
+    let one = 1;
+    let two = 2;
+    print(max(one, two));
+    print(Math.max(one, two));
+    print(one :> .toString() :> Result.getOr("failed"));
+  `),
+    ["2", "2", "1"],
+  );
+  await assertRejects(() =>
+    checkSource(`
+    let takesReal = (n: Real64) => n;
+    let n = 1;
+    takesReal(n);
+  `)
+  );
+  await assertRejects(() =>
+    checkSource(`
+    from js.global("Math") import unsafe { max };
+    let integer: Int32 = max(1, 2);
+  `)
+  );
+});
+
+Deno.test("reflection decides numeric fallbacks before integer defaulting", async () => {
+  assertEquals(
+    await run(`
+    let width = value => value :> .length :> Result.getOr(0);
+    let actual: Real64 = width("abc");
+    print(actual);
+  `),
+    ["3"],
+  );
+});
+
+Deno.test("undecided integer literals in GPU lambdas retain the real default", async () => {
+  const result = await checkSource(`
+    let host = 1;
+    let shade = uv => {
+      @gpu;
+      let value = 1;
+      Gpu.color((value, value, value, 1))
+    };
+  `);
+  expectBinding(result.env, "host", { type: "Int32.Int", vars: 0 });
+  expectBinding(result.env, "shade", {
+    type: "'a -> (Real64.Real, Real64.Real, Real64.Real, Real64.Real)",
+    vars: 1,
+  });
 });
 
 Deno.test("selected numeric types report literal range errors without wrapping or rounding", async () => {

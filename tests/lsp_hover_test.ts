@@ -152,7 +152,7 @@ let outer = {
 
   const hover = await hoverAt(pathToFileUri(main), positionOf(source, "x ="), new Map());
 
-  assertEquals(hover?.contents.value, "```wm\nx: Real64.Real\n```");
+  assertEquals(hover?.contents.value, "```wm\nx: Int32.Int\n```");
 });
 
 Deno.test("lsp hover uses current compiler facts after a failed phrase", async () => {
@@ -167,7 +167,7 @@ Deno.test("lsp hover uses current compiler facts after a failed phrase", async (
     new Map(),
   );
 
-  assertEquals(hover?.contents.value, "```wm\ngood: Real64.Real\n```");
+  assertEquals(hover?.contents.value, "```wm\ngood: Int32.Int\n```");
 });
 
 Deno.test("lsp hover does not infer a fallback type for a failed phrase", async () => {
@@ -247,7 +247,7 @@ let fragment = Gpu.fragment(shade(current));
   assertEquals(lane?.contents.value, "```wm\nuniforms.resolution.y: f32\n```");
 });
 
-Deno.test("lsp hover presents occurrence-local i32 types without changing host Real64.Real", async () => {
+Deno.test("lsp hover presents occurrence-local i32 types beside host Int32 values", async () => {
   const dir = await Deno.makeTempDir();
   const main = `${dir}/main.wm`;
   const source = `
@@ -273,7 +273,7 @@ let host = 7;
   assertEquals(count?.contents.value, "```wm\ncount: i32\n```");
   assertEquals(lanes?.contents.value, "```wm\nlanes: i32x2\n```");
   assertEquals(literal?.contents.value, "```wm\nInt: i32\n```");
-  assertEquals(host?.contents.value, "```wm\nhost: Real64.Real\n```");
+  assertEquals(host?.contents.value, "```wm\nhost: Int32.Int\n```");
 });
 
 Deno.test("lsp hover elaborates every selected fragment root and resource type", async () => {
@@ -355,7 +355,7 @@ let value = id(1);
 
   assertEquals(
     hover?.contents.value,
-    "```wm\nid\ntype: Real64.Real -> Real64.Real\ngeneral: 'a -> 'a\n```",
+    "```wm\nid\ntype: Int32.Int -> Int32.Int\ngeneral: 'a -> 'a\n```",
   );
 });
 
@@ -387,7 +387,7 @@ let speed = "12" :> toNumber;
 
   assertEquals(
     hover?.contents.value,
-    "```wm\ntoNumber\ntype: String -> Real64.Real\ngeneral: 'a -> Real64.Real\n```",
+    "```wm\ntoNumber\ntype: String -> Int32.Int\ngeneral: 'a -> Int32.Int\n```",
   );
 });
 
@@ -511,8 +511,8 @@ Deno.test("annotated hover shows independently inferred types only when differen
     ],
     ["let id = (x: Real64.Real) => { x };", "x: Real64.Real", "x: Real64.Real\nunannotated: 'a"],
     ["let id = (x: Real64.Real) => { x };", "x }", "x: Real64.Real\nunannotated: 'a"],
-    ["let value: Real64.Real = 1;", "value:", "value: Real64.Real"],
-    ["let id: Real64.Real -> Real64.Real = (x) => { x + 1 };", "id:", "id: Real64.Real -> Real64.Real"],
+    ["let value: Real64.Real = 1;", "value:", "value: Real64.Real\nunannotated: Int32.Int"],
+    ["let id: Real64.Real -> Real64.Real = (x) => { x + 1 };", "id:", "id: Real64.Real -> Real64.Real\nunannotated: Int32.Int -> Int32.Int"],
     [
       "let id: /* nested /* : */ : */ Real64.Real -> Real64.Real = (x) => { x };",
       "id:",

@@ -195,7 +195,7 @@ Deno.test("[module update B309/T134] pervasive constructors project the structur
 Deno.test("[module update B304] fixed operators type expressions without ValEnv bindings", async () => {
   const result = await checkSource("let value = 1 + 2;");
 
-  expectBinding(result.env, "value", { type: "Real64.Real", vars: 0 });
+  expectBinding(result.env, "value", { type: "Int32.Int", vars: 0 });
   assertEquals(result.env.has("+"), false);
 });
 
@@ -255,7 +255,7 @@ Deno.test("[module update T136/B305] pervasive print is an ordinarily shadowable
     let answer = print(41);
   `);
 
-  expectBinding(result.env, "answer", { type: "Real64.Real", vars: 0 });
+  expectBinding(result.env, "answer", { type: "Int32.Int", vars: 0 });
 });
 
 function collectStaticValues(environment: StaticEnv, prefix = ""): string[] {

@@ -61,7 +61,7 @@ Deno.test("typechecks explicit-cons AoC day 1 example", async () => {
   const result = await checkSource(source);
 
   expectBinding(result.env, "count_window_increases", {
-    type: "List<Real64.Real> -> Real64.Real",
+    type: "List<Real64.Real> -> Int32.Int",
     vars: 0,
   });
 });

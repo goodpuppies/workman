@@ -12,15 +12,16 @@ Six commonly encountered types:
 
 | Expression | Type |
 | :---: | :---: |
-| `0` | `Real64` (default), or `Int32` with context |
+| `0` | `Int32` (default), or another numeric type with context |
 | `"foo bar"` | `String` |
 | `' '` | `Char` |
 | `true` | `Bool` |
 | `1.0` | `Real64` |
 | `void` | `Void` |
 
-WM's default `Real64` covers both integer-looking and fractional values. For a signed 32-bit
-integer, write `let n: Int32 = 0;`. A `Char` literal contains one Unicode scalar; some Basis
+Integer literals in the signed 32-bit range default to `Int32`; fractional literals use `Real64`.
+Write `let n: Real64 = 0;` when an integer-looking constant needs to be real.
+A `Char` literal contains one Unicode scalar; some Basis
 character and string operations separately restrict their inputs to byte or ASCII domains.
 `void` is the unit-like value. `()` is used for empty function parameter and argument lists.
 See [numeric literals](numbers.md) for other numeric types and contextual literal typing.
@@ -31,11 +32,11 @@ Tuples and lists can contain basic values or other tuples and lists.
 
 | Expression | Type |
 | :---: | :---: |
-| `(15, 150)` | `(Real64, Real64)` |
-| `[1, 2, 3, 4]` | `List<Real64>` |
+| `(15, 150)` | `(Int32, Int32)` |
+| `[1, 2, 3, 4]` | `List<Int32>` |
 | `[["foo", "bar"], ["baz"]]` | `List<List<String>>` |
-| `((true, 1), (false, 0, void))` | `((Bool, Real64), (Bool, Real64, Void))` |
-| `[(0, 1), (1, 0)]` | `List<(Real64, Real64)>` |
+| `((true, 1), (false, 0, void))` | `((Bool, Int32), (Bool, Int32, Void))` |
+| `[(0, 1), (1, 0)]` | `List<(Int32, Int32)>` |
 | `(['a', 'b'], [3.14])` | `(List<Char>, List<Real64>)` |
 
 A list's elements all have one type. There are no one-element tuples: `(x)` groups `x`.
@@ -231,7 +232,7 @@ local declarations or multiple statements. Function types use `->`, which associ
 | Expression | Evaluates to | Type |
 | :--- | :--- | :--- |
 | `(x: Real64, y: Real64) => x + y` | A function | `(Real64, Real64) -> Real64` |
-| `(3, 4)` | `(3, 4)` | `(Real64, Real64)` |
+| `(3, 4)` | `(3, 4)` | `(Int32, Int32)` |
 | `((x: Real64, y: Real64) => x + y)(3, 4)` | `7` | `Real64` |
 
 `f(3, 4)` passes one tuple-shaped argument. Curried application is `f(3)(4)` or `f 3 4`.
@@ -368,8 +369,8 @@ The following table describes coverage; deliberately incomplete examples may pro
 | `match { Less => -1, Equal => 0, Greater => 1 }` | `Order` | Yes |
 | `match { 0 => true }` | `Real64` | No |
 | `match { 0 => true, _ => false }` | `Real64` | Yes |
-| `match { [x, .._] => x + 1 }` | `List<Real64>` | No |
-| `match { [] => 0, [x, .._] => x + 1 }` | `List<Real64>` | Yes |
+| `match { [x, .._] => x + 1 }` | `List<Int32>` | No |
+| `match { [] => 0, [x, .._] => x + 1 }` | `List<Int32>` | Yes |
 | `match { (0, b) => true && b }` | `(Real64, Bool)` | No |
 | `match { (0, b) => true && b, (n, _) => false }` | `(Real64, Bool)` | Yes |
 

@@ -29,7 +29,7 @@ Deno.test("library pervasives project their defining schemes without exporting t
     let left = foldLeft(numbers, "", (item, acc) => { acc ++ Text.of(item) });
     let right = foldRight(numbers, "", (item, acc) => { Text.of(item) ++ acc });
   `);
-  expectBinding(checked.env, "numbers", { type: "List<Real64.Real>", vars: 0 });
+  expectBinding(checked.env, "numbers", { type: "List<Int32.Int>", vars: 0 });
   expectBinding(checked.env, "texts", { type: "List<String>", vars: 0 });
   expectBinding(checked.env, "count", { type: "Int32.Int", vars: 0 });
   expectBinding(checked.env, "left", { type: "String", vars: 0 });

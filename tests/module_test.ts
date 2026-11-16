@@ -17,7 +17,7 @@ Deno.test("imported type constructors and constructors remain available through 
   const results = await checkVirtual("/test/main.wm", virtualFs);
   const main = results.get("/test/main.wm");
   if (!main) throw new Error("missing main result");
-  expectBinding(main.env, "get", { type: "Option<Real64.Real> -> Real64.Real", vars: 0 });
+  expectBinding(main.env, "get", { type: "Option<Int32.Int> -> Int32.Int", vars: 0 });
 });
 
 Deno.test("named import allows a type and constructor to share one local spelling", async () => {

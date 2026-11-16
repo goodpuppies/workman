@@ -48,9 +48,9 @@ record Model = {
 
 -- Title, project head, separator. The list starts below them, so mouse rows and
 -- layout share one constant.
-let headerRows = 3;
+let headerRows: Real64 = 3;
 
-let severityEnabled = (severity, model) => {
+let severityEnabled = (severity: Real64, model) => {
   if (severity == 1) { model.errors } else {
     if (severity == 2) { model.warnings } else {
       if (severity == 3) { model.infos } else { model.hints }
@@ -69,7 +69,7 @@ let changed = (model, errors, warnings, infos, hints) => {
   .{ ..model, selected = 0, top = 0, expanded = false, errors, warnings, infos, hints }
 };
 
-let toggleSeverity = (severity, model) => {
+let toggleSeverity = (severity: Real64, model) => {
   if (severity == 1) {
     changed(model, !model.errors, model.warnings, model.infos, model.hints)
   } else {
@@ -139,7 +139,7 @@ let update = match(event, model) => {
   _ => { Command.Continue(model) },
 };
 
-let severity = (value) => {
+let severity = (value: Real64) => {
   if (value == 1) { "error" } else {
     if (value == 2) { "warning" } else {
       if (value == 3) { "info" } else { "hint" }
@@ -156,7 +156,7 @@ let summary = (problem) => {
   `${severity(problem.severity)} ${problem.path}:${Text.of(problem.line)}:${Text.of(problem.column)} ${description}`
 };
 
-let rec visibleRows = match(problems, skip, remaining, selected, index) => {
+let rec visibleRows: (List<Problem>, Real64, Real64, Real64, Real64) -> List<String> = match(problems, skip, remaining, selected, index) => {
   (_, _, 0, _, _) => { [] },
   ([], _, _, _, _) => { [] },
   ([_head, ..tail], skip, remaining, selected, index) => {
@@ -185,7 +185,7 @@ let filterState = (label, enabled) => {
   if (enabled) { `${label}:on` } else { `${label}:off` }
 };
 
-let moduleLabel = (modules) => {
+let moduleLabel = (modules: Real64) => {
   if (modules == 1) { "1 module" } else { `${Text.of(modules)} modules` }
 };
 

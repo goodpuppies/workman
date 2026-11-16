@@ -10,7 +10,7 @@ from "./io.wm" import *;
 
 let via = Monad.via;
 
-let daySeconds = 86400;
+let daySeconds: Real64 = 86400;
 
 -- PAKMAN_MIN_AGE_DAYS overrides every package's minimum age, like the
 -- PACMAN_MIN_AGE_DAYS gate does for pacman.

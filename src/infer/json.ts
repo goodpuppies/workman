@@ -1,13 +1,6 @@
 import type { Expr } from "../ast.ts";
 import { diagnosticError } from "../diagnostic_model.ts";
-import {
-  named,
-  prune,
-  quoteType,
-  typeInfoByName,
-  type Ty,
-  type TypeEnv,
-} from "../types.ts";
+import { named, prune, quoteType, type Ty, type TypeEnv, typeInfoByName } from "../types.ts";
 
 export function jsonValueTy(typeEnv: TypeEnv): Ty {
   const info = typeInfoByName(typeEnv, "Js.Value");
@@ -17,7 +10,9 @@ export function jsonValueTy(typeEnv: TypeEnv): Ty {
 
 export function assertJsonCompatible(type: Ty, typeEnv: TypeEnv, expr: Expr) {
   const t = prune(type);
-  if (t.tag === "prim" && ["Real64.Real", "String", "Bool", "Void"].includes(t.name)) return;
+  if (t.tag === "prim" && ["Real64.Real", "Int32.Int", "String", "Bool", "Void"].includes(t.name)) {
+    return;
+  }
   if (isJsValueTy(t, typeEnv) || isJsObjectLikeTy(t, typeEnv)) return;
   if (t.tag === "var") return;
   const element = jsArrayElementTy(t, typeEnv);
