@@ -1,0 +1,10 @@
+// The packrat memo: rule results by slot, updated in place during one parse. This JS build
+// uses a host table. Native builds select native/memo.sml through native/memo.wm instead
+// (scripts/build_frontend_v2_native.py).
+from js.host("table") import * as Table;
+
+type Memo<v> = Js.Table<v>;
+
+let empty = (): Memo<v> => { Table.empty() };
+let get = (memo: Memo<v>, slot: Real64): Option<v> => { Table.getAt(memo, slot) };
+let set = (memo: Memo<v>, slot: Real64, value: v) => { Table.setAt(memo, slot, value) };

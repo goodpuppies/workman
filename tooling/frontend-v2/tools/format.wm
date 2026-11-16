@@ -1,0 +1,41 @@
+// Formats one WM source file with frontend-v2 and prints the result, or the parse failure.
+// The same program runs under Workman/JS and as the native build, so their outputs compare
+// directly (scripts/build_frontend_v2_native.py).
+from "../compiler_frontend.wm" import * as Frontend;
+from "basis/io.wm" import * as Io;
+from "basis/process.wm" import * as Process;
+from "basis/text.wm" import * as Text;
+from "basis/result.wm" import * as R;
+
+let formatFile = () => {
+  let path = match(Process.arguments()) {
+    R.Ok([path]) => { path },
+    _ => { Panic("usage: format FILE") },
+  };
+  let bytes = match(Io.readFile(path)) {
+    R.Ok(bytes) => { bytes },
+    R.Err(error) => { Panic(Io.errorText(error)) },
+  };
+  let source = match(Text.fromUtf8(bytes)) {
+    R.Ok(source) => { source },
+    R.Err(_) => { Panic("the source is not UTF-8") },
+  };
+  let output = match(Frontend.formatSurfaceSource(source)) {
+    Some(formatted) => { formatted },
+    None => {
+      match(Frontend.parseSurfaceFailure(source)) {
+        Some(failure) => { "parse failure: expected " ++ failure.expected ++ " in " ++ failure.rule ++ "\n" },
+        None => { "parse failure\n" },
+      }
+    },
+  };
+  let data = match(Text.toUtf8(output)) {
+    R.Ok(data) => { data },
+    R.Err(_) => { Panic("the output is not valid text") },
+  };
+  match(Io.writeStdout(data)) {
+    R.Ok(_) => { void },
+    R.Err(error) => { Panic(Io.errorText(error)) },
+  }
+};
+let _ = formatFile();

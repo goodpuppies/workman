@@ -4,13 +4,13 @@
 -- Directly compiled rules: Start, TopPhrase, TopDecl, ImportDecl, ExportImportDecl, ImportClause, ImportSpecList, ImportSpec, JsImportDecl, JsTarget, JsImportClause, JsImportClauseBody, JsImportSpecList, JsImportSpec, LetDecl, LetBinding, LetPattern, LetPatternList, LetCtorPattern, LetCtorPatternList, RecordDecl, RecordFieldDeclList, RecordFieldDecl, TypeDecl, TypeBinding, TypeDeclBody, Expr, IfExpr, MatchExpr, MatchFn, AnonymousMatchFn, MatchFnParams, MatchArmList, BareMatchArmList, MatchArm, Lambda, GroupedLambda, GroupedLambdaParams, GroupedLambdaParamList, GroupedLambdaParam, LambdaReturnAnnotation, CaptureClause, CaptureList, BareLambdaBody, PipelineLambdaBlock, PipelineBlockSeqBody, PipelineInput, PipelineOperand, PipelineExpression, PipelinePipe, LambdaBody, LambdaBlock, Directive, Binary, BinaryOperand, Unary, Pipe, PipeConditional, PipeMember, Postfix, PostfixField, ExplicitCall, CallArgList, CallArg, ArgumentPlaceholder, SpaceCall, SpaceArg, Primary, WonExpr, WonValue, WonAtomic, WonList, WonRecord, WonField, WonTag, WonAttributes, WonPayload, WonNull, WonBoolean, WonNumber, WonName, WonBlob, WonText, WonGap, WonSeparator, WonTrivia, WonComment, CarrierLiftTupleExpr, LiftTupleExpr, PanicExpr, JsonExpr, JsonObjectFieldList, JsonObjectField, RecordExpr, NamedRecordExpr, NestedRecordExpr, RecordExprFieldList, RecordExprField, ListExpr, TupleOrGroup, ParenSeq, Block, BlockSeqBody, BlockSeqItem, BlockDecl, ParenSeqBody, ParenSeqItem, SemiToken, Pattern, PatternCore, ParamList, Param, ParamPattern, ParamListItems, ParamPatternList, PatternList, CtorPattern, CtorPatternList, ArgList, ListPattern, ListPatternItem, ListLetPattern, ListParamPattern, RecordPattern, RecordPatternFieldList, RecordPatternField, RecordLetPattern, RecordLetPatternFieldList, RecordLetPatternField, RecordParamPattern, RecordParamPatternFieldList, RecordParamPatternField, TypeAnn, FnType, FunctionType, FnTypeDomain, GroupedFunctionType, InlineRecordType, TypeAtom, TypeList, TypeParams, TypeParam, Float, Int, String, InterpolatedString, StringInterpolation, InterpolatedStringText, InterpolatedChar, QuotedString, MultilineString, QuotedChar, MultilineChar, SharedEscape, StringGap, Character, CharacterChar, ScalarEscape, HexDigit, LiteralScalar, LineTerminator, Bool, Void, Wildcard, Identifier, Constructor, Name, MemberName, FieldName, LongName, LongConstructor, IdentPart, Keyword, __, _, Whitespace, Comment, BlockComment, EOF
 from "../compiled_probe_runtime.wm" import { CompiledProbeMatch, CompiledProbeMatched, CompiledProbeNoMatch, EmptyCompiledCapture, TokenCompiledCapture, RuleCompiledCapture, SequenceCompiledCapture, ChoiceCompiledCapture, bestFailure, failureWithBest, trackedFailure, unobservedFailure, codeAt, literalEnd, matchLiteral, matchRecoverableLiteral, matchRecoverableOpeningBrace, matchCharacterClass, matchAnyCharacter, matchSequence, matchChoice, matchOptional, matchRepeated, matchOneOrMore, matchNegativeLookahead, matchText, matchSemanticPredicate, matchNamedMatchArms, matchCommittedRule, commitsJsonPrimaryRecovery, commitsLambdaPrimaryRecovery, wrapCompiledRule };
 from "./compiled_probe_types.wm" import { SingleCode, CodeRange };
-from js.host("table") import * as Table;
+from "../host/memo.wm" import * as Memo;
 
 -- The state of one parse: memoized rule results, keyed by `compiledRuleSlot`.
-record CompiledParser = { memo: Js.Table<CompiledProbeMatch> };
+record CompiledParser = { memo: Memo.Memo<CompiledProbeMatch> };
 
 let newCompiledParser = () => {
-  let parser: CompiledParser = .{ memo = Table.empty() };
+  let parser: CompiledParser = .{ memo = Memo.empty() };
   parser
 };
 
@@ -226,7 +226,7 @@ let rec rule_Start = (source: String, offset: Real64.Real, recover: Bool, diagno
 }
 and enter_Start = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(0, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("Start", offset, diagnose, if (recover) {
@@ -234,7 +234,7 @@ and enter_Start = (parser: CompiledParser, source: String, offset: Real64.Real, 
       } else {
         rule_Start(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -343,7 +343,7 @@ and rule_TopPhrase = (source: String, offset: Real64.Real, recover: Bool, diagno
 }
 and enter_TopPhrase = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(1, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("TopPhrase", offset, diagnose, if (recover) {
@@ -351,7 +351,7 @@ and enter_TopPhrase = (parser: CompiledParser, source: String, offset: Real64.Re
       } else {
         rule_TopPhrase(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -436,7 +436,7 @@ and rule_TopDecl = (source: String, offset: Real64.Real, recover: Bool, diagnose
 }
 and enter_TopDecl = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(2, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("TopDecl", offset, diagnose, if (recover) {
@@ -444,7 +444,7 @@ and enter_TopDecl = (parser: CompiledParser, source: String, offset: Real64.Real
       } else {
         rule_TopDecl(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -542,7 +542,7 @@ and rule_ImportDecl = (source: String, offset: Real64.Real, recover: Bool, diagn
 }
 and enter_ImportDecl = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(3, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("ImportDecl", offset, diagnose, if (recover) {
@@ -550,7 +550,7 @@ and enter_ImportDecl = (parser: CompiledParser, source: String, offset: Real64.R
       } else {
         rule_ImportDecl(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -596,7 +596,7 @@ and rule_ExportImportDecl = (source: String, offset: Real64.Real, recover: Bool,
 }
 and enter_ExportImportDecl = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(4, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("ExportImportDecl", offset, diagnose, if (recover) {
@@ -604,7 +604,7 @@ and enter_ExportImportDecl = (parser: CompiledParser, source: String, offset: Re
       } else {
         rule_ExportImportDecl(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -779,7 +779,7 @@ and rule_ImportClause = (source: String, offset: Real64.Real, recover: Bool, dia
 }
 and enter_ImportClause = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(5, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("ImportClause", offset, diagnose, if (recover) {
@@ -787,7 +787,7 @@ and enter_ImportClause = (parser: CompiledParser, source: String, offset: Real64
       } else {
         rule_ImportClause(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -899,7 +899,7 @@ and rule_ImportSpecList = (source: String, offset: Real64.Real, recover: Bool, d
 }
 and enter_ImportSpecList = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(6, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("ImportSpecList", offset, diagnose, if (recover) {
@@ -907,7 +907,7 @@ and enter_ImportSpecList = (parser: CompiledParser, source: String, offset: Real
       } else {
         rule_ImportSpecList(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -991,7 +991,7 @@ and rule_ImportSpec = (source: String, offset: Real64.Real, recover: Bool, diagn
 }
 and enter_ImportSpec = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(7, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("ImportSpec", offset, diagnose, if (recover) {
@@ -999,7 +999,7 @@ and enter_ImportSpec = (parser: CompiledParser, source: String, offset: Real64.R
       } else {
         rule_ImportSpec(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -1135,7 +1135,7 @@ and rule_JsImportDecl = (source: String, offset: Real64.Real, recover: Bool, dia
 }
 and enter_JsImportDecl = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(8, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("JsImportDecl", offset, diagnose, if (recover) {
@@ -1143,7 +1143,7 @@ and enter_JsImportDecl = (parser: CompiledParser, source: String, offset: Real64
       } else {
         rule_JsImportDecl(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -1967,7 +1967,7 @@ and rule_JsTarget = (source: String, offset: Real64.Real, recover: Bool, diagnos
 }
 and enter_JsTarget = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(9, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("JsTarget", offset, diagnose, if (recover) {
@@ -1975,7 +1975,7 @@ and enter_JsTarget = (parser: CompiledParser, source: String, offset: Real64.Rea
       } else {
         rule_JsTarget(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -2033,7 +2033,7 @@ and rule_JsImportClause = (source: String, offset: Real64.Real, recover: Bool, d
 }
 and enter_JsImportClause = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(10, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("JsImportClause", offset, diagnose, if (recover) {
@@ -2041,7 +2041,7 @@ and enter_JsImportClause = (parser: CompiledParser, source: String, offset: Real
       } else {
         rule_JsImportClause(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -2280,7 +2280,7 @@ and rule_JsImportClauseBody = (source: String, offset: Real64.Real, recover: Boo
 }
 and enter_JsImportClauseBody = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(11, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("JsImportClauseBody", offset, diagnose, if (recover) {
@@ -2288,7 +2288,7 @@ and enter_JsImportClauseBody = (parser: CompiledParser, source: String, offset: 
       } else {
         rule_JsImportClauseBody(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -2400,7 +2400,7 @@ and rule_JsImportSpecList = (source: String, offset: Real64.Real, recover: Bool,
 }
 and enter_JsImportSpecList = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(12, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("JsImportSpecList", offset, diagnose, if (recover) {
@@ -2408,7 +2408,7 @@ and enter_JsImportSpecList = (parser: CompiledParser, source: String, offset: Re
       } else {
         rule_JsImportSpecList(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -2556,7 +2556,7 @@ and rule_JsImportSpec = (source: String, offset: Real64.Real, recover: Bool, dia
 }
 and enter_JsImportSpec = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(13, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("JsImportSpec", offset, diagnose, if (recover) {
@@ -2564,7 +2564,7 @@ and enter_JsImportSpec = (parser: CompiledParser, source: String, offset: Real64
       } else {
         rule_JsImportSpec(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -2712,7 +2712,7 @@ and rule_LetDecl = (source: String, offset: Real64.Real, recover: Bool, diagnose
 }
 and enter_LetDecl = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(14, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("LetDecl", offset, diagnose, if (recover) {
@@ -2720,7 +2720,7 @@ and enter_LetDecl = (parser: CompiledParser, source: String, offset: Real64.Real
       } else {
         rule_LetDecl(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -2820,7 +2820,7 @@ and rule_LetBinding = (source: String, offset: Real64.Real, recover: Bool, diagn
 }
 and enter_LetBinding = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(15, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("LetBinding", offset, diagnose, if (recover) {
@@ -2828,7 +2828,7 @@ and enter_LetBinding = (parser: CompiledParser, source: String, offset: Real64.R
       } else {
         rule_LetBinding(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -3391,7 +3391,7 @@ and rule_LetPattern = (source: String, offset: Real64.Real, recover: Bool, diagn
 }
 and enter_LetPattern = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(16, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("LetPattern", offset, diagnose, if (recover) {
@@ -3399,7 +3399,7 @@ and enter_LetPattern = (parser: CompiledParser, source: String, offset: Real64.R
       } else {
         rule_LetPattern(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -3511,7 +3511,7 @@ and rule_LetPatternList = (source: String, offset: Real64.Real, recover: Bool, d
 }
 and enter_LetPatternList = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(17, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("LetPatternList", offset, diagnose, if (recover) {
@@ -3519,7 +3519,7 @@ and enter_LetPatternList = (parser: CompiledParser, source: String, offset: Real
       } else {
         rule_LetPatternList(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -3614,7 +3614,7 @@ and rule_LetCtorPattern = (source: String, offset: Real64.Real, recover: Bool, d
 }
 and enter_LetCtorPattern = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(18, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("LetCtorPattern", offset, diagnose, if (recover) {
@@ -3622,7 +3622,7 @@ and enter_LetCtorPattern = (parser: CompiledParser, source: String, offset: Real
       } else {
         rule_LetCtorPattern(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -3734,7 +3734,7 @@ and rule_LetCtorPatternList = (source: String, offset: Real64.Real, recover: Boo
 }
 and enter_LetCtorPatternList = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(19, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("LetCtorPatternList", offset, diagnose, if (recover) {
@@ -3742,7 +3742,7 @@ and enter_LetCtorPatternList = (parser: CompiledParser, source: String, offset: 
       } else {
         rule_LetCtorPatternList(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -3909,7 +3909,7 @@ and rule_RecordDecl = (source: String, offset: Real64.Real, recover: Bool, diagn
 }
 and enter_RecordDecl = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(20, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("RecordDecl", offset, diagnose, if (recover) {
@@ -3917,7 +3917,7 @@ and enter_RecordDecl = (parser: CompiledParser, source: String, offset: Real64.R
       } else {
         rule_RecordDecl(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -4029,7 +4029,7 @@ and rule_RecordFieldDeclList = (source: String, offset: Real64.Real, recover: Bo
 }
 and enter_RecordFieldDeclList = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(21, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("RecordFieldDeclList", offset, diagnose, if (recover) {
@@ -4037,7 +4037,7 @@ and enter_RecordFieldDeclList = (parser: CompiledParser, source: String, offset:
       } else {
         rule_RecordFieldDeclList(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -4109,7 +4109,7 @@ and rule_RecordFieldDecl = (source: String, offset: Real64.Real, recover: Bool, 
 }
 and enter_RecordFieldDecl = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(22, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("RecordFieldDecl", offset, diagnose, if (recover) {
@@ -4117,7 +4117,7 @@ and enter_RecordFieldDecl = (parser: CompiledParser, source: String, offset: Rea
       } else {
         rule_RecordFieldDecl(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -4227,7 +4227,7 @@ and rule_TypeDecl = (source: String, offset: Real64.Real, recover: Bool, diagnos
 }
 and enter_TypeDecl = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(23, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("TypeDecl", offset, diagnose, if (recover) {
@@ -4235,7 +4235,7 @@ and enter_TypeDecl = (parser: CompiledParser, source: String, offset: Real64.Rea
       } else {
         rule_TypeDecl(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -4322,7 +4322,7 @@ and rule_TypeBinding = (source: String, offset: Real64.Real, recover: Bool, diag
 }
 and enter_TypeBinding = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(24, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("TypeBinding", offset, diagnose, if (recover) {
@@ -4330,7 +4330,7 @@ and enter_TypeBinding = (parser: CompiledParser, source: String, offset: Real64.
       } else {
         rule_TypeBinding(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -4452,7 +4452,7 @@ and rule_TypeDeclBody = (source: String, offset: Real64.Real, recover: Bool, dia
 }
 and enter_TypeDeclBody = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(25, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("TypeDeclBody", offset, diagnose, if (recover) {
@@ -4460,7 +4460,7 @@ and enter_TypeDeclBody = (parser: CompiledParser, source: String, offset: Real64
       } else {
         rule_TypeDeclBody(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -4470,7 +4470,7 @@ and rule_Expr = (source: String, offset: Real64.Real, recover: Bool, diagnose: B
 }
 and enter_Expr = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(26, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("Expr", offset, diagnose, if (recover) {
@@ -4478,7 +4478,7 @@ and enter_Expr = (parser: CompiledParser, source: String, offset: Real64.Real, d
       } else {
         rule_Expr(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -4654,7 +4654,7 @@ and rule_IfExpr = (source: String, offset: Real64.Real, recover: Bool, diagnose:
 }
 and enter_IfExpr = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(27, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("IfExpr", offset, diagnose, if (recover) {
@@ -4662,7 +4662,7 @@ and enter_IfExpr = (parser: CompiledParser, source: String, offset: Real64.Real,
       } else {
         rule_IfExpr(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -4838,7 +4838,7 @@ and rule_MatchExpr = (source: String, offset: Real64.Real, recover: Bool, diagno
 }
 and enter_MatchExpr = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(28, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("MatchExpr", offset, diagnose, if (recover) {
@@ -4846,7 +4846,7 @@ and enter_MatchExpr = (parser: CompiledParser, source: String, offset: Real64.Re
       } else {
         rule_MatchExpr(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -5102,7 +5102,7 @@ and rule_MatchFn = (source: String, offset: Real64.Real, recover: Bool, diagnose
 }
 and enter_MatchFn = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(29, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("MatchFn", offset, diagnose, if (recover) {
@@ -5110,7 +5110,7 @@ and enter_MatchFn = (parser: CompiledParser, source: String, offset: Real64.Real
       } else {
         rule_MatchFn(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -5389,7 +5389,7 @@ and rule_AnonymousMatchFn = (source: String, offset: Real64.Real, recover: Bool,
 }
 and enter_AnonymousMatchFn = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(30, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("AnonymousMatchFn", offset, diagnose, if (recover) {
@@ -5397,7 +5397,7 @@ and enter_AnonymousMatchFn = (parser: CompiledParser, source: String, offset: Re
       } else {
         rule_AnonymousMatchFn(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -5509,7 +5509,7 @@ and rule_MatchFnParams = (source: String, offset: Real64.Real, recover: Bool, di
 }
 and enter_MatchFnParams = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(31, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("MatchFnParams", offset, diagnose, if (recover) {
@@ -5517,7 +5517,7 @@ and enter_MatchFnParams = (parser: CompiledParser, source: String, offset: Real6
       } else {
         rule_MatchFnParams(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -5629,7 +5629,7 @@ and rule_MatchArmList = (source: String, offset: Real64.Real, recover: Bool, dia
 }
 and enter_MatchArmList = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(32, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("MatchArmList", offset, diagnose, if (recover) {
@@ -5637,7 +5637,7 @@ and enter_MatchArmList = (parser: CompiledParser, source: String, offset: Real64
       } else {
         rule_MatchArmList(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -5721,7 +5721,7 @@ and rule_BareMatchArmList = (source: String, offset: Real64.Real, recover: Bool,
 }
 and enter_BareMatchArmList = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(33, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("BareMatchArmList", offset, diagnose, if (recover) {
@@ -5729,7 +5729,7 @@ and enter_BareMatchArmList = (parser: CompiledParser, source: String, offset: Re
       } else {
         rule_BareMatchArmList(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -5801,7 +5801,7 @@ and rule_MatchArm = (source: String, offset: Real64.Real, recover: Bool, diagnos
 }
 and enter_MatchArm = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(34, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("MatchArm", offset, diagnose, if (recover) {
@@ -5809,7 +5809,7 @@ and enter_MatchArm = (parser: CompiledParser, source: String, offset: Real64.Rea
       } else {
         rule_MatchArm(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -6049,7 +6049,7 @@ and rule_Lambda = (source: String, offset: Real64.Real, recover: Bool, diagnose:
 }
 and enter_Lambda = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(35, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("Lambda", offset, diagnose, if (recover) {
@@ -6057,7 +6057,7 @@ and enter_Lambda = (parser: CompiledParser, source: String, offset: Real64.Real,
       } else {
         rule_Lambda(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -6295,7 +6295,7 @@ and rule_GroupedLambda = (source: String, offset: Real64.Real, recover: Bool, di
 }
 and enter_GroupedLambda = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(36, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("GroupedLambda", offset, diagnose, if (recover) {
@@ -6303,7 +6303,7 @@ and enter_GroupedLambda = (parser: CompiledParser, source: String, offset: Real6
       } else {
         rule_GroupedLambda(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -6404,7 +6404,7 @@ and rule_GroupedLambdaParams = (source: String, offset: Real64.Real, recover: Bo
 }
 and enter_GroupedLambdaParams = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(37, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("GroupedLambdaParams", offset, diagnose, if (recover) {
@@ -6412,7 +6412,7 @@ and enter_GroupedLambdaParams = (parser: CompiledParser, source: String, offset:
       } else {
         rule_GroupedLambdaParams(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -6524,7 +6524,7 @@ and rule_GroupedLambdaParamList = (source: String, offset: Real64.Real, recover:
 }
 and enter_GroupedLambdaParamList = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(38, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("GroupedLambdaParamList", offset, diagnose, if (recover) {
@@ -6532,7 +6532,7 @@ and enter_GroupedLambdaParamList = (parser: CompiledParser, source: String, offs
       } else {
         rule_GroupedLambdaParamList(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -6590,7 +6590,7 @@ and rule_GroupedLambdaParam = (source: String, offset: Real64.Real, recover: Boo
 }
 and enter_GroupedLambdaParam = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(39, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("GroupedLambdaParam", offset, diagnose, if (recover) {
@@ -6598,7 +6598,7 @@ and enter_GroupedLambdaParam = (parser: CompiledParser, source: String, offset: 
       } else {
         rule_GroupedLambdaParam(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -6657,7 +6657,7 @@ and rule_LambdaReturnAnnotation = (source: String, offset: Real64.Real, recover:
 }
 and enter_LambdaReturnAnnotation = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(40, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("LambdaReturnAnnotation", offset, diagnose, if (recover) {
@@ -6665,7 +6665,7 @@ and enter_LambdaReturnAnnotation = (parser: CompiledParser, source: String, offs
       } else {
         rule_LambdaReturnAnnotation(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -6752,7 +6752,7 @@ and rule_CaptureClause = (source: String, offset: Real64.Real, recover: Bool, di
 }
 and enter_CaptureClause = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(41, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("CaptureClause", offset, diagnose, if (recover) {
@@ -6760,7 +6760,7 @@ and enter_CaptureClause = (parser: CompiledParser, source: String, offset: Real6
       } else {
         rule_CaptureClause(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -6872,7 +6872,7 @@ and rule_CaptureList = (source: String, offset: Real64.Real, recover: Bool, diag
 }
 and enter_CaptureList = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(42, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("CaptureList", offset, diagnose, if (recover) {
@@ -6880,7 +6880,7 @@ and enter_CaptureList = (parser: CompiledParser, source: String, offset: Real64.
       } else {
         rule_CaptureList(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -6929,7 +6929,7 @@ and rule_BareLambdaBody = (source: String, offset: Real64.Real, recover: Bool, d
 }
 and enter_BareLambdaBody = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(43, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("BareLambdaBody", offset, diagnose, if (recover) {
@@ -6937,7 +6937,7 @@ and enter_BareLambdaBody = (parser: CompiledParser, source: String, offset: Real
       } else {
         rule_BareLambdaBody(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -7009,7 +7009,7 @@ and rule_PipelineLambdaBlock = (source: String, offset: Real64.Real, recover: Bo
 }
 and enter_PipelineLambdaBlock = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(44, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("PipelineLambdaBlock", offset, diagnose, if (recover) {
@@ -7017,7 +7017,7 @@ and enter_PipelineLambdaBlock = (parser: CompiledParser, source: String, offset:
       } else {
         rule_PipelineLambdaBlock(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -7116,7 +7116,7 @@ and rule_PipelineBlockSeqBody = (source: String, offset: Real64.Real, recover: B
 }
 and enter_PipelineBlockSeqBody = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(45, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("PipelineBlockSeqBody", offset, diagnose, if (recover) {
@@ -7124,7 +7124,7 @@ and enter_PipelineBlockSeqBody = (parser: CompiledParser, source: String, offset
       } else {
         rule_PipelineBlockSeqBody(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -7146,7 +7146,7 @@ and rule_PipelineInput = (source: String, offset: Real64.Real, recover: Bool, di
 }
 and enter_PipelineInput = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(46, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("PipelineInput", offset, diagnose, if (recover) {
@@ -7154,7 +7154,7 @@ and enter_PipelineInput = (parser: CompiledParser, source: String, offset: Real6
       } else {
         rule_PipelineInput(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -7164,7 +7164,7 @@ and rule_PipelineOperand = (source: String, offset: Real64.Real, recover: Bool, 
 }
 and enter_PipelineOperand = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(47, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("PipelineOperand", offset, diagnose, if (recover) {
@@ -7172,7 +7172,7 @@ and enter_PipelineOperand = (parser: CompiledParser, source: String, offset: Rea
       } else {
         rule_PipelineOperand(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -7367,7 +7367,7 @@ and rule_PipelineExpression = (source: String, offset: Real64.Real, recover: Boo
 }
 and enter_PipelineExpression = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(48, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("PipelineExpression", offset, diagnose, if (recover) {
@@ -7375,7 +7375,7 @@ and enter_PipelineExpression = (parser: CompiledParser, source: String, offset: 
       } else {
         rule_PipelineExpression(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -7498,7 +7498,7 @@ and rule_PipelinePipe = (source: String, offset: Real64.Real, recover: Bool, dia
 }
 and enter_PipelinePipe = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(49, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("PipelinePipe", offset, diagnose, if (recover) {
@@ -7506,7 +7506,7 @@ and enter_PipelinePipe = (parser: CompiledParser, source: String, offset: Real64
       } else {
         rule_PipelinePipe(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -7543,7 +7543,7 @@ and rule_LambdaBody = (source: String, offset: Real64.Real, recover: Bool, diagn
 }
 and enter_LambdaBody = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(50, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("LambdaBody", offset, diagnose, if (recover) {
@@ -7551,7 +7551,7 @@ and enter_LambdaBody = (parser: CompiledParser, source: String, offset: Real64.R
       } else {
         rule_LambdaBody(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -7661,7 +7661,7 @@ and rule_LambdaBlock = (source: String, offset: Real64.Real, recover: Bool, diag
 }
 and enter_LambdaBlock = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(51, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("LambdaBlock", offset, diagnose, if (recover) {
@@ -7669,7 +7669,7 @@ and enter_LambdaBlock = (parser: CompiledParser, source: String, offset: Real64.
       } else {
         rule_LambdaBlock(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -7728,7 +7728,7 @@ and rule_Directive = (source: String, offset: Real64.Real, recover: Bool, diagno
 }
 and enter_Directive = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(52, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("Directive", offset, diagnose, if (recover) {
@@ -7736,7 +7736,7 @@ and enter_Directive = (parser: CompiledParser, source: String, offset: Real64.Re
       } else {
         rule_Directive(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -7931,7 +7931,7 @@ and rule_Binary = (source: String, offset: Real64.Real, recover: Bool, diagnose:
 }
 and enter_Binary = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(53, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("Binary", offset, diagnose, if (recover) {
@@ -7939,7 +7939,7 @@ and enter_Binary = (parser: CompiledParser, source: String, offset: Real64.Real,
       } else {
         rule_Binary(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -7949,7 +7949,7 @@ and rule_BinaryOperand = (source: String, offset: Real64.Real, recover: Bool, di
 }
 and enter_BinaryOperand = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(54, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("BinaryOperand", offset, diagnose, if (recover) {
@@ -7957,7 +7957,7 @@ and enter_BinaryOperand = (parser: CompiledParser, source: String, offset: Real6
       } else {
         rule_BinaryOperand(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -8030,7 +8030,7 @@ and rule_Unary = (source: String, offset: Real64.Real, recover: Bool, diagnose: 
 }
 and enter_Unary = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(55, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("Unary", offset, diagnose, if (recover) {
@@ -8038,7 +8038,7 @@ and enter_Unary = (parser: CompiledParser, source: String, offset: Real64.Real, 
       } else {
         rule_Unary(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -8161,7 +8161,7 @@ and rule_Pipe = (source: String, offset: Real64.Real, recover: Bool, diagnose: B
 }
 and enter_Pipe = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(56, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("Pipe", offset, diagnose, if (recover) {
@@ -8169,7 +8169,7 @@ and enter_Pipe = (parser: CompiledParser, source: String, offset: Real64.Real, d
       } else {
         rule_Pipe(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -8267,7 +8267,7 @@ and rule_PipeConditional = (source: String, offset: Real64.Real, recover: Bool, 
 }
 and enter_PipeConditional = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(57, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("PipeConditional", offset, diagnose, if (recover) {
@@ -8275,7 +8275,7 @@ and enter_PipeConditional = (parser: CompiledParser, source: String, offset: Rea
       } else {
         rule_PipeConditional(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -8438,7 +8438,7 @@ and rule_PipeMember = (source: String, offset: Real64.Real, recover: Bool, diagn
 }
 and enter_PipeMember = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(58, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("PipeMember", offset, diagnose, if (recover) {
@@ -8446,7 +8446,7 @@ and enter_PipeMember = (parser: CompiledParser, source: String, offset: Real64.R
       } else {
         rule_PipeMember(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -8600,7 +8600,7 @@ and rule_Postfix = (source: String, offset: Real64.Real, recover: Bool, diagnose
 }
 and enter_Postfix = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(59, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("Postfix", offset, diagnose, if (recover) {
@@ -8608,7 +8608,7 @@ and enter_Postfix = (parser: CompiledParser, source: String, offset: Real64.Real
       } else {
         rule_Postfix(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -8641,7 +8641,7 @@ and rule_PostfixField = (source: String, offset: Real64.Real, recover: Bool, dia
 }
 and enter_PostfixField = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(60, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("PostfixField", offset, diagnose, if (recover) {
@@ -8649,7 +8649,7 @@ and enter_PostfixField = (parser: CompiledParser, source: String, offset: Real64
       } else {
         rule_PostfixField(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -8778,7 +8778,7 @@ and rule_ExplicitCall = (source: String, offset: Real64.Real, recover: Bool, dia
 }
 and enter_ExplicitCall = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(61, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("ExplicitCall", offset, diagnose, if (recover) {
@@ -8786,7 +8786,7 @@ and enter_ExplicitCall = (parser: CompiledParser, source: String, offset: Real64
       } else {
         rule_ExplicitCall(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -8898,7 +8898,7 @@ and rule_CallArgList = (source: String, offset: Real64.Real, recover: Bool, diag
 }
 and enter_CallArgList = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(62, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("CallArgList", offset, diagnose, if (recover) {
@@ -8906,7 +8906,7 @@ and enter_CallArgList = (parser: CompiledParser, source: String, offset: Real64.
       } else {
         rule_CallArgList(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -8943,7 +8943,7 @@ and rule_CallArg = (source: String, offset: Real64.Real, recover: Bool, diagnose
 }
 and enter_CallArg = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(63, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("CallArg", offset, diagnose, if (recover) {
@@ -8951,7 +8951,7 @@ and enter_CallArg = (parser: CompiledParser, source: String, offset: Real64.Real
       } else {
         rule_CallArg(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -9038,7 +9038,7 @@ and rule_ArgumentPlaceholder = (source: String, offset: Real64.Real, recover: Bo
 }
 and enter_ArgumentPlaceholder = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(64, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("ArgumentPlaceholder", offset, diagnose, if (recover) {
@@ -9046,7 +9046,7 @@ and enter_ArgumentPlaceholder = (parser: CompiledParser, source: String, offset:
       } else {
         rule_ArgumentPlaceholder(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -9079,7 +9079,7 @@ and rule_SpaceCall = (source: String, offset: Real64.Real, recover: Bool, diagno
 }
 and enter_SpaceCall = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(65, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("SpaceCall", offset, diagnose, if (recover) {
@@ -9087,7 +9087,7 @@ and enter_SpaceCall = (parser: CompiledParser, source: String, offset: Real64.Re
       } else {
         rule_SpaceCall(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -9097,7 +9097,7 @@ and rule_SpaceArg = (source: String, offset: Real64.Real, recover: Bool, diagnos
 }
 and enter_SpaceArg = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(66, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("SpaceArg", offset, diagnose, if (recover) {
@@ -9105,7 +9105,7 @@ and enter_SpaceArg = (parser: CompiledParser, source: String, offset: Real64.Rea
       } else {
         rule_SpaceArg(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -9487,7 +9487,7 @@ and rule_Primary = (source: String, offset: Real64.Real, recover: Bool, diagnose
 }
 and enter_Primary = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(67, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("Primary", offset, diagnose, if (recover) {
@@ -9495,7 +9495,7 @@ and enter_Primary = (parser: CompiledParser, source: String, offset: Real64.Real
       } else {
         rule_Primary(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -9587,7 +9587,7 @@ and rule_WonExpr = (source: String, offset: Real64.Real, recover: Bool, diagnose
 }
 and enter_WonExpr = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(68, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("WonExpr", offset, diagnose, if (recover) {
@@ -9595,7 +9595,7 @@ and enter_WonExpr = (parser: CompiledParser, source: String, offset: Real64.Real
       } else {
         rule_WonExpr(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -9656,7 +9656,7 @@ and rule_WonValue = (source: String, offset: Real64.Real, recover: Bool, diagnos
 }
 and enter_WonValue = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(69, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("WonValue", offset, diagnose, if (recover) {
@@ -9664,7 +9664,7 @@ and enter_WonValue = (parser: CompiledParser, source: String, offset: Real64.Rea
       } else {
         rule_WonValue(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -9737,7 +9737,7 @@ and rule_WonAtomic = (source: String, offset: Real64.Real, recover: Bool, diagno
 }
 and enter_WonAtomic = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(70, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("WonAtomic", offset, diagnose, if (recover) {
@@ -9745,7 +9745,7 @@ and enter_WonAtomic = (parser: CompiledParser, source: String, offset: Real64.Re
       } else {
         rule_WonAtomic(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -9867,7 +9867,7 @@ and rule_WonList = (source: String, offset: Real64.Real, recover: Bool, diagnose
 }
 and enter_WonList = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(71, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("WonList", offset, diagnose, if (recover) {
@@ -9875,7 +9875,7 @@ and enter_WonList = (parser: CompiledParser, source: String, offset: Real64.Real
       } else {
         rule_WonList(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -9997,7 +9997,7 @@ and rule_WonRecord = (source: String, offset: Real64.Real, recover: Bool, diagno
 }
 and enter_WonRecord = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(72, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("WonRecord", offset, diagnose, if (recover) {
@@ -10005,7 +10005,7 @@ and enter_WonRecord = (parser: CompiledParser, source: String, offset: Real64.Re
       } else {
         rule_WonRecord(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -10104,7 +10104,7 @@ and rule_WonField = (source: String, offset: Real64.Real, recover: Bool, diagnos
 }
 and enter_WonField = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(73, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("WonField", offset, diagnose, if (recover) {
@@ -10112,7 +10112,7 @@ and enter_WonField = (parser: CompiledParser, source: String, offset: Real64.Rea
       } else {
         rule_WonField(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -10307,7 +10307,7 @@ and rule_WonTag = (source: String, offset: Real64.Real, recover: Bool, diagnose:
 }
 and enter_WonTag = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(74, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("WonTag", offset, diagnose, if (recover) {
@@ -10315,7 +10315,7 @@ and enter_WonTag = (parser: CompiledParser, source: String, offset: Real64.Real,
       } else {
         rule_WonTag(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -10425,7 +10425,7 @@ and rule_WonAttributes = (source: String, offset: Real64.Real, recover: Bool, di
 }
 and enter_WonAttributes = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(75, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("WonAttributes", offset, diagnose, if (recover) {
@@ -10433,7 +10433,7 @@ and enter_WonAttributes = (parser: CompiledParser, source: String, offset: Real6
       } else {
         rule_WonAttributes(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -10544,7 +10544,7 @@ and rule_WonPayload = (source: String, offset: Real64.Real, recover: Bool, diagn
 }
 and enter_WonPayload = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(76, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("WonPayload", offset, diagnose, if (recover) {
@@ -10552,7 +10552,7 @@ and enter_WonPayload = (parser: CompiledParser, source: String, offset: Real64.R
       } else {
         rule_WonPayload(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -10592,7 +10592,7 @@ and rule_WonNull = (source: String, offset: Real64.Real, recover: Bool, diagnose
 and enter_WonNull = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(77, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("WonNull", offset, diagnose, if (recover) {
@@ -10600,7 +10600,7 @@ and enter_WonNull = (parser: CompiledParser, source: String, offset: Real64.Real
         } else {
           rule_WonNull(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -10671,7 +10671,7 @@ and rule_WonBoolean = (source: String, offset: Real64.Real, recover: Bool, diagn
 and enter_WonBoolean = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(78, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("WonBoolean", offset, diagnose, if (recover) {
@@ -10679,7 +10679,7 @@ and enter_WonBoolean = (parser: CompiledParser, source: String, offset: Real64.R
         } else {
           rule_WonBoolean(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -10885,7 +10885,7 @@ and rule_WonNumber = (source: String, offset: Real64.Real, recover: Bool, diagno
 and enter_WonNumber = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(79, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("WonNumber", offset, diagnose, if (recover) {
@@ -10893,7 +10893,7 @@ and enter_WonNumber = (parser: CompiledParser, source: String, offset: Real64.Re
         } else {
           rule_WonNumber(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -10933,7 +10933,7 @@ and rule_WonName = (source: String, offset: Real64.Real, recover: Bool, diagnose
 and enter_WonName = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(80, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("WonName", offset, diagnose, if (recover) {
@@ -10941,7 +10941,7 @@ and enter_WonName = (parser: CompiledParser, source: String, offset: Real64.Real
         } else {
           rule_WonName(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -11017,7 +11017,7 @@ and rule_WonBlob = (source: String, offset: Real64.Real, recover: Bool, diagnose
 and enter_WonBlob = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(81, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("WonBlob", offset, diagnose, if (recover) {
@@ -11025,7 +11025,7 @@ and enter_WonBlob = (parser: CompiledParser, source: String, offset: Real64.Real
         } else {
           rule_WonBlob(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -11189,7 +11189,7 @@ and rule_WonText = (source: String, offset: Real64.Real, recover: Bool, diagnose
 and enter_WonText = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(82, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("WonText", offset, diagnose, if (recover) {
@@ -11197,7 +11197,7 @@ and enter_WonText = (parser: CompiledParser, source: String, offset: Real64.Real
         } else {
           rule_WonText(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -11214,7 +11214,7 @@ and rule_WonGap = (source: String, offset: Real64.Real, recover: Bool, diagnose:
 and enter_WonGap = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(83, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("WonGap", offset, diagnose, if (recover) {
@@ -11222,7 +11222,7 @@ and enter_WonGap = (parser: CompiledParser, source: String, offset: Real64.Real,
         } else {
           rule_WonGap(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -11239,7 +11239,7 @@ and rule_WonSeparator = (source: String, offset: Real64.Real, recover: Bool, dia
 and enter_WonSeparator = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(84, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("WonSeparator", offset, diagnose, if (recover) {
@@ -11247,7 +11247,7 @@ and enter_WonSeparator = (parser: CompiledParser, source: String, offset: Real64
         } else {
           rule_WonSeparator(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -11326,7 +11326,7 @@ and rule_WonTrivia = (source: String, offset: Real64.Real, recover: Bool, diagno
 and enter_WonTrivia = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(85, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("WonTrivia", offset, diagnose, if (recover) {
@@ -11334,7 +11334,7 @@ and enter_WonTrivia = (parser: CompiledParser, source: String, offset: Real64.Re
         } else {
           rule_WonTrivia(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -11441,7 +11441,7 @@ and rule_WonComment = (source: String, offset: Real64.Real, recover: Bool, diagn
 and enter_WonComment = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(86, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("WonComment", offset, diagnose, if (recover) {
@@ -11449,7 +11449,7 @@ and enter_WonComment = (parser: CompiledParser, source: String, offset: Real64.R
         } else {
           rule_WonComment(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -11551,7 +11551,7 @@ and rule_CarrierLiftTupleExpr = (source: String, offset: Real64.Real, recover: B
 }
 and enter_CarrierLiftTupleExpr = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(87, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("CarrierLiftTupleExpr", offset, diagnose, if (recover) {
@@ -11559,7 +11559,7 @@ and enter_CarrierLiftTupleExpr = (parser: CompiledParser, source: String, offset
       } else {
         rule_CarrierLiftTupleExpr(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -11631,7 +11631,7 @@ and rule_LiftTupleExpr = (source: String, offset: Real64.Real, recover: Bool, di
 }
 and enter_LiftTupleExpr = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(88, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("LiftTupleExpr", offset, diagnose, if (recover) {
@@ -11639,7 +11639,7 @@ and enter_LiftTupleExpr = (parser: CompiledParser, source: String, offset: Real6
       } else {
         rule_LiftTupleExpr(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -11838,7 +11838,7 @@ and rule_PanicExpr = (source: String, offset: Real64.Real, recover: Bool, diagno
 }
 and enter_PanicExpr = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(89, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("PanicExpr", offset, diagnose, if (recover) {
@@ -11846,7 +11846,7 @@ and enter_PanicExpr = (parser: CompiledParser, source: String, offset: Real64.Re
       } else {
         rule_PanicExpr(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -12101,7 +12101,7 @@ and rule_JsonExpr = (source: String, offset: Real64.Real, recover: Bool, diagnos
 }
 and enter_JsonExpr = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(90, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("JsonExpr", offset, diagnose, if (recover) {
@@ -12109,7 +12109,7 @@ and enter_JsonExpr = (parser: CompiledParser, source: String, offset: Real64.Rea
       } else {
         rule_JsonExpr(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -12221,7 +12221,7 @@ and rule_JsonObjectFieldList = (source: String, offset: Real64.Real, recover: Bo
 }
 and enter_JsonObjectFieldList = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(91, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("JsonObjectFieldList", offset, diagnose, if (recover) {
@@ -12229,7 +12229,7 @@ and enter_JsonObjectFieldList = (parser: CompiledParser, source: String, offset:
       } else {
         rule_JsonObjectFieldList(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -12390,7 +12390,7 @@ and rule_JsonObjectField = (source: String, offset: Real64.Real, recover: Bool, 
 }
 and enter_JsonObjectField = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(92, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("JsonObjectField", offset, diagnose, if (recover) {
@@ -12398,7 +12398,7 @@ and enter_JsonObjectField = (parser: CompiledParser, source: String, offset: Rea
       } else {
         rule_JsonObjectField(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -12498,7 +12498,7 @@ and rule_RecordExpr = (source: String, offset: Real64.Real, recover: Bool, diagn
 }
 and enter_RecordExpr = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(93, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("RecordExpr", offset, diagnose, if (recover) {
@@ -12506,7 +12506,7 @@ and enter_RecordExpr = (parser: CompiledParser, source: String, offset: Real64.R
       } else {
         rule_RecordExpr(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -12606,7 +12606,7 @@ and rule_NamedRecordExpr = (source: String, offset: Real64.Real, recover: Bool, 
 }
 and enter_NamedRecordExpr = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(94, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("NamedRecordExpr", offset, diagnose, if (recover) {
@@ -12614,7 +12614,7 @@ and enter_NamedRecordExpr = (parser: CompiledParser, source: String, offset: Rea
       } else {
         rule_NamedRecordExpr(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -12688,7 +12688,7 @@ and rule_NestedRecordExpr = (source: String, offset: Real64.Real, recover: Bool,
 }
 and enter_NestedRecordExpr = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(95, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("NestedRecordExpr", offset, diagnose, if (recover) {
@@ -12696,7 +12696,7 @@ and enter_NestedRecordExpr = (parser: CompiledParser, source: String, offset: Re
       } else {
         rule_NestedRecordExpr(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -12808,7 +12808,7 @@ and rule_RecordExprFieldList = (source: String, offset: Real64.Real, recover: Bo
 }
 and enter_RecordExprFieldList = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(96, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("RecordExprFieldList", offset, diagnose, if (recover) {
@@ -12816,7 +12816,7 @@ and enter_RecordExprFieldList = (parser: CompiledParser, source: String, offset:
       } else {
         rule_RecordExprFieldList(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -12990,7 +12990,7 @@ and rule_RecordExprField = (source: String, offset: Real64.Real, recover: Bool, 
 }
 and enter_RecordExprField = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(97, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("RecordExprField", offset, diagnose, if (recover) {
@@ -12998,7 +12998,7 @@ and enter_RecordExprField = (parser: CompiledParser, source: String, offset: Rea
       } else {
         rule_RecordExprField(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -13415,7 +13415,7 @@ and rule_ListExpr = (source: String, offset: Real64.Real, recover: Bool, diagnos
 }
 and enter_ListExpr = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(98, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("ListExpr", offset, diagnose, if (recover) {
@@ -13423,7 +13423,7 @@ and enter_ListExpr = (parser: CompiledParser, source: String, offset: Real64.Rea
       } else {
         rule_ListExpr(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -13712,7 +13712,7 @@ and rule_TupleOrGroup = (source: String, offset: Real64.Real, recover: Bool, dia
 }
 and enter_TupleOrGroup = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(99, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("TupleOrGroup", offset, diagnose, if (recover) {
@@ -13720,7 +13720,7 @@ and enter_TupleOrGroup = (parser: CompiledParser, source: String, offset: Real64
       } else {
         rule_TupleOrGroup(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -13792,7 +13792,7 @@ and rule_ParenSeq = (source: String, offset: Real64.Real, recover: Bool, diagnos
 }
 and enter_ParenSeq = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(100, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("ParenSeq", offset, diagnose, if (recover) {
@@ -13800,7 +13800,7 @@ and enter_ParenSeq = (parser: CompiledParser, source: String, offset: Real64.Rea
       } else {
         rule_ParenSeq(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -13872,7 +13872,7 @@ and rule_Block = (source: String, offset: Real64.Real, recover: Bool, diagnose: 
 }
 and enter_Block = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(101, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("Block", offset, diagnose, if (recover) {
@@ -13880,7 +13880,7 @@ and enter_Block = (parser: CompiledParser, source: String, offset: Real64.Real, 
       } else {
         rule_Block(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -13917,7 +13917,7 @@ and rule_BlockSeqBody = (source: String, offset: Real64.Real, recover: Bool, dia
 }
 and enter_BlockSeqBody = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(102, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("BlockSeqBody", offset, diagnose, if (recover) {
@@ -13925,7 +13925,7 @@ and enter_BlockSeqBody = (parser: CompiledParser, source: String, offset: Real64
       } else {
         rule_BlockSeqBody(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -14060,7 +14060,7 @@ and rule_BlockSeqItem = (source: String, offset: Real64.Real, recover: Bool, dia
 }
 and enter_BlockSeqItem = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(103, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("BlockSeqItem", offset, diagnose, if (recover) {
@@ -14068,7 +14068,7 @@ and enter_BlockSeqItem = (parser: CompiledParser, source: String, offset: Real64
       } else {
         rule_BlockSeqItem(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -14117,7 +14117,7 @@ and rule_BlockDecl = (source: String, offset: Real64.Real, recover: Bool, diagno
 }
 and enter_BlockDecl = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(104, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("BlockDecl", offset, diagnose, if (recover) {
@@ -14125,7 +14125,7 @@ and enter_BlockDecl = (parser: CompiledParser, source: String, offset: Real64.Re
       } else {
         rule_BlockDecl(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -14162,7 +14162,7 @@ and rule_ParenSeqBody = (source: String, offset: Real64.Real, recover: Bool, dia
 }
 and enter_ParenSeqBody = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(105, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("ParenSeqBody", offset, diagnose, if (recover) {
@@ -14170,7 +14170,7 @@ and enter_ParenSeqBody = (parser: CompiledParser, source: String, offset: Real64
       } else {
         rule_ParenSeqBody(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -14229,7 +14229,7 @@ and rule_ParenSeqItem = (source: String, offset: Real64.Real, recover: Bool, dia
 }
 and enter_ParenSeqItem = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(106, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("ParenSeqItem", offset, diagnose, if (recover) {
@@ -14237,7 +14237,7 @@ and enter_ParenSeqItem = (parser: CompiledParser, source: String, offset: Real64
       } else {
         rule_ParenSeqItem(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -14247,7 +14247,7 @@ and rule_SemiToken = (source: String, offset: Real64.Real, recover: Bool, diagno
 }
 and enter_SemiToken = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(107, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("SemiToken", offset, diagnose, if (recover) {
@@ -14255,7 +14255,7 @@ and enter_SemiToken = (parser: CompiledParser, source: String, offset: Real64.Re
       } else {
         rule_SemiToken(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -14313,7 +14313,7 @@ and rule_Pattern = (source: String, offset: Real64.Real, recover: Bool, diagnose
 }
 and enter_Pattern = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(108, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("Pattern", offset, diagnose, if (recover) {
@@ -14321,7 +14321,7 @@ and enter_Pattern = (parser: CompiledParser, source: String, offset: Real64.Real
       } else {
         rule_Pattern(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -14958,7 +14958,7 @@ and rule_PatternCore = (source: String, offset: Real64.Real, recover: Bool, diag
 }
 and enter_PatternCore = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(109, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("PatternCore", offset, diagnose, if (recover) {
@@ -14966,7 +14966,7 @@ and enter_PatternCore = (parser: CompiledParser, source: String, offset: Real64.
       } else {
         rule_PatternCore(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -15067,7 +15067,7 @@ and rule_ParamList = (source: String, offset: Real64.Real, recover: Bool, diagno
 }
 and enter_ParamList = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(110, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("ParamList", offset, diagnose, if (recover) {
@@ -15075,7 +15075,7 @@ and enter_ParamList = (parser: CompiledParser, source: String, offset: Real64.Re
       } else {
         rule_ParamList(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -15133,7 +15133,7 @@ and rule_Param = (source: String, offset: Real64.Real, recover: Bool, diagnose: 
 }
 and enter_Param = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(111, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("Param", offset, diagnose, if (recover) {
@@ -15141,7 +15141,7 @@ and enter_Param = (parser: CompiledParser, source: String, offset: Real64.Real, 
       } else {
         rule_Param(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -15442,7 +15442,7 @@ and rule_ParamPattern = (source: String, offset: Real64.Real, recover: Bool, dia
 }
 and enter_ParamPattern = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(112, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("ParamPattern", offset, diagnose, if (recover) {
@@ -15450,7 +15450,7 @@ and enter_ParamPattern = (parser: CompiledParser, source: String, offset: Real64
       } else {
         rule_ParamPattern(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -15562,7 +15562,7 @@ and rule_ParamListItems = (source: String, offset: Real64.Real, recover: Bool, d
 }
 and enter_ParamListItems = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(113, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("ParamListItems", offset, diagnose, if (recover) {
@@ -15570,7 +15570,7 @@ and enter_ParamListItems = (parser: CompiledParser, source: String, offset: Real
       } else {
         rule_ParamListItems(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -15682,7 +15682,7 @@ and rule_ParamPatternList = (source: String, offset: Real64.Real, recover: Bool,
 }
 and enter_ParamPatternList = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(114, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("ParamPatternList", offset, diagnose, if (recover) {
@@ -15690,7 +15690,7 @@ and enter_ParamPatternList = (parser: CompiledParser, source: String, offset: Re
       } else {
         rule_ParamPatternList(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -15802,7 +15802,7 @@ and rule_PatternList = (source: String, offset: Real64.Real, recover: Bool, diag
 }
 and enter_PatternList = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(115, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("PatternList", offset, diagnose, if (recover) {
@@ -15810,7 +15810,7 @@ and enter_PatternList = (parser: CompiledParser, source: String, offset: Real64.
       } else {
         rule_PatternList(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -16149,7 +16149,7 @@ and rule_CtorPattern = (source: String, offset: Real64.Real, recover: Bool, diag
 }
 and enter_CtorPattern = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(116, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("CtorPattern", offset, diagnose, if (recover) {
@@ -16157,7 +16157,7 @@ and enter_CtorPattern = (parser: CompiledParser, source: String, offset: Real64.
       } else {
         rule_CtorPattern(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -16269,7 +16269,7 @@ and rule_CtorPatternList = (source: String, offset: Real64.Real, recover: Bool, 
 }
 and enter_CtorPatternList = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(117, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("CtorPatternList", offset, diagnose, if (recover) {
@@ -16277,7 +16277,7 @@ and enter_CtorPatternList = (parser: CompiledParser, source: String, offset: Rea
       } else {
         rule_CtorPatternList(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -16389,7 +16389,7 @@ and rule_ArgList = (source: String, offset: Real64.Real, recover: Bool, diagnose
 }
 and enter_ArgList = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(118, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("ArgList", offset, diagnose, if (recover) {
@@ -16397,7 +16397,7 @@ and enter_ArgList = (parser: CompiledParser, source: String, offset: Real64.Real
       } else {
         rule_ArgList(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -16814,7 +16814,7 @@ and rule_ListPattern = (source: String, offset: Real64.Real, recover: Bool, diag
 }
 and enter_ListPattern = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(119, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("ListPattern", offset, diagnose, if (recover) {
@@ -16822,7 +16822,7 @@ and enter_ListPattern = (parser: CompiledParser, source: String, offset: Real64.
       } else {
         rule_ListPattern(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -17097,7 +17097,7 @@ and rule_ListPatternItem = (source: String, offset: Real64.Real, recover: Bool, 
 }
 and enter_ListPatternItem = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(120, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("ListPatternItem", offset, diagnose, if (recover) {
@@ -17105,7 +17105,7 @@ and enter_ListPatternItem = (parser: CompiledParser, source: String, offset: Rea
       } else {
         rule_ListPatternItem(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -17522,7 +17522,7 @@ and rule_ListLetPattern = (source: String, offset: Real64.Real, recover: Bool, d
 }
 and enter_ListLetPattern = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(121, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("ListLetPattern", offset, diagnose, if (recover) {
@@ -17530,7 +17530,7 @@ and enter_ListLetPattern = (parser: CompiledParser, source: String, offset: Real
       } else {
         rule_ListLetPattern(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -17947,7 +17947,7 @@ and rule_ListParamPattern = (source: String, offset: Real64.Real, recover: Bool,
 }
 and enter_ListParamPattern = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(122, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("ListParamPattern", offset, diagnose, if (recover) {
@@ -17955,7 +17955,7 @@ and enter_ListParamPattern = (parser: CompiledParser, source: String, offset: Re
       } else {
         rule_ListParamPattern(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -18055,7 +18055,7 @@ and rule_RecordPattern = (source: String, offset: Real64.Real, recover: Bool, di
 }
 and enter_RecordPattern = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(123, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("RecordPattern", offset, diagnose, if (recover) {
@@ -18063,7 +18063,7 @@ and enter_RecordPattern = (parser: CompiledParser, source: String, offset: Real6
       } else {
         rule_RecordPattern(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -18175,7 +18175,7 @@ and rule_RecordPatternFieldList = (source: String, offset: Real64.Real, recover:
 }
 and enter_RecordPatternFieldList = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(124, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("RecordPatternFieldList", offset, diagnose, if (recover) {
@@ -18183,7 +18183,7 @@ and enter_RecordPatternFieldList = (parser: CompiledParser, source: String, offs
       } else {
         rule_RecordPatternFieldList(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -18282,7 +18282,7 @@ and rule_RecordPatternField = (source: String, offset: Real64.Real, recover: Boo
 }
 and enter_RecordPatternField = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(125, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("RecordPatternField", offset, diagnose, if (recover) {
@@ -18290,7 +18290,7 @@ and enter_RecordPatternField = (parser: CompiledParser, source: String, offset: 
       } else {
         rule_RecordPatternField(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -18390,7 +18390,7 @@ and rule_RecordLetPattern = (source: String, offset: Real64.Real, recover: Bool,
 }
 and enter_RecordLetPattern = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(126, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("RecordLetPattern", offset, diagnose, if (recover) {
@@ -18398,7 +18398,7 @@ and enter_RecordLetPattern = (parser: CompiledParser, source: String, offset: Re
       } else {
         rule_RecordLetPattern(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -18510,7 +18510,7 @@ and rule_RecordLetPatternFieldList = (source: String, offset: Real64.Real, recov
 }
 and enter_RecordLetPatternFieldList = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(127, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("RecordLetPatternFieldList", offset, diagnose, if (recover) {
@@ -18518,7 +18518,7 @@ and enter_RecordLetPatternFieldList = (parser: CompiledParser, source: String, o
       } else {
         rule_RecordLetPatternFieldList(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -18617,7 +18617,7 @@ and rule_RecordLetPatternField = (source: String, offset: Real64.Real, recover: 
 }
 and enter_RecordLetPatternField = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(128, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("RecordLetPatternField", offset, diagnose, if (recover) {
@@ -18625,7 +18625,7 @@ and enter_RecordLetPatternField = (parser: CompiledParser, source: String, offse
       } else {
         rule_RecordLetPatternField(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -18725,7 +18725,7 @@ and rule_RecordParamPattern = (source: String, offset: Real64.Real, recover: Boo
 }
 and enter_RecordParamPattern = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(129, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("RecordParamPattern", offset, diagnose, if (recover) {
@@ -18733,7 +18733,7 @@ and enter_RecordParamPattern = (parser: CompiledParser, source: String, offset: 
       } else {
         rule_RecordParamPattern(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -18845,7 +18845,7 @@ and rule_RecordParamPatternFieldList = (source: String, offset: Real64.Real, rec
 }
 and enter_RecordParamPatternFieldList = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(130, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("RecordParamPatternFieldList", offset, diagnose, if (recover) {
@@ -18853,7 +18853,7 @@ and enter_RecordParamPatternFieldList = (parser: CompiledParser, source: String,
       } else {
         rule_RecordParamPatternFieldList(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -18952,7 +18952,7 @@ and rule_RecordParamPatternField = (source: String, offset: Real64.Real, recover
 }
 and enter_RecordParamPatternField = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(131, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("RecordParamPatternField", offset, diagnose, if (recover) {
@@ -18960,7 +18960,7 @@ and enter_RecordParamPatternField = (parser: CompiledParser, source: String, off
       } else {
         rule_RecordParamPatternField(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -19006,7 +19006,7 @@ and rule_TypeAnn = (source: String, offset: Real64.Real, recover: Bool, diagnose
 }
 and enter_TypeAnn = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(132, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("TypeAnn", offset, diagnose, if (recover) {
@@ -19014,7 +19014,7 @@ and enter_TypeAnn = (parser: CompiledParser, source: String, offset: Real64.Real
       } else {
         rule_TypeAnn(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -19051,7 +19051,7 @@ and rule_FnType = (source: String, offset: Real64.Real, recover: Bool, diagnose:
 }
 and enter_FnType = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(133, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("FnType", offset, diagnose, if (recover) {
@@ -19059,7 +19059,7 @@ and enter_FnType = (parser: CompiledParser, source: String, offset: Real64.Real,
       } else {
         rule_FnType(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -19131,7 +19131,7 @@ and rule_FunctionType = (source: String, offset: Real64.Real, recover: Bool, dia
 }
 and enter_FunctionType = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(134, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("FunctionType", offset, diagnose, if (recover) {
@@ -19139,7 +19139,7 @@ and enter_FunctionType = (parser: CompiledParser, source: String, offset: Real64
       } else {
         rule_FunctionType(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -19292,7 +19292,7 @@ and rule_FnTypeDomain = (source: String, offset: Real64.Real, recover: Bool, dia
 }
 and enter_FnTypeDomain = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(135, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("FnTypeDomain", offset, diagnose, if (recover) {
@@ -19300,7 +19300,7 @@ and enter_FnTypeDomain = (parser: CompiledParser, source: String, offset: Real64
       } else {
         rule_FnTypeDomain(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -19372,7 +19372,7 @@ and rule_GroupedFunctionType = (source: String, offset: Real64.Real, recover: Bo
 }
 and enter_GroupedFunctionType = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(136, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("GroupedFunctionType", offset, diagnose, if (recover) {
@@ -19380,7 +19380,7 @@ and enter_GroupedFunctionType = (parser: CompiledParser, source: String, offset:
       } else {
         rule_GroupedFunctionType(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -19495,7 +19495,7 @@ and rule_InlineRecordType = (source: String, offset: Real64.Real, recover: Bool,
 }
 and enter_InlineRecordType = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(137, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("InlineRecordType", offset, diagnose, if (recover) {
@@ -19503,7 +19503,7 @@ and enter_InlineRecordType = (parser: CompiledParser, source: String, offset: Re
       } else {
         rule_InlineRecordType(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -19779,7 +19779,7 @@ and rule_TypeAtom = (source: String, offset: Real64.Real, recover: Bool, diagnos
 }
 and enter_TypeAtom = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(138, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("TypeAtom", offset, diagnose, if (recover) {
@@ -19787,7 +19787,7 @@ and enter_TypeAtom = (parser: CompiledParser, source: String, offset: Real64.Rea
       } else {
         rule_TypeAtom(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -19899,7 +19899,7 @@ and rule_TypeList = (source: String, offset: Real64.Real, recover: Bool, diagnos
 }
 and enter_TypeList = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(139, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("TypeList", offset, diagnose, if (recover) {
@@ -19907,7 +19907,7 @@ and enter_TypeList = (parser: CompiledParser, source: String, offset: Real64.Rea
       } else {
         rule_TypeList(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -20071,7 +20071,7 @@ and rule_TypeParams = (source: String, offset: Real64.Real, recover: Bool, diagn
 }
 and enter_TypeParams = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(140, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("TypeParams", offset, diagnose, if (recover) {
@@ -20079,7 +20079,7 @@ and enter_TypeParams = (parser: CompiledParser, source: String, offset: Real64.R
       } else {
         rule_TypeParams(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -20117,7 +20117,7 @@ and rule_TypeParam = (source: String, offset: Real64.Real, recover: Bool, diagno
 and enter_TypeParam = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(141, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("TypeParam", offset, diagnose, if (recover) {
@@ -20125,7 +20125,7 @@ and enter_TypeParam = (parser: CompiledParser, source: String, offset: Real64.Re
         } else {
           rule_TypeParam(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -20405,7 +20405,7 @@ and rule_Float = (source: String, offset: Real64.Real, recover: Bool, diagnose: 
 and enter_Float = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(142, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("Float", offset, diagnose, if (recover) {
@@ -20413,7 +20413,7 @@ and enter_Float = (parser: CompiledParser, source: String, offset: Real64.Real, 
         } else {
           rule_Float(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -20678,7 +20678,7 @@ and rule_Int = (source: String, offset: Real64.Real, recover: Bool, diagnose: Bo
 and enter_Int = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(143, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("Int", offset, diagnose, if (recover) {
@@ -20686,7 +20686,7 @@ and enter_Int = (parser: CompiledParser, source: String, offset: Real64.Real, di
         } else {
           rule_Int(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -20728,7 +20728,7 @@ and rule_String = (source: String, offset: Real64.Real, recover: Bool, diagnose:
 and enter_String = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(144, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("String", offset, diagnose, if (recover) {
@@ -20736,7 +20736,7 @@ and enter_String = (parser: CompiledParser, source: String, offset: Real64.Real,
         } else {
           rule_String(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -20856,7 +20856,7 @@ and rule_InterpolatedString = (source: String, offset: Real64.Real, recover: Boo
 }
 and enter_InterpolatedString = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(145, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("InterpolatedString", offset, diagnose, if (recover) {
@@ -20864,7 +20864,7 @@ and enter_InterpolatedString = (parser: CompiledParser, source: String, offset: 
       } else {
         rule_InterpolatedString(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -20936,7 +20936,7 @@ and rule_StringInterpolation = (source: String, offset: Real64.Real, recover: Bo
 }
 and enter_StringInterpolation = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(146, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("StringInterpolation", offset, diagnose, if (recover) {
@@ -20944,7 +20944,7 @@ and enter_StringInterpolation = (parser: CompiledParser, source: String, offset:
       } else {
         rule_StringInterpolation(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -20956,7 +20956,7 @@ and rule_InterpolatedStringText = (source: String, offset: Real64.Real, recover:
 }
 and enter_InterpolatedStringText = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(147, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("InterpolatedStringText", offset, diagnose, if (recover) {
@@ -20964,7 +20964,7 @@ and enter_InterpolatedStringText = (parser: CompiledParser, source: String, offs
       } else {
         rule_InterpolatedStringText(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -21080,7 +21080,7 @@ and rule_InterpolatedChar = (source: String, offset: Real64.Real, recover: Bool,
 and enter_InterpolatedChar = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(148, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("InterpolatedChar", offset, diagnose, if (recover) {
@@ -21088,7 +21088,7 @@ and enter_InterpolatedChar = (parser: CompiledParser, source: String, offset: Re
         } else {
           rule_InterpolatedChar(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -21141,7 +21141,7 @@ and rule_QuotedString = (source: String, offset: Real64.Real, recover: Bool, dia
 and enter_QuotedString = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(149, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("QuotedString", offset, diagnose, if (recover) {
@@ -21149,7 +21149,7 @@ and enter_QuotedString = (parser: CompiledParser, source: String, offset: Real64
         } else {
           rule_QuotedString(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -21202,7 +21202,7 @@ and rule_MultilineString = (source: String, offset: Real64.Real, recover: Bool, 
 and enter_MultilineString = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(150, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("MultilineString", offset, diagnose, if (recover) {
@@ -21210,7 +21210,7 @@ and enter_MultilineString = (parser: CompiledParser, source: String, offset: Rea
         } else {
           rule_MultilineString(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -21306,7 +21306,7 @@ and rule_QuotedChar = (source: String, offset: Real64.Real, recover: Bool, diagn
 and enter_QuotedChar = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(151, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("QuotedChar", offset, diagnose, if (recover) {
@@ -21314,7 +21314,7 @@ and enter_QuotedChar = (parser: CompiledParser, source: String, offset: Real64.R
         } else {
           rule_QuotedChar(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -21434,7 +21434,7 @@ and rule_MultilineChar = (source: String, offset: Real64.Real, recover: Bool, di
 and enter_MultilineChar = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(152, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("MultilineChar", offset, diagnose, if (recover) {
@@ -21442,7 +21442,7 @@ and enter_MultilineChar = (parser: CompiledParser, source: String, offset: Real6
         } else {
           rule_MultilineChar(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -21484,7 +21484,7 @@ and rule_SharedEscape = (source: String, offset: Real64.Real, recover: Bool, dia
 and enter_SharedEscape = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(153, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("SharedEscape", offset, diagnose, if (recover) {
@@ -21492,7 +21492,7 @@ and enter_SharedEscape = (parser: CompiledParser, source: String, offset: Real64
         } else {
           rule_SharedEscape(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -21545,7 +21545,7 @@ and rule_StringGap = (source: String, offset: Real64.Real, recover: Bool, diagno
 and enter_StringGap = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(154, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("StringGap", offset, diagnose, if (recover) {
@@ -21553,7 +21553,7 @@ and enter_StringGap = (parser: CompiledParser, source: String, offset: Real64.Re
         } else {
           rule_StringGap(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -21634,7 +21634,7 @@ and rule_Character = (source: String, offset: Real64.Real, recover: Bool, diagno
 and enter_Character = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(155, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("Character", offset, diagnose, if (recover) {
@@ -21642,7 +21642,7 @@ and enter_Character = (parser: CompiledParser, source: String, offset: Real64.Re
         } else {
           rule_Character(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -21738,7 +21738,7 @@ and rule_CharacterChar = (source: String, offset: Real64.Real, recover: Bool, di
 and enter_CharacterChar = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(156, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("CharacterChar", offset, diagnose, if (recover) {
@@ -21746,7 +21746,7 @@ and enter_CharacterChar = (parser: CompiledParser, source: String, offset: Real6
         } else {
           rule_CharacterChar(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -22395,7 +22395,7 @@ and rule_ScalarEscape = (source: String, offset: Real64.Real, recover: Bool, dia
 and enter_ScalarEscape = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(157, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("ScalarEscape", offset, diagnose, if (recover) {
@@ -22403,7 +22403,7 @@ and enter_ScalarEscape = (parser: CompiledParser, source: String, offset: Real64
         } else {
           rule_ScalarEscape(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -22418,7 +22418,7 @@ and rule_HexDigit = (source: String, offset: Real64.Real, recover: Bool, diagnos
 and enter_HexDigit = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(158, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("HexDigit", offset, diagnose, if (recover) {
@@ -22426,7 +22426,7 @@ and enter_HexDigit = (parser: CompiledParser, source: String, offset: Real64.Rea
         } else {
           rule_HexDigit(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -22525,7 +22525,7 @@ and rule_LiteralScalar = (source: String, offset: Real64.Real, recover: Bool, di
 and enter_LiteralScalar = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(159, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("LiteralScalar", offset, diagnose, if (recover) {
@@ -22533,7 +22533,7 @@ and enter_LiteralScalar = (parser: CompiledParser, source: String, offset: Real6
         } else {
           rule_LiteralScalar(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -22575,7 +22575,7 @@ and rule_LineTerminator = (source: String, offset: Real64.Real, recover: Bool, d
 and enter_LineTerminator = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(160, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("LineTerminator", offset, diagnose, if (recover) {
@@ -22583,7 +22583,7 @@ and enter_LineTerminator = (parser: CompiledParser, source: String, offset: Real
         } else {
           rule_LineTerminator(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -22654,7 +22654,7 @@ and rule_Bool = (source: String, offset: Real64.Real, recover: Bool, diagnose: B
 and enter_Bool = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(161, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("Bool", offset, diagnose, if (recover) {
@@ -22662,7 +22662,7 @@ and enter_Bool = (parser: CompiledParser, source: String, offset: Real64.Real, d
         } else {
           rule_Bool(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -22706,7 +22706,7 @@ and rule_Void = (source: String, offset: Real64.Real, recover: Bool, diagnose: B
 and enter_Void = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(162, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("Void", offset, diagnose, if (recover) {
@@ -22714,7 +22714,7 @@ and enter_Void = (parser: CompiledParser, source: String, offset: Real64.Real, d
         } else {
           rule_Void(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -22758,7 +22758,7 @@ and rule_Wildcard = (source: String, offset: Real64.Real, recover: Bool, diagnos
 and enter_Wildcard = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(163, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("Wildcard", offset, diagnose, if (recover) {
@@ -22766,7 +22766,7 @@ and enter_Wildcard = (parser: CompiledParser, source: String, offset: Real64.Rea
         } else {
           rule_Wildcard(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -22842,7 +22842,7 @@ and rule_Identifier = (source: String, offset: Real64.Real, recover: Bool, diagn
 and enter_Identifier = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(164, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("Identifier", offset, diagnose, if (recover) {
@@ -22850,7 +22850,7 @@ and enter_Identifier = (parser: CompiledParser, source: String, offset: Real64.R
         } else {
           rule_Identifier(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -22926,7 +22926,7 @@ and rule_Constructor = (source: String, offset: Real64.Real, recover: Bool, diag
 and enter_Constructor = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(165, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("Constructor", offset, diagnose, if (recover) {
@@ -22934,7 +22934,7 @@ and enter_Constructor = (parser: CompiledParser, source: String, offset: Real64.
         } else {
           rule_Constructor(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -22976,7 +22976,7 @@ and rule_Name = (source: String, offset: Real64.Real, recover: Bool, diagnose: B
 and enter_Name = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(166, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("Name", offset, diagnose, if (recover) {
@@ -22984,7 +22984,7 @@ and enter_Name = (parser: CompiledParser, source: String, offset: Real64.Real, d
         } else {
           rule_Name(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -23031,7 +23031,7 @@ and rule_MemberName = (source: String, offset: Real64.Real, recover: Bool, diagn
 and enter_MemberName = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(167, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("MemberName", offset, diagnose, if (recover) {
@@ -23039,7 +23039,7 @@ and enter_MemberName = (parser: CompiledParser, source: String, offset: Real64.R
         } else {
           rule_MemberName(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -23083,7 +23083,7 @@ and rule_FieldName = (source: String, offset: Real64.Real, recover: Bool, diagno
 and enter_FieldName = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(168, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("FieldName", offset, diagnose, if (recover) {
@@ -23091,7 +23091,7 @@ and enter_FieldName = (parser: CompiledParser, source: String, offset: Real64.Re
         } else {
           rule_FieldName(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -23153,7 +23153,7 @@ and rule_LongName = (source: String, offset: Real64.Real, recover: Bool, diagnos
 }
 and enter_LongName = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(169, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("LongName", offset, diagnose, if (recover) {
@@ -23161,7 +23161,7 @@ and enter_LongName = (parser: CompiledParser, source: String, offset: Real64.Rea
       } else {
         rule_LongName(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -23238,7 +23238,7 @@ and rule_LongConstructor = (source: String, offset: Real64.Real, recover: Bool, 
 }
 and enter_LongConstructor = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(170, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("LongConstructor", offset, diagnose, if (recover) {
@@ -23246,7 +23246,7 @@ and enter_LongConstructor = (parser: CompiledParser, source: String, offset: Rea
       } else {
         rule_LongConstructor(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }
@@ -23257,7 +23257,7 @@ and rule_IdentPart = (source: String, offset: Real64.Real, recover: Bool, diagno
 and enter_IdentPart = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(171, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("IdentPart", offset, diagnose, if (recover) {
@@ -23265,7 +23265,7 @@ and enter_IdentPart = (parser: CompiledParser, source: String, offset: Real64.Re
         } else {
           rule_IdentPart(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -23468,7 +23468,7 @@ and rule_Keyword = (source: String, offset: Real64.Real, recover: Bool, diagnose
 and enter_Keyword = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(172, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("Keyword", offset, diagnose, if (recover) {
@@ -23476,7 +23476,7 @@ and enter_Keyword = (parser: CompiledParser, source: String, offset: Real64.Real
         } else {
           rule_Keyword(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -23520,7 +23520,7 @@ and rule___ = (source: String, offset: Real64.Real, recover: Bool, diagnose: Boo
 and enter___ = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(173, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("__", offset, diagnose, if (recover) {
@@ -23528,7 +23528,7 @@ and enter___ = (parser: CompiledParser, source: String, offset: Real64.Real, dia
         } else {
           rule___(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -23572,7 +23572,7 @@ and rule__ = (source: String, offset: Real64.Real, recover: Bool, diagnose: Bool
 and enter__ = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(174, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("_", offset, diagnose, if (recover) {
@@ -23580,7 +23580,7 @@ and enter__ = (parser: CompiledParser, source: String, offset: Real64.Real, diag
         } else {
           rule__(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -23595,7 +23595,7 @@ and rule_Whitespace = (source: String, offset: Real64.Real, recover: Bool, diagn
 and enter_Whitespace = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(175, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("Whitespace", offset, diagnose, if (recover) {
@@ -23603,7 +23603,7 @@ and enter_Whitespace = (parser: CompiledParser, source: String, offset: Real64.R
         } else {
           rule_Whitespace(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -23707,7 +23707,7 @@ and rule_Comment = (source: String, offset: Real64.Real, recover: Bool, diagnose
 and enter_Comment = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(176, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("Comment", offset, diagnose, if (recover) {
@@ -23715,7 +23715,7 @@ and enter_Comment = (parser: CompiledParser, source: String, offset: Real64.Real
         } else {
           rule_Comment(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -23849,7 +23849,7 @@ and rule_BlockComment = (source: String, offset: Real64.Real, recover: Bool, dia
 and enter_BlockComment = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   if (diagnose) {
     let slot = compiledRuleSlot(177, offset, diagnose, recover);
-    match(Table.getAt(parser.memo, slot)) {
+    match(Memo.get(parser.memo, slot)) {
       Some(cached) => { cached },
       None => {
         let result = wrapCompiledRule("BlockComment", offset, diagnose, if (recover) {
@@ -23857,7 +23857,7 @@ and enter_BlockComment = (parser: CompiledParser, source: String, offset: Real64
         } else {
           rule_BlockComment(source, offset, false, diagnose, parser)
         });
-        Table.setAt(parser.memo, slot, result);
+        Memo.set(parser.memo, slot, result);
         result
       },
     }
@@ -23877,7 +23877,7 @@ and rule_EOF = (source: String, offset: Real64.Real, recover: Bool, diagnose: Bo
 }
 and enter_EOF = (parser: CompiledParser, source: String, offset: Real64.Real, diagnose: Bool, recover: Bool): CompiledProbeMatch => {
   let slot = compiledRuleSlot(178, offset, diagnose, recover);
-  match(Table.getAt(parser.memo, slot)) {
+  match(Memo.get(parser.memo, slot)) {
     Some(cached) => { cached },
     None => {
       let result = wrapCompiledRule("EOF", offset, diagnose, if (recover) {
@@ -23885,7 +23885,7 @@ and enter_EOF = (parser: CompiledParser, source: String, offset: Real64.Real, di
       } else {
         rule_EOF(source, offset, false, diagnose, parser)
       });
-      Table.setAt(parser.memo, slot, result);
+      Memo.set(parser.memo, slot, result);
       result
     },
   }

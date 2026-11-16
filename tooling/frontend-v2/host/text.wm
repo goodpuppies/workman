@@ -1,0 +1,16 @@
+// Source text access for the parser: JavaScript strings, indexed by UTF-16 code unit. Native
+// builds select native/text.sml through native/text.wm instead
+// (scripts/build_frontend_v2_native.py).
+from js.global("String.prototype.charCodeAt") import unsafe {
+  call as jsCharCodeAt: (String, Real64) -> Real64
+};
+from js.global("String.prototype.slice") import unsafe {
+  call as jsSlice: (String, Real64, Real64) -> String
+};
+
+// NaN past the end of the text.
+let charCodeAt = (text: String, offset: Real64): Real64 => { jsCharCodeAt(text, offset) };
+let slice = (text: String, start: Real64, end: Real64): String => { jsSlice(text, start, end) };
+let textLength = (text: String): Real64 => {
+  text :> .length :> Result.getOr(0)
+};

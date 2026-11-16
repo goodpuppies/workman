@@ -1,0 +1,6 @@
+// Checker interface of host/text.wm for native builds. SubsetML checks the frontend against
+// these signatures; the build then links native/text.sml in their place, so these bodies never
+// run.
+let charCodeAt = (text: String, offset: Real64.Real): Real64.Real => { -1.0 };
+let slice = (text: String, start: Real64.Real, end: Real64.Real): String => { text };
+let textLength = (text: String): Real64.Real => { 0.0 };

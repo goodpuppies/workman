@@ -1,0 +1,8 @@
+// Checker interface of host/memo.wm for native builds. SubsetML checks the frontend against
+// these signatures; the build then links native/memo.sml in their place, so these bodies never
+// run. A mutable table has no SubsetML implementation.
+type Memo<v> = | Memo<List<v>>;
+
+let empty = (): Memo<v> => { Memo([]) };
+let get = (memo: Memo<v>, slot: Real64.Real): Option<v> => { None };
+let set = (memo: Memo<v>, slot: Real64.Real, value: v) => { void };

@@ -2,10 +2,7 @@ from "./generated/compiled_probe_types.wm" import {
   ClassPart, SingleCode, CodeRange
 };
 
-from js.global("String.prototype.charCodeAt") import unsafe {
-  call as charCodeAt: (String, Real64) -> Real64
-};
-from js.host("table") import * as Table;
+from "./host/text.wm" import { charCodeAt, textLength };
 
 type CompiledCapture =
   | EmptyCompiledCapture
@@ -26,10 +23,6 @@ record CompiledParseFailure = {
 type CompiledProbeMatch =
   | CompiledProbeMatched<Real64, CompiledCapture, Option<CompiledParseFailure>>
   | CompiledProbeNoMatch<Real64, String, String>;
-
-let textLength = (text: String) => {
-  text :> .length :> Result.getOr(0)
-};
 
 -- JavaScript's charCodeAt gives NaN past the end, which compares false against everything, so a negated
 -- character class would keep matching forever. NaN also fails `>= 0`, which maps it to -1 without

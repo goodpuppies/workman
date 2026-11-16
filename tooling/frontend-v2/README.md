@@ -121,3 +121,17 @@ JavaScript emission encodes local names and preserves authored record/export key
 
 Word literals and the remaining SubsetML translation gaps need separate passes. SubsetML's
 generated `.wm` files are not yet expected to compile as a whole. Formatter work is deferred.
+
+## Native build
+
+The frontend also builds natively. `python3 scripts/build_frontend_v2_native.py` translates
+`tools/format.wm` and the frontend through SubsetML and compiles them with MLton into
+`_scratch/frontend-v2-native/frontend-v2-format`. The same tool runs under Workman with
+`deno run -A src/main.ts run tooling/frontend-v2/tools/format.wm -- FILE`, so the two outputs
+compare directly.
+
+The frontend reaches the host only through `host/memo.wm` (the packrat memo table) and
+`host/text.wm` (code units, slices and length). Both call JavaScript. The native build stages
+`native/memo.wm` and `native/text.wm` in their place as checker interfaces, and links
+`native/memo.sml` and `native/text.sml`. Native text is UTF-8 bytes, so offsets count bytes
+and match the JS build's UTF-16 offsets only for ASCII sources.

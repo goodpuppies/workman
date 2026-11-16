@@ -3,8 +3,9 @@ from "./compiled_probe_runtime.wm" import {
   MissingCompiledCapture,
   SequenceCompiledCapture, ChoiceCompiledCapture, OptionalCompiledCapture,
   RepeatedCompiledCapture,
-  RuleCompiledCapture, textLength, codeAt
+  RuleCompiledCapture, codeAt
 };
+from "./host/text.wm" import { textLength };
 from "./generated/compiled_probe_dispatch.wm" import {
   parseCompiledCapture as parseGeneratedCapture,
   parseRecoveringCompiledCapture as parseRecoveringGeneratedCapture

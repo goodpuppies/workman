@@ -3,9 +3,7 @@ from "./generated/surface_types.wm" import {
 };
 from "./surface_parse_value.wm" import { ParseValue, EmptyParseValue, TokenParseValue, SequenceParseValue, ChoiceParseValue, OptionalParseValue, RepeatedParseValue, NodeParseValue, NodeListParseValue, TokenListParseValue, RuleParseValue };
 
-from js.global("String.prototype.slice") import unsafe {
-  call as sliceString: (String, Real64, Real64) -> String
-};
+from "./host/text.wm" import { slice as sliceString };
 
 let slice = (source: String, start: Real64, end: Real64) => {
   sliceString(source, start, end)
