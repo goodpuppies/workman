@@ -1,6 +1,11 @@
 # List fold callback order is inconsistent
 
-Status: open; verified by source inspection 2026-10-28
+Status: resolved 2026-11-16. std List no longer defines its own `foldLeft`, so both List folds
+are the Basis ones. 0.8.0 renamed the vector folds to `foldLeft`/`foldRight` (element-first
+callbacks already) and replaced `Map.fold`, whose callback was `(acc, key, value)`, with
+`Map.foldLeft`/`foldRight` taking `(key, value, acc)`.
+
+Originally: open; verified by source inspection 2026-10-28
 
 `std/list.wm` calls the `foldLeft` callback as `f(accumulator, element)`, but
 exports `foldRight` from `subml-basis/subset_list.wm`, whose callback is

@@ -201,7 +201,7 @@ Deno.test("basis structures are library modules over inlined JavaScript primitiv
   const source = `
     let main = () => {
       let bytes = Word8Vector.fromList([Word8.fromReal64(1), Word8.fromReal64(2)]);
-      print((Result.debug(Word8Vector.sub(bytes, 1)), Word8Vector.length(bytes)))
+      print((Result.debug(Word8Vector.at(bytes, 1)), Word8Vector.length(bytes)))
     };
   `;
   const compiled = await runProgram(source, "compile");

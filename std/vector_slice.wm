@@ -21,7 +21,7 @@ let length = (slice) => {
   count
 };
 
-let sub = (slice, index: Real64.Real) => {
+let at = (slice, index: Real64.Real) => {
   let (vector, offset, count) = sliceBase(slice);
   if (index >= 0 && index % 1 == 0 && index < count) {
     Ok(uncheckedSub(vector, offset + index))
@@ -94,7 +94,7 @@ let getItem = (slice) => {
   }
 };
 
-let foldli = (slice, initial, f) => {
+let foldLefti = (slice, initial, f) => {
   let (vector, offset, count) = sliceBase(slice);
   let rec loop = (index, accumulator) => {
     if (index < count) {
@@ -106,7 +106,7 @@ let foldli = (slice, initial, f) => {
   loop(0, initial)
 };
 
-let foldri = (slice, initial, f) => {
+let foldRighti = (slice, initial, f) => {
   let (vector, offset, count) = sliceBase(slice);
   let rec loop = (index, accumulator) => {
     if (index >= 0) {
@@ -118,19 +118,19 @@ let foldri = (slice, initial, f) => {
   loop(count - 1, initial)
 };
 
-let foldl = (slice, initial, f) => {
-  foldli(slice, initial, (_, item, accumulator) => { f(item, accumulator) })
+let foldLeft = (slice, initial, f) => {
+  foldLefti(slice, initial, (_, item, accumulator) => { f(item, accumulator) })
 };
 
-let foldr = (slice, initial, f) => {
-  foldri(slice, initial, (_, item, accumulator) => { f(item, accumulator) })
+let foldRight = (slice, initial, f) => {
+  foldRighti(slice, initial, (_, item, accumulator) => { f(item, accumulator) })
 };
 
-let appi = (slice, f) => {
-  foldli(slice, void, (index, item, _) => { f(index, item) })
+let forEachi = (slice, f) => {
+  foldLefti(slice, void, (index, item, _) => { f(index, item) })
 };
 
-let app = (slice, f) => { appi(slice, (_, item) => { f(item) }) };
+let forEach = (slice, f) => { forEachi(slice, (_, item) => { f(item) }) };
 
 let mapi = (slice, f) => {
   let (vector, offset, count) = sliceBase(slice);
@@ -173,7 +173,7 @@ let all = (slice, predicate) => {
   !exists(slice, (item) => { !predicate(item) })
 };
 
-let collate = (left, right, compare) => {
+let compareWith = (left, right, compare) => {
   let (leftVector, leftOffset, leftCount) = sliceBase(left);
   let (rightVector, rightOffset, rightCount) = sliceBase(right);
   let rec loop = (index) => {

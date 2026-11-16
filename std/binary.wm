@@ -45,7 +45,7 @@ let readFirst = (read, part, offset, convert) => {
 let u8 = (bytes, offset) => {
   match(take(bytes, offset, 1)) {
     Err(error) => { Err(error) },
-    Ok(part) => { readFirst(Word8VectorSlice.sub, part, offset, (byte) => { byte }) }
+    Ok(part) => { readFirst(Word8VectorSlice.at, part, offset, (byte) => { byte }) }
   }
 };
 
@@ -125,7 +125,7 @@ let asciiZ = (bytes, offset) => {
     if (index >= available) {
       Err(UnterminatedAscii(offset))
     } else {
-      match(Word8VectorSlice.sub(bytes, index)) {
+      match(Word8VectorSlice.at(bytes, index)) {
         Ok(byte) => {
           if (Word8.toReal64(byte) == 0) {
             match(take(bytes, offset, index - offset)) {

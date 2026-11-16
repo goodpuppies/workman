@@ -38,7 +38,7 @@ let toList = (vector) => {
 
 let length = (vector) => { primLength(vector) };
 
-let sub = (vector, index: Real64.Real) => {
+let at = (vector, index: Real64.Real) => {
   if (index >= 0 && index % 1 == 0 && index < primLength(vector)) {
     Ok(primSub(vector, index))
   } else {

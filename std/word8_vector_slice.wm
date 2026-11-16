@@ -53,7 +53,7 @@ let length = sliceLength;
 
 let isEmpty = (bytes) => { sliceLength(bytes) == 0 };
 
-let sub = (bytes, index: Real64.Real) => {
+let at = (bytes, index: Real64.Real) => {
   if (index >= 0 && index % 1 == 0 && index < sliceLength(bytes)) {
     Ok(sliceSub(bytes, index))
   } else {

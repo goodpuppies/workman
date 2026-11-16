@@ -35,7 +35,7 @@ let tabulate = (count, generate) => { primTabulate(count, generate) };
 
 let length = (vector) => { primLength(vector) };
 
-let sub = (vector, index: Real64.Real) => {
+let at = (vector, index: Real64.Real) => {
   if (index >= 0 && index % 1 == 0 && index < primLength(vector)) {
     Ok(uncheckedSub(vector, index))
   } else {
@@ -66,7 +66,7 @@ let concat = (vectors) => {
   concatArray(array)
 };
 
-let appi = (vector, f) => {
+let forEachi = (vector, f) => {
   let count = primLength(vector);
   let rec loop = (index) => {
     if (index < count) {
@@ -79,7 +79,7 @@ let appi = (vector, f) => {
   loop(0)
 };
 
-let app = (vector, f) => { appi(vector, (_, item) => { f(item) }) };
+let forEach = (vector, f) => { forEachi(vector, (_, item) => { f(item) }) };
 
 let mapi = (vector, f) => {
   primTabulate(primLength(vector), (index) => { f(index, uncheckedSub(vector, index)) })
@@ -89,7 +89,7 @@ let map = (vector, f) => {
   primTabulate(primLength(vector), (index) => { f(uncheckedSub(vector, index)) })
 };
 
-let foldli = (vector, initial, f) => {
+let foldLefti = (vector, initial, f) => {
   let count = primLength(vector);
   let rec loop = (index, accumulator) => {
     if (index < count) {
@@ -101,7 +101,7 @@ let foldli = (vector, initial, f) => {
   loop(0, initial)
 };
 
-let foldri = (vector, initial, f) => {
+let foldRighti = (vector, initial, f) => {
   let rec loop = (index, accumulator) => {
     if (index >= 0) {
       loop(index - 1, f(index, uncheckedSub(vector, index), accumulator))
@@ -112,12 +112,12 @@ let foldri = (vector, initial, f) => {
   loop(primLength(vector) - 1, initial)
 };
 
-let foldl = (vector, initial, f) => {
-  foldli(vector, initial, (_, item, accumulator) => { f(item, accumulator) })
+let foldLeft = (vector, initial, f) => {
+  foldLefti(vector, initial, (_, item, accumulator) => { f(item, accumulator) })
 };
 
-let foldr = (vector, initial, f) => {
-  foldri(vector, initial, (_, item, accumulator) => { f(item, accumulator) })
+let foldRight = (vector, initial, f) => {
+  foldRighti(vector, initial, (_, item, accumulator) => { f(item, accumulator) })
 };
 
 let findi = (vector, predicate) => {
@@ -154,7 +154,7 @@ let all = (vector, predicate) => {
   !exists(vector, (item) => { !predicate(item) })
 };
 
-let collate = (left, right, compare) => {
+let compareWith = (left, right, compare) => {
   let leftCount = primLength(left);
   let rightCount = primLength(right);
   let rec loop = (index) => {

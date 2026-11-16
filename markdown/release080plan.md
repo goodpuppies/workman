@@ -1,6 +1,6 @@
 # 0.8.0 release plan
 
-Status: 2026-11-16, in progress. Done: 1 (`viaErr`), 3 (missing counterparts). Step 8 is under
+Status: 2026-11-16, in progress. Done: 1 (`viaErr`), 2 (collection names), 3 (missing counterparts). Step 8 is under
 way: the [gap audit](subml-gap-audit.md) records what porting frontend-v2 to SML added. Nothing
 is tagged or published.
 
@@ -35,12 +35,15 @@ them.
 | iterate | `app` (vectors) | `forEach` |
 | indexed iterate | `appi` | `forEachi` |
 | indexed map, find | `mapi`, `findi` | unchanged |
-| index | `sub` (vectors), `getItem` (std List, VectorSlice) | `at` |
+| index | `sub` (vectors) | `at` |
 | comparison by element order | `collate` (List, vectors) | `compareWith`, as in `SubsetBytes` |
 
 Fold callbacks are element-first, `(T, A) -> A`, for both directions, which resolves the
 [list-fold issue](issues/list-fold-callback-order-is-inconsistent.md): std List's `foldLeft`
 stops overriding the Basis order. `Map.foldLeft` passes `(key, value, acc)`.
+
+`getItem` (std List, VectorSlice) stays: it returns the first element and the rest, as in SML,
+not an indexed element, and `List.at` already indexes.
 
 Indexed variants keep the trailing `i` used by SML, OCaml, Grain and F#. Check the full member
 lists during implementation for further SML spellings (`tabulate`, `concat`, `exists`/`all`

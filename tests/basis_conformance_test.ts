@@ -121,16 +121,16 @@ Deno.test("Vector follows VECTOR", async () => {
     await run([
       "let v = Vector.fromList([1, 2, 3]);",
       "print((v, Vector.length(v), Vector.maxLen));",
-      "print((Vector.sub(v, 1), Vector.sub(v, 3), Vector.sub(v, -1), Vector.sub(v, 0.5)));",
+      "print((Vector.at(v, 1), Vector.at(v, 3), Vector.at(v, -1), Vector.at(v, 0.5)));",
       "print((Vector.update(v, 0, 9), Vector.update(v, 3, 9), v));",
       "print((Vector.tabulate(3, (i) => { i * 2 }), Vector.concat([v, v])));",
       "print((Vector.map(v, (x) => { x + 1 }), Vector.mapi(v, (i, x) => { i * x })));",
-      "print((Vector.foldl(v, [], (x, acc) => { [x, ..acc] }), Vector.foldr(v, [], (x, acc) => { [x, ..acc] })));",
-      "print(Vector.foldli(v, [], (i, x, acc) => { [(i, x), ..acc] }));",
-      "print(Vector.foldri(v, [], (i, x, acc) => { [(i, x), ..acc] }));",
+      "print((Vector.foldLeft(v, [], (x, acc) => { [x, ..acc] }), Vector.foldRight(v, [], (x, acc) => { [x, ..acc] })));",
+      "print(Vector.foldLefti(v, [], (i, x, acc) => { [(i, x), ..acc] }));",
+      "print(Vector.foldRighti(v, [], (i, x, acc) => { [(i, x), ..acc] }));",
       "print((Vector.findi(v, (i, x) => { x > 1 }), Vector.find(v, (x) => { x > 5 })));",
       "print((Vector.exists(v, (x) => { x == 2 }), Vector.all(v, (x) => { x > 1 })));",
-      "Vector.appi(v, (i, x) => { print((i, x)) });",
+      "Vector.forEachi(v, (i, x) => { print((i, x)) });",
       "print((v == Vector.fromList([1, 2, 3]), v == Vector.fromList([1, 2])));",
     ]),
     [
@@ -157,7 +157,7 @@ Deno.test("VectorSlice follows VECTOR_SLICE", async () => {
     await run([
       "let v = Vector.fromList([10, 20, 30, 40]);",
       "let s = VectorSlice.full(v);",
-      "print((s, VectorSlice.length(s), VectorSlice.sub(s, 3), VectorSlice.sub(s, 4)));",
+      "print((s, VectorSlice.length(s), VectorSlice.at(s, 3), VectorSlice.at(s, 4)));",
       "print((VectorSlice.slice(v, 1, Some(2)), VectorSlice.slice(v, 4, None)));",
       "print((VectorSlice.slice(v, 5, None), VectorSlice.slice(v, 1, Some(4))));",
       "match(VectorSlice.slice(v, 1, None)) {",
@@ -165,7 +165,7 @@ Deno.test("VectorSlice follows VECTOR_SLICE", async () => {
       "    print((VectorSlice.base(mid), VectorSlice.vector(mid)));",
       "    print((VectorSlice.subslice(mid, 1, Some(1)), VectorSlice.subslice(mid, 2, Some(2))));",
       "    print((VectorSlice.getItem(mid), VectorSlice.isEmpty(mid)));",
-      "    print((VectorSlice.foldl(mid, 0, (x, acc) => { acc + x }), VectorSlice.mapi(mid, (i, x) => { i + x })));",
+      "    print((VectorSlice.foldLeft(mid, 0, (x, acc) => { acc + x }), VectorSlice.mapi(mid, (i, x) => { i + x })));",
       "    print((VectorSlice.findi(mid, (i, x) => { x == 30 }), VectorSlice.concat([mid, s])));",
       "    print((VectorSlice.exists(mid, (x) => { x == 10 }), VectorSlice.all(mid, (x) => { x > 10 })))",
       "  },",
@@ -222,18 +222,18 @@ Deno.test("General follows GENERAL", async () => {
   );
 });
 
-Deno.test("collate compares lexicographically", async () => {
+Deno.test("compareWith compares lexicographically", async () => {
   const compare =
     "(a, b) => { if (a < b) { Less } else { if (a > b) { Greater } else { Equal } } }";
   assertEquals(
     await run([
       `let compare = ${compare};`,
-      "print((List.collate([1, 2], [1, 2], compare), List.collate([1], [1, 2], compare), List.collate([2], [1, 9], compare)));",
+      "print((List.compareWith([1, 2], [1, 2], compare), List.compareWith([1], [1, 2], compare), List.compareWith([2], [1, 9], compare)));",
       "let v = (items) => { Vector.fromList(items) };",
-      "print((Vector.collate(v([1, 2]), v([1, 2]), compare), Vector.collate(v([1, 2]), v([1]), compare), Vector.collate(v([0, 9]), v([1]), compare)));",
+      "print((Vector.compareWith(v([1, 2]), v([1, 2]), compare), Vector.compareWith(v([1, 2]), v([1]), compare), Vector.compareWith(v([0, 9]), v([1]), compare)));",
       "let s = (items) => { VectorSlice.full(Vector.fromList(items)) };",
       "let tail = Result.debug(VectorSlice.slice(Vector.fromList([9, 1, 2]), 1, None));",
-      "print((VectorSlice.collate(tail, s([1, 2]), compare), VectorSlice.collate(tail, s([1, 3]), compare), VectorSlice.collate(s([]), s([]), compare)));",
+      "print((VectorSlice.compareWith(tail, s([1, 2]), compare), VectorSlice.compareWith(tail, s([1, 3]), compare), VectorSlice.compareWith(s([]), s([]), compare)));",
     ], orderImport),
     [
       "(Equal, Less, Greater)",

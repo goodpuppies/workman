@@ -165,16 +165,30 @@ let update = (map, key, transform) => {
   }
 };
 
-let rec foldTree = match(tree, initial, combine) => {
+// Folds visit entries in key order (foldLeft) or reverse key order (foldRight). The callback
+// takes the entry first and the accumulator last, as the List folds do.
+let rec foldLeftTree = match(tree, initial, combine) => {
   (MapEmpty, initial, _) => { initial },
   (MapNode(_height, key, value, left, right), initial, combine) => {
-    let afterLeft = foldTree(left, initial, combine);
-    foldTree(right, combine(afterLeft, key, value), combine)
+    let afterLeft = foldLeftTree(left, initial, combine);
+    foldLeftTree(right, combine(key, value, afterLeft), combine)
   }
 };
 
-let fold = match(map, initial, combine) => {
-  (MapValue(_compare, tree), initial, combine) => { foldTree(tree, initial, combine) }
+let rec foldRightTree = match(tree, initial, combine) => {
+  (MapEmpty, initial, _) => { initial },
+  (MapNode(_height, key, value, left, right), initial, combine) => {
+    let afterRight = foldRightTree(right, initial, combine);
+    foldRightTree(left, combine(key, value, afterRight), combine)
+  }
+};
+
+let foldLeft = match(map, initial, combine) => {
+  (MapValue(_compare, tree), initial, combine) => { foldLeftTree(tree, initial, combine) }
+};
+
+let foldRight = match(map, initial, combine) => {
+  (MapValue(_compare, tree), initial, combine) => { foldRightTree(tree, initial, combine) }
 };
 
 let rec toListTree = match(tree, tail) => {

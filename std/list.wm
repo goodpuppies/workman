@@ -40,13 +40,13 @@ let rec findMap = match(items, f) => {
   }
 };
 
-let rec collate = match(left, right, compare) => {
+let rec compareWith = match(left, right, compare) => {
   ([], [], _) => { Equal },
   ([], _, _) => { Less },
   (_, [], _) => { Greater },
   ([a, ..restA], [b, ..restB], compare) => {
     match(compare(a, b)) {
-      Equal => { collate(restA, restB, compare) },
+      Equal => { compareWith(restA, restB, compare) },
       Less => { Less },
       Greater => { Greater }
     }

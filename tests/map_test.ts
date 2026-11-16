@@ -13,7 +13,7 @@ Deno.test("persistent Map infers generic key and value types", async () => {
     let found = Map.get(numbers, 2);
     let present = Map.has(numbers, 1);
     let pairs = Map.toList(numbers);
-    let total = Map.fold(numbers, 0, (sum, key, _) => { sum + key });
+    let total = Map.foldLeft(numbers, 0, (key, _, sum) => { sum + key });
   `);
 
   expectBinding(result.env, "numbers", { type: "Map<Real64.Real, String>", vars: 0 });

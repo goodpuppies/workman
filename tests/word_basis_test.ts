@@ -8,7 +8,7 @@ Deno.test("exact word and Word8Vector basis members have nominal types", async (
     let byte = Word8.fromReal64(260);
     let wide = Word64.fromReal64(42);
     let bytes = Word8Vector.fromList([byte, Word8.fromReal64(7)]);
-    let maybeByte = Word8Vector.sub(bytes, 1);
+    let maybeByte = Word8Vector.at(bytes, 1);
     let generated = Word8Vector.tabulate(3, (index) => {
       Word8.fromReal64(index * 2)
     });
@@ -68,7 +68,7 @@ Deno.test("Word8Vector bulk construction is immutable and state-threaded", async
         Word8.fromReal64(2),
         Word8.fromReal64(3),
       ]));
-      print(Word8Vector.sub(original, 99));
+      print(Word8Vector.at(original, 99));
       print(Word8Vector.update(original, 3, Word8.fromReal64(0)))
     };
   `);
@@ -112,7 +112,7 @@ Deno.test("Word8VectorSlice creates bounded zero-copy views and freezes explicit
       print(base == bytes);
       print(offset);
       print(length);
-      print((Word8VectorSlice.sub(tail, 1), Word8VectorSlice.sub(tail, 2)));
+      print((Word8VectorSlice.at(tail, 1), Word8VectorSlice.at(tail, 2)));
       print((Word8VectorSlice.slice(bytes, 7, None), Word8VectorSlice.subslice(tail, 1, Some(2))));
       print(Word8VectorSlice.concat([tail, Result.debug(Word8VectorSlice.slice(bytes, 0, Some(1)))]))
     };
