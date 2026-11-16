@@ -38,7 +38,7 @@ let andThen = (value, f) => {
 // Procedure adapters are curried so a stage can be named before it is called.
 let via = (transform) => (wrapped) => { andThen(wrapped, transform) };
 
-let viaError = (inject) => (transform) => (wrapped) => {
+let viaErr = (inject) => (transform) => (wrapped) => {
   andThen(wrapped, (value) => { mapErr(transform(value), inject) })
 };
 
@@ -52,6 +52,11 @@ let getOr = (value, fallback) => {
 let isOk = match {
   Ok(x) => { true },
   Err(error) => { false }
+};
+
+let isErr = match {
+  Ok(x) => { false },
+  Err(error) => { true }
 };
 
 let toOption = match {

@@ -108,7 +108,7 @@ let via = (transform) => {
   }
 };
 
-let viaError = (_) => {
+let viaErr = (_) => {
   (transform) => {
     via(transform)
   }
@@ -120,7 +120,7 @@ let mapErr = (reactive, _) => {
 
 let carrier = .{
   via = via,
-  viaError = viaError,
+  viaErr = viaErr,
   succeed = succeed,
   map = map,
   mapErr = mapErr,

@@ -64,7 +64,7 @@ record Chunk = { bytes: Uint8Array, len: Real64 };
 
 record Writer = { fd: Real64, buf: Uint8Array, cap: Real64, end: Real64 };
 
-let viaJs = (f) => { Monad.viaError Result JsError f };
+let viaJs = (f) => { Monad.viaErr Result JsError f };
 let jsResult = (value) => { value :> Result.mapErr(JsError) };
 
 let encoder = TextEncoder.new() :> jsResult;

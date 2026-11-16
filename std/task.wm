@@ -109,7 +109,7 @@ let via = (f) => {
   }
 };
 
-let viaError = (inject) => {
+let viaErr = (inject) => {
   (f) => {
     via((value) => {
       f(value) :> mapErr(inject)
@@ -119,7 +119,7 @@ let viaError = (inject) => {
 
 let carrier = .{
   via = via,
-  viaError = viaError,
+  viaErr = viaErr,
   succeed = (value) => { succeed(value) },
   map = (task, f) => { map(task, f) },
   mapErr = (task, f) => { mapErr(task, f) },

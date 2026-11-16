@@ -1,6 +1,6 @@
 {
   "source": "SubsetML",
-  "commit": "efaab48b123efe4e1c1e29f0b4257daf9ff578eb",
+  "commit": "e2626d376e4eadf43904e43c602d0a2dea4cdee7",
   "modules": [
     "SubsetBool",
     "SubsetBytes",
@@ -43,13 +43,13 @@
     "src/subset_list.sml": "73d666b42b40faea0fcb0a1d63246083f61e04edf288a9774364e93ef05cf313",
     "src/subset_list_pair.sml": "9ddba98ea509599d2a16c2d5683252bdf52833145ae0308a4fc031f871b9a5fa",
     "src/subset_natural.sml": "694052b96cf5af45f1c346be3aab5a5f10c030ccedd602549079a7b49d79985a",
-    "src/subset_option.sml": "e75eebe6e9c04a4fd32772cb2223b06033b19ebd3c3d93733ae4742297a70e69",
+    "src/subset_option.sml": "e2734bf62dc9080df4754481133fa0df1bd257c73f5b1683c2d5bcd61fe627d1",
     "src/subset_option_value.sml": "642779e8a4c81370c6abd01434bcf18688cc638cda4198d0c82543f745bb12e3",
     "src/subset_order.sml": "58bfe21bae57c28626812d16e35fcf8d93973d23a6dec9998d0a62c87463d7ee",
     "src/subset_os.sml": "47b87cd732ed9a63c06d23a5cf0ca521e47b075c6d67e64be926d365c405c95b",
     "src/subset_path.sml": "aafa31b9db28f7ad78900b0a1e64f6f8ba423d87040313f57c40d885d272c422",
     "src/subset_process.sml": "fda75a57011e9368e9f4d752f5424e56f128f503bc525fbf8b2aa6fa38433d7b",
-    "src/subset_result.sml": "1a624117f1a4338ccdd193324d4afb1f6c406015e79dc417eeec57a7d9121819",
+    "src/subset_result.sml": "b869099c48d5e8461df7bcaf7d2d20c0e30d00e290b34eb6cd97b7cb18b6b032",
     "src/subset_sml_escape.sml": "1cef4652d564c5a554d2586ce2a90c34479c1292505086bce3ceab0f383c6f89",
     "src/subset_source.sml": "4eb5737397fcb370073fdf5638ed9533e6cfbac64057e79703e01eba2e4fc02b",
     "src/subset_string.sml": "728a7fda7f6c2b3087549ea8145456754f7770af351bd2e1cb9191e743843b19",

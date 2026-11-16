@@ -9,7 +9,7 @@ from "./game.wm" import {
 };
 
 let via = Monad.via;
-let viaError = (inject) => { Monad.viaError Result inject };
+let viaErr = (inject) => { Monad.viaErr Result inject };
 
 type AppError =
   | RaylibError<Js.Error>
@@ -110,10 +110,10 @@ let render = (g: Game) => {
 };
 
 let frame = (g: Game) => {
-  let read = viaError RenderError () => {
+  let read = viaErr RenderError () => {
     Result|Raylib.GetFrameTime(), readInput()|
   };
-  let step = viaError RenderError (dt, input) => {
+  let step = viaErr RenderError (dt, input) => {
     let stepped = stepGame(g, input, dt);
     render(stepped) :> Result.map( (_) => { stepped })
   };
@@ -136,7 +136,7 @@ let rec loop = (g: Game) => {
   }
 };
 
-let startup = viaError RaylibError () => {
+let startup = viaErr RaylibError () => {
   Result|
     Raylib.loadRaylib(raylibpath),
     Raylib.H.InitWindow(screenW, screenH, title),
@@ -144,7 +144,7 @@ let startup = viaError RaylibError () => {
   |
 };
 
-let shutdown = viaError RaylibError () => {
+let shutdown = viaErr RaylibError () => {
   Result|
     Raylib.CloseWindow(),
     Raylib.unloadRaylib()

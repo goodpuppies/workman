@@ -707,7 +707,7 @@ Deno.test("declared plain JS results are not mislabeled as returning a Result", 
   const source = `from js.global("JSON") import unsafe {
   stringify: Js.Value -> String,
 } as JSON;
-let encode = Monad.viaError Task ((error) => { error }) (values) => {
+let encode = Monad.viaErr Task ((error) => { error }) (values) => {
   let (identifier, password) = values;
   JSON.stringify(JSON{ identifier: identifier, password: password }) :> Task.fromResult
 };

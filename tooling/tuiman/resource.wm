@@ -43,7 +43,7 @@ let via = (transform) => {
   (resource) => { resource :> andThen(transform) }
 };
 
-let viaError = (wrap) => {
+let viaErr = (wrap) => {
   (transform) => {
     (resource) => {
       resource :> andThen((value) => {
@@ -55,7 +55,7 @@ let viaError = (wrap) => {
 
 let carrier = .{
   via = via,
-  viaError = viaError,
+  viaErr = viaErr,
   succeed = succeed,
   map = map,
   mapErr = mapError,

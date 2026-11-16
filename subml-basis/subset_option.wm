@@ -22,6 +22,10 @@ let isSome = match {
   None => { false },
   Some(x) => { true }
 };
+let isNone = match {
+  None => { true },
+  Some(x) => { false }
+};
 let map = (value, f) => {
   match(value) {
     None => { None },

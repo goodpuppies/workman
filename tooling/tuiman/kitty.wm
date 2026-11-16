@@ -229,7 +229,7 @@ let pngUrl = (url) => {
 };
 
 let loadPng = (url, alt) => {
-  let inspectStatus = Monad.viaError Task ImageJsFailure (response) => {
+  let inspectStatus = Monad.viaErr Task ImageJsFailure (response) => {
     Result|response.ok, response.status|
       :> Result.map((ok, status) => {
         (response, ok, status)
@@ -247,7 +247,7 @@ let loadPng = (url, alt) => {
         })
     }
   };
-  let readBytes = Monad.viaError Task ImageJsFailure (response) => {
+  let readBytes = Monad.viaErr Task ImageJsFailure (response) => {
     response :> .arrayBuffer()
   };
   let decodePng = Monad.via Task (bytes) => {

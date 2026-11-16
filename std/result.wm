@@ -12,14 +12,8 @@ let succeed = (value) => {
   Ok(value)
 };
 
-let toBool = match(r) => {
-  Ok(v) => {
-    match(v) {
-      true => {true},
-      false => {false}
-    }
-  },
-  Err(_) => {false}
+let fail = (error) => {
+  Err(error)
 };
 
 let map2 = match(a, b, f) => {
@@ -30,7 +24,7 @@ let map2 = match(a, b, f) => {
 
 let carrier = .{
   via = SubsetResult.via,
-  viaError = SubsetResult.viaError,
+  viaErr = SubsetResult.viaErr,
   succeed = succeed,
   map = SubsetResult.map,
   mapErr = SubsetResult.mapErr,

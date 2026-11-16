@@ -26,7 +26,7 @@ let rec lines = (writer, i, n) => {
 };
 
 let main = () => {
-  let viaWriter = (f) => { Monad.viaError Result WriteFailed f };
+  let viaWriter = (f) => { Monad.viaErr Result WriteFailed f };
 
   let attach    = viaWriter (buffer) => { Writer.stdout(buffer) };
   let buffered  = viaWriter (Writer.print "abc");

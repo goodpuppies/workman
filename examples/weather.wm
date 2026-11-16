@@ -124,32 +124,32 @@ let pad3 = (n) => {
 
 -- Fetch, validate the response, and assert the wire shape once at the boundary.
 let getWeather = (city) => {
-  let encodeCity = Monad.viaError Task JavaScriptFailure (name) => {
+  let encodeCity = Monad.viaErr Task JavaScriptFailure (name) => {
     name
       :> encodeURIComponent
       :> Result.map((encoded) => { ("https://wttr.in/" ++ encoded ++ "?format=j1") })
       :> Task.fromResult
   };
-  let request = Monad.viaError Task JavaScriptFailure (url) => {
+  let request = Monad.viaErr Task JavaScriptFailure (url) => {
     fetch(url)
       :> Task.map((response) => { (url, response) })
   };
-  let inspectStatus = Monad.viaError Task JavaScriptFailure (url, response) => {
+  let inspectStatus = Monad.viaErr Task JavaScriptFailure (url, response) => {
     Result|response :> .ok, response :> .status|
       :> Result.map((ok, status) => { (url, response, ok, status) })
       :> Task.fromResult
   };
-  let requireOk = Monad.viaError Task WeatherFailure (url, response, ok, status) => {
+  let requireOk = Monad.viaErr Task WeatherFailure (url, response, ok, status) => {
     if (ok) {
       Task.succeed(response)
     } else {
       Task.fail("HTTP " ++ Text.of(status) ++ " fetching " ++ url)
     }
   };
-  let readBody = Monad.viaError Task JavaScriptFailure (response) => {
+  let readBody = Monad.viaErr Task JavaScriptFailure (response) => {
     response :> .json()
   };
-  let assertBody = Monad.viaError Task JavaScriptFailure (body) => {
+  let assertBody = Monad.viaErr Task JavaScriptFailure (body) => {
     let data: Result<WttrResponse, Js.Error> = body :> Json.assert;
     data :> Task.fromResult
   };

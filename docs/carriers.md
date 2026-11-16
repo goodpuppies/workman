@@ -46,7 +46,7 @@ organize the same carrier operations at different scales.
 ### Procedure style with `via`
 
 Name the transformations, adapt them to a shared carrier with `via` or
-`viaError`, and compose them in the final pipeline. This gives longer functions
+`viaErr`, and compose them in the final pipeline. This gives longer functions
 recognizable steps and lets transformations be reused.
 
 For example, these declarations describe a parser's output and errors:
@@ -64,7 +64,7 @@ The procedure version names splitting and parsing as transformations:
 
 ```wm
 let parsePairProcedure = input => {
-  let split = Monad.viaError Result FieldsFailed text => {
+  let split = Monad.viaErr Result FieldsFailed text => {
     String.fields(text, c => c == '-')
   };
 
@@ -135,7 +135,7 @@ that consists of one pipeline, including the full pipeline parser above. It also
 works with `via`:
 
 ```wm
-let split = Monad.viaError Result FieldsFailed => {
+let split = Monad.viaErr Result FieldsFailed => {
   :> String.fields(c => c == '-')
 };
 ```
@@ -255,14 +255,14 @@ let readBody = Monad.via Task (response) => {
 };
 ```
 
-`Monad.viaError` combines that final `mapErr` with `via`:
+`Monad.viaErr` combines that final `mapErr` with `via`:
 
 ```wm
-let readBody = Monad.viaError Task JavaScriptFailure (response) => {
+let readBody = Monad.viaErr Task JavaScriptFailure (response) => {
   response :> .json()
 };
 
-let requireValue = Monad.viaError Task ValidationFailure (value) => {
+let requireValue = Monad.viaErr Task ValidationFailure (value) => {
   if (value == "") {
     Task.fail("value was empty")
   } else {
@@ -293,7 +293,7 @@ into its body. To name a reusable stage, use a pipeline lambda:
 let tagFields ==> :> Monad.mapErr(Result, FieldsFailed);
 ```
 
-`via` and `viaError` stay curried because they build a stage rather than being
+`via` and `viaErr` stay curried because they build a stage rather than being
 one: `Monad.via(Result)(f)` is `wrapped => Monad.andThen(wrapped, Result, f)`.
 Use `via` to name or pass a transformation, and `andThen` to apply one in place.
 
@@ -309,12 +309,12 @@ let pairs = fields :> Monad.traverse(Result, parsePair);
 the transformation starts another effect and therefore returns another value in
 the carrier.
 
-`mapErr` changes the error of an existing carrier value. `viaError` instead
+`mapErr` changes the error of an existing carrier value. `viaErr` instead
 declares how the native error returned by an effectful transformation enters the
 shared procedure error type:
 
 ```wm
-let fetchBody = Monad.viaError Task JavaScriptFailure (request) => {
+let fetchBody = Monad.viaErr Task JavaScriptFailure (request) => {
   fetch(request)
 };
 ```

@@ -9,7 +9,7 @@ type AppError =
   | WriteFailed<Writer.IoError>;
 
 let main = () => {
-  let viaWriter = (f) => { Monad.viaError Result WriteFailed f };
+  let viaWriter = (f) => { Monad.viaErr Result WriteFailed f };
 
   let attach  = viaWriter (buffer) => { Writer.file(99, buffer) };
   let greet   = viaWriter (Writer.print "nope\n");

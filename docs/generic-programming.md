@@ -61,13 +61,13 @@ If one step returns `Err`, the later transformations are skipped. If it returns
 work.
 
 To implement that pattern, `Result` and `Task` define operations such as `via`,
-`viaError`, `succeed`, `map`, `mapErr`, `map2`, and `andThen`. Each module exports them in
+`viaErr`, `succeed`, `map`, `mapErr`, `map2`, and `andThen`. Each module exports them in
 a record like this:
 
 ```wm
 let carrier = .{
   via = via,
-  viaError = viaError,
+  viaErr = viaErr,
   succeed = succeed,
   map = map,
   mapErr = mapErr,
@@ -129,10 +129,10 @@ let decode = Monad.via Task (response) => {
 };
 ```
 
-`Monad.viaError` is exactly shorthand for that:
+`Monad.viaErr` is exactly shorthand for that:
 
 ```wm
-let decode = Monad.viaError Task JavaScriptFailure (response) => {
+let decode = Monad.viaErr Task JavaScriptFailure (response) => {
   response :> .json()
 };
 ```
@@ -140,7 +140,7 @@ let decode = Monad.viaError Task JavaScriptFailure (response) => {
 Another transformation can map its `String` error into the same ADT:
 
 ```wm
-let requireOk = Monad.viaError Task WeatherFailure (response) => {
+let requireOk = Monad.viaErr Task WeatherFailure (response) => {
   checkResponse(response)
 };
 ```
@@ -633,7 +633,7 @@ When code starts repeating a composition pattern:
 For carrier-oriented procedures specifically:
 
 - use `Monad.via` to create a transformation through the shared carrier's `via`;
-- use `Monad.viaError` when the transformation's native error must enter a
+- use `Monad.viaErr` when the transformation's native error must enter a
   shared error ADT;
 - use `Traverse.with` for sequentially applying a carrier-producing
   transformation to a list;

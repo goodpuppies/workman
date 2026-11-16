@@ -130,7 +130,7 @@ Deno.test("Result.debug exposes its intentional typed hole", async () => {
   const result = await runCli(["run", input]);
 
   assertEquals(result.code, 1);
-  assertStringIncludes(result.stderr, "error[type.typed-hole std/result.wm:45:4]");
+  assertStringIncludes(result.stderr, "error[type.typed-hole std/result.wm:39:4]");
   assertStringIncludes(result.stderr, "typed hole; expected type: 'a");
   assertEquals(result.stderr.includes("Panic:"), false);
 });
@@ -262,19 +262,19 @@ Deno.test("Monad.via composes over Result.via", async () => {
   expectBinding(result.env, "value", { type: "Result<Int32.Int, 'a>", vars: 0 });
 });
 
-Deno.test("carrier viaError injects native errors into one application error", async () => {
+Deno.test("carrier viaErr injects native errors into one application error", async () => {
   const result = await checkSource(`
     type AppError = JsFailure<Js.Error> | DomainFailure<String>;
 
-    let takePrefix = Monad.viaError Task JsFailure (text) => {
+    let takePrefix = Monad.viaErr Task JsFailure (text) => {
       text :> .slice(0, 3) :> Task.fromResult
     };
-    let requirePrefix = Monad.viaError Task DomainFailure (text) => {
+    let requirePrefix = Monad.viaErr Task DomainFailure (text) => {
       if (text == "") { Task.fail("empty") } else { Task.succeed(text) }
     };
     let task = Task.succeed("hello") :> takePrefix :> requirePrefix;
 
-    let requirePositive = Monad.viaError Result DomainFailure (number) => {
+    let requirePositive = Monad.viaErr Result DomainFailure (number) => {
       if (number > 0) { Ok(number) } else { Err("not positive") }
     };
     let result = Ok(1) :> requirePositive;
@@ -320,15 +320,15 @@ Deno.test("Monad andThen and traverse are tupled pipeline stages", async () => {
   expectBinding(result.env, "tasks", { type: "Task<List<Int32.Int>, 'a>!", vars: 0 });
 });
 
-Deno.test("carrier records instantiate independently across viaError uses", async () => {
+Deno.test("carrier records instantiate independently across viaErr uses", async () => {
   const result = await checkSource(`
     type FetchError = | JavaScriptFailure<Js.Error>;
     type NameError = | ValidationFailure<String>;
 
-    let fetch = Monad.viaError Task.carrier JavaScriptFailure (input) => {
+    let fetch = Monad.viaErr Task.carrier JavaScriptFailure (input) => {
       input :> .slice(0, 1) :> Task.fromResult
     };
-    let validate = Monad.viaError Task ValidationFailure (input) => {
+    let validate = Monad.viaErr Task ValidationFailure (input) => {
       if (input == "") {
         Task.fail("empty")
       } else {
@@ -344,7 +344,7 @@ Deno.test("carrier records instantiate independently across viaError uses", asyn
   expectBinding(result.env, "validated", { type: "Task<String, NameError>!", vars: 0 });
 });
 
-Deno.test("carrier viaError evaluates the injected error", async () => {
+Deno.test("carrier viaErr evaluates the injected error", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;
   await Deno.writeTextFile(
@@ -352,10 +352,10 @@ Deno.test("carrier viaError evaluates the injected error", async () => {
     `
       type AppError = | DomainFailure<String>;
 
-      let rejectTask = Monad.viaError Task DomainFailure (value) => {
+      let rejectTask = Monad.viaErr Task DomainFailure (value) => {
         Task.fail("bad task " ++ value)
       };
-      let rejectResult = Monad.viaError Result DomainFailure (value) => {
+      let rejectResult = Monad.viaErr Result DomainFailure (value) => {
         Err("bad result " ++ value)
       };
 

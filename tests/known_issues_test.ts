@@ -241,13 +241,13 @@ issue(
 
 issue(
   "top-level-viaerror-binding-does-not-generalize",
-  "a top-level partial viaError binding works at two types",
+  "a top-level partial viaErr binding works at two types",
   async () => {
     await checks({
       "m.wm": `
         from js.global import { TextEncoder };
         type AppError = | JsFail<Js.Error>;
-        let viaJs = Monad.viaError Result JsFail;
+        let viaJs = Monad.viaErr Result JsFail;
         let main = () => {
           let encode = viaJs (enc) => { enc.encode("hi") };
           let count = viaJs (bytes) => { bytes.length };

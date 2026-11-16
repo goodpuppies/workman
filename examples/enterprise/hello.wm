@@ -7,7 +7,7 @@ type AppError =
   | AllocationFailed<Js.Error>
   | WriteFailed<Writer.IoError>;
 
-let viaWriter = (f) => { Monad.viaError Result WriteFailed f };
+let viaWriter = (f) => { Monad.viaErr Result WriteFailed f };
 
 let main ==> {
   Result|
