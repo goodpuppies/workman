@@ -384,19 +384,19 @@ MatchExpr
     { return matchExpr(values, arms, location()); }
 
 MatchFn
-  = "match" _ "(" _ names:MatchFnParams _ ")" _ "=>" _ arms:("{" _ items:MatchArmList _ "}" { return items; } / items:BareMatchArmList { return items; })
+  = "match" _ "(" _ names:MatchFnParams _ ")" captureClause:CaptureClause? _ "=>" _ arms:("{" _ items:MatchArmList _ "}" { return items; } / items:BareMatchArmList { return items; })
     {
       const params = names.map((name) => at({ pattern: at({ kind: "PVar", name }, location()) }, location()));
       const value = names.length === 1
         ? at({ kind: "Var", name: names[0] }, location())
         : at({ kind: "Tuple", items: names.map((name) => at({ kind: "Var", name }, location())) }, location());
-      return at({ kind: "Lambda", params, directives: [], body: at({ kind: "Match", value, arms }, location()) }, location());
+      return at({ kind: "Lambda", params, directives: [], captureClause: captureClause ?? undefined, body: at({ kind: "Match", value, arms }, location()) }, location());
     }
 
 AnonymousMatchFn
   = "match" _ "{" _ arms:MatchArmList _ "}"
     { return anonymousMatchFn(arms, location()); }
-  / "match" _ !("(" _ MatchFnParams _ ")" _ "=>") arms:BareMatchArmList
+  / "match" _ !("(" _ MatchFnParams _ ")" CaptureClause? _ "=>") arms:BareMatchArmList
     { return anonymousMatchFn(arms, location()); }
 
 MatchFnParams = first:Identifier rest:(_ "," _ n:Identifier { return n; })* _ ","? { return [first, ...rest]; }

@@ -4,11 +4,12 @@ from "./generated/surface_types.wm" import {
 };
 from "./surface_parse_value.wm" import {
   ParseValue, EmptyParseValue, TokenParseValue, SequenceParseValue, ChoiceParseValue,
-  NodeParseValue, NodeListParseValue, TokenListParseValue, RuleParseValue
+  NodeParseValue, NodeListParseValue, TokenListParseValue, RuleParseValue, OptionalParseValue
 };
 from "./surface_builder_support.wm" import {
   collectNodes, collectTokens, firstTokenWithText, lastTokenWithText, surfaceValue
 };
+from "./surface_builders_pattern.wm" import { optionalNodeFromValue };
 
 let buildMatchArm = (value: ParseValue, span: Span) => {
   match((collectNodes(value), firstTokenWithText(collectTokens(value), "=>"))) {
@@ -81,6 +82,7 @@ let buildMatchFn = (value: ParseValue, span: Span) => {
       TokenListParseValue(names),
       EmptyParseValue,
       TokenParseValue(close),
+      OptionalParseValue(captures),
       EmptyParseValue,
       TokenParseValue(arrow),
       EmptyParseValue,
@@ -98,6 +100,7 @@ let buildMatchFn = (value: ParseValue, span: Span) => {
           surfaceValue(open),
           names,
           surfaceValue(close),
+          optionalNodeFromValue(captures),
           surfaceValue(arrow),
           surfaceValue(openBrace),
           arms,
@@ -110,12 +113,12 @@ let buildMatchFn = (value: ParseValue, span: Span) => {
       TokenParseValue(matchToken), EmptyParseValue,
       TokenParseValue(open), EmptyParseValue,
       TokenListParseValue(names), EmptyParseValue,
-      TokenParseValue(close), EmptyParseValue,
+      TokenParseValue(close), OptionalParseValue(captures), EmptyParseValue,
       TokenParseValue(arrow), EmptyParseValue,
       ChoiceParseValue(1, NodeListParseValue(arms)),
     ]) => {
       NodeParseValue(BareMatchFunctionNode(
-        matchToken, surfaceValue(open), names, surfaceValue(close),
+        matchToken, surfaceValue(open), names, surfaceValue(close), optionalNodeFromValue(captures),
         surfaceValue(arrow), arms, span,
       ))
     },

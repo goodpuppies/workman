@@ -1,13 +1,112 @@
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { resolveModuleBindingFacts } from "../src/binding_facts.ts";
 import { parseCompilerModule } from "../src/compiler_frontend.ts";
-import { analyzeDetachedVirtual } from "../src/compiler.ts";
+import { analyzeDetachedVirtual, compileLibraryVirtual } from "../src/compiler.ts";
 import { formatFrontendV2Source } from "../src/frontend_v2_formatter.ts";
 import { CompilerIdAllocator } from "../src/ids.ts";
 import { semanticInlayHints } from "../src/lsp/type_inlays.ts";
 import { hoverAt } from "../src/lsp/hover.ts";
 import { pathToFileUri } from "../src/lsp/uri.ts";
 import { moduleId } from "../src/module_id.ts";
+import { normalizeFrontendSemanticAst } from "../src/frontend_v2_compare.ts";
+import peggy from "peggy";
+
+Deno.test("named match functions preserve capture clauses across parsing and formatting", async () => {
+  const grammar = peggy.generate(
+    await Deno.readTextFile(new URL("../src/grammar.peggy", import.meta.url)),
+  );
+  for (
+    const source of [
+      'let limit=10;let describe=match(input)|limit|=>{=(limit-1)=>"below",_=>"other"};',
+      'let limit=10;let describe=match(input)|limit|=>=(limit-1)=>"below",_=>"other";',
+      'let describe=match(input)||=>{0=>"zero",_=>"other"};',
+      'let describe=match(input)||=>0=>"zero",_=>"other";',
+      "let offset=1;let add=match(a,b)|offset|=>{(Var(x),Var(y))=>x+y+offset};",
+      "let value=match(input)||=>{true=>1,false=>0} true;",
+    ]
+  ) {
+    const module = await parseCompilerModule(source);
+    // The legacy grammar lacks Surface capture-name entries and space-application metadata.
+    const withoutEntries = JSON.parse(
+      JSON.stringify(
+        module,
+        (key, value) => key === "entries" || key === "applicationStyle" ? undefined : value,
+      ),
+    );
+    assertEquals(
+      normalizeFrontendSemanticAst(grammar.parse(source)),
+      normalizeFrontendSemanticAst(withoutEntries),
+    );
+    const facts = resolveModuleBindingFacts(module, new CompilerIdAllocator());
+    assertEquals(facts.captureDiagnostics, []);
+    for (const fix of [false, true]) {
+      const formatted = await formatFrontendV2Source(source, "<match-capture>", fix);
+      assertStringIncludes(
+        formatted,
+        source.includes("||")
+          ? "|| =>"
+          : source.includes("|offset|")
+          ? "|offset| =>"
+          : "|limit| =>",
+      );
+      assertEquals(
+        normalizeFrontendSemanticAst(await parseCompilerModule(formatted)),
+        normalizeFrontendSemanticAst(module),
+      );
+      assertEquals(await formatFrontendV2Source(formatted, "<match-capture>", fix), formatted);
+    }
+  }
+});
+
+Deno.test("named match functions enforce explicit capture contracts", async () => {
+  for (const arms of ["{=(limit)=>true,_=>false}", "=(limit)=>true,_=>false"]) {
+    const module = await parseCompilerModule(`let limit=10;let matches=match(input)||=>${arms};`);
+    const facts = resolveModuleBindingFacts(module, new CompilerIdAllocator());
+    assertEquals(facts.captureDiagnostics.map(({ code }) => code), ["capture.unlisted"]);
+  }
+  const unused = await parseCompilerModule(
+    "let limit=10;let matches=match(input)|limit|=>{0=>true,_=>false};",
+  );
+  assertEquals(
+    resolveModuleBindingFacts(unused, new CompilerIdAllocator()).captureDiagnostics
+      .map(({ code }) => code),
+    ["capture.unused"],
+  );
+  await assertRejects(() => parseCompilerModule("let bad=match(input)||=>;"));
+});
+
+Deno.test("capturing named match functions execute computed patterns and tuple arms", async () => {
+  const source = `let make = limit => match(input) |limit| => {
+    =(limit - 1) => "below", =(limit + 1) => "above", _ => "other"
+  };
+  let empty = match(input) || => { 0 => true, _ => false };
+  let bare = limit => match(input) |limit| => =(limit) => true, _ => false;
+  let sum = offset => match(a, b) |offset| => { (Var(x), Var(y)) => x + y + offset };
+  let summed = sum(1)(2, 3);`;
+  const js = await compileLibraryVirtual(
+    "/test/match-capture.wm",
+    new Map([["/test/match-capture.wm", source]]),
+  );
+  const path = await Deno.makeTempFile({ suffix: ".mjs" });
+  try {
+    await Deno.writeTextFile(path, js);
+    const runtime = await import(`file://${path}`);
+    assertEquals([runtime.make(10)(9), runtime.make(10)(11), runtime.make(10)(10)], [
+      "below",
+      "above",
+      "other",
+    ]);
+    assertEquals([runtime.empty(0), runtime.empty(1), runtime.bare(3)(3), runtime.bare(3)(4)], [
+      true,
+      false,
+      true,
+      false,
+    ]);
+    assertEquals(runtime.summed, 6);
+  } finally {
+    await Deno.remove(path);
+  }
+});
 
 Deno.test("lambda capture clauses survive parsing and formatting", async () => {
   const source = "let make=(x)=>{(y): Real64.Real |x|=>{x+y}};";

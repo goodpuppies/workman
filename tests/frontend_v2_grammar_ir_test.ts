@@ -48,11 +48,11 @@ Deno.test("frontend-v2 grammar IR normalizes every current Peggy construct", () 
     choice: 84,
     class: 60,
     group: 34,
-    labeled: 378,
+    labeled: 379,
     literal: 415,
     oneOrMore: 14,
-    optional: 111,
-    ruleRef: 892,
+    optional: 113,
+    ruleRef: 894,
     semanticAnd: 1,
     sequence: 299,
     simpleNot: 56,
@@ -70,7 +70,7 @@ Deno.test("frontend-v2 grammar IR and action identities are deterministic", () =
 Deno.test("frontend-v2 grammar IR has a reproducible structural golden", async () => {
   assertEquals(
     await hashGrammarIr(grammar),
-    "7bb7476d8f9e4934164c9a06f19f57d8b73c82198b672c2ecb7ee79938a28d18",
+    "9236c5683208724d34f631827c506a58343e7bf3bdd93430aac36bb5ef9171b5",
   );
 });
 

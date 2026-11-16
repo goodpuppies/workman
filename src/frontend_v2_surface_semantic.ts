@@ -1005,8 +1005,14 @@ function projectExpr(node: WmVariant, context: Context): Expr {
       return projectInterpolatedString(node, context);
     case "MatchFunctionNode":
     case "BareMatchFunctionNode": {
-      const namesValue = fields(node)[2];
-      const armsValue = fields(node)[node.name === "BareMatchFunctionNode" ? 5 : 6];
+      const matchFields = fields(node);
+      const bare = node.name === "BareMatchFunctionNode";
+      // Stage 0 predates match-function capture clauses; accept its shorter product
+      // while it compiles the first frontend with the expanded Surface schema.
+      const hasCaptures = matchFields.length === (bare ? 8 : 10);
+      const captureNode = hasCaptures ? option(matchFields[4]) : undefined;
+      const namesValue = matchFields[2];
+      const armsValue = matchFields[(bare ? 5 : 6) + (hasCaptures ? 1 : 0)];
       const names = list(namesValue).map(tokenText);
       const params: Param[] = names.map((name) => ({
         pattern: {
@@ -1028,6 +1034,9 @@ function projectExpr(node: WmVariant, context: Context): Expr {
         kind: "Lambda",
         params,
         directives: [],
+        ...(captureNode
+          ? { captureClause: projectCaptureClause(variant(captureNode), context) }
+          : {}),
         body: {
           kind: "Match",
           value,
