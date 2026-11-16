@@ -84,7 +84,8 @@ Deno.test("large unresolved literals retain Real64 defaults and exact types do n
       "let number = 1; let byte: Word8.Word = number;",
       "let bad: Word8.Word = 1.0;",
       "let byte: Word8.Word = 1; let bad: Word16.Word = byte;",
-      "let bad = (x: Word8.Word) => { x + 1 };",
+      // Words take `+ - * %` since 0.8.0, but not negation (Appendix E: `~` is `realint`).
+      "let bad = (x: Word8.Word) => { -x };",
     ]
   ) {
     await assertRejects(() => checkVirtual("/test/main.wm", new Map([["/test/main.wm", source]])));
@@ -263,4 +264,55 @@ Deno.test("exact word literals need no runtime library in the kernel profile", a
   `),
     ["255", "18446744073709551615"],
   );
+});
+
+Deno.test("arithmetic operators follow the Appendix E classes for every numeric type", async () => {
+  assertEquals(
+    await run(`
+    let w: Word8.Word = 250;
+    print((w + 10, w - 251, w * 2, w % 7, w < 251));
+    let big: Word64.Word = 0xffffffffffffffff;
+    print((big + 2, big % 10));
+    let w32: Word32.Word = 0xffffffff;
+    print((w32 * w32, w32 + 1));
+    let i: Int64.Int = 9000000000;
+    print((i * 3, -i, i % 7, -7 % (2: Int64.Int)));
+    let f: Real32.Real = 0.1 :> Real32.fromReal64;
+    print((f + f, -f, f + 1));
+    let isEven = (n) => { n % 2 == 0 };
+    print((isEven(4), -7 % 2, 7 % -2, -2147483648 % -1));
+    print(7.5 % 2);
+  `),
+    [
+      "(4, 255, 244, 5, true)",
+      "(1, 5)",
+      "(1, 0)",
+      "(27000000000, -9000000000, 5, -1)",
+      "(0.20000000298023224, -0.10000000149011612, 1.100000023841858)",
+      "(true, -1, 1, 0)",
+      "1.5",
+    ],
+  );
+  for (
+    const source of [
+      "let n: Int32.Int = 5; let bad = n / 2;",
+      "let w: Word16.Word = 5; let bad = w / 2;",
+      "let i: Int64.Int = 5; let bad = -i / 2;",
+    ]
+  ) {
+    await assertRejects(() => checkVirtual("/test/main.wm", new Map([["/test/main.wm", source]])));
+  }
+});
+
+Deno.test("integer % and overflow fail instead of producing NaN or wrapping", async () => {
+  for (
+    const [source, message] of [
+      ["let z: Int32.Int = 0; print(5 % z);", "Int32 division by zero"],
+      ["let z: Word8.Word = 0; let w: Word8.Word = 5; print(w % z);", "Word8 division by zero"],
+      ["let z: Int64.Int = 0; let i: Int64.Int = 5; print(i % z);", "Int64 division by zero"],
+      ["let i: Int64.Int = 9223372036854775807; print(i + 1);", "Int64 overflow"],
+    ] as const
+  ) {
+    await assertRejects(() => run(source), Error, message);
+  }
 });

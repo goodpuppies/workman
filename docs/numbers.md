@@ -77,6 +77,25 @@ At a JS import boundary an `Int32` can flow into a `number` parameter, since bot
 numbers at runtime. This compatibility does not widen ordinary WM function arguments or narrow
 results returned by JS. `Int32` receivers expose JavaScript Number methods.
 
-Infix arithmetic currently supports `Real64` and `Int32`. Use qualified `Word8.add`, `Word64.mul`,
-and related functions for word arithmetic. Extending infix operators to these types is the next
-implementation slice.
+## Arithmetic operators
+
+The arithmetic operators are overloaded over a fixed table, following the Definition of Standard
+ML's Appendix E. Both operands and the result have one type:
+
+| Operators | Types |
+|---|---|
+| `+ - *`, `%`, `< <= > >=` | every numeric type: `Int32`, `Int64`, `Word8`–`Word64`, `Real32`, `Real64` |
+| `/` | `Real32`, `Real64` |
+| unary `-` | `Int32`, `Int64`, `Real32`, `Real64` |
+
+`Int32` and `Int64` arithmetic panics on overflow, word arithmetic wraps, and `Real32` rounds each
+result to single precision. `%` truncates toward zero for every type: the remainder takes the
+dividend's sign, so `-7 % 2` is `-1`. An integer `%` by zero panics. Integer division is never
+implicit: `Int32.div` and `Int32.mod` round toward negative infinity, as SML's `div` and `mod` do.
+
+```wm
+let checksum = (a: Word8.Word, b: Word8.Word) => { a + b * 31 };
+let isEven = n => n % 2 == 0;  -- Int32 -> Bool
+```
+
+The named forms such as `Word8.add` remain.

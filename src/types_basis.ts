@@ -1,5 +1,4 @@
 import { taintedType } from "./taint.ts";
-import { registerNumericIdentity } from "./numeric.ts";
 import { basisTypes } from "./basis.ts";
 import { BASIS_OPERATORS, BASIS_TYPES } from "./basis_manifest.ts";
 import { type CompilerSemanticId, GPU_SEMANTIC_IDS } from "./compiler_semantics.ts";
@@ -24,11 +23,19 @@ import {
   typeInfoByName,
   VoidTy,
 } from "./types.ts";
+import {
+  type NumericType,
+  NUMERIC_TYPES,
+  REAL_TYPES,
+  registerNumericIdentity,
+} from "./numeric.ts";
 
 /** A scheme's numeric variable: only its instances are registered for defaulting. */
-function numericSchemeVar(): Extract<Ty, { tag: "var" }> {
+function numericSchemeVar(
+  candidates: readonly NumericType[] = NUMERIC_TYPES,
+): Extract<Ty, { tag: "var" }> {
   const a = fresh() as Extract<Ty, { tag: "var" }>;
-  a.numeric = operatorNumericConstraint();
+  a.numeric = operatorNumericConstraint(candidates);
   return a;
 }
 
@@ -106,13 +113,9 @@ export function basisOperatorEnv(): Env {
   const operator = (vars: number[], type: Ty) => ({ vars, type, standardLibrary: true });
   for (const descriptor of BASIS_OPERATORS) {
     switch (descriptor.kind) {
-      // `+ - *` take Number or Int32.Int operands of one type; `/` and `%` stay Number-only.
+      // Both operands and the result share one numeric type: any for `+ - * %`, a real for `/`.
       case "number": {
-        if (descriptor.spelling === "/" || descriptor.spelling === "%") {
-          env.set(descriptor.spelling, operator([], fn([tuple([Real64Ty, Real64Ty])], Real64Ty)));
-          break;
-        }
-        const a = numericSchemeVar();
+        const a = numericSchemeVar(descriptor.spelling === "/" ? REAL_TYPES : NUMERIC_TYPES);
         env.set(descriptor.spelling, operator([a.id], fn([tuple([a, a])], a)));
         break;
       }

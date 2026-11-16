@@ -16,8 +16,8 @@ import {
   exactInteger,
   INTEGER_LITERAL_TYPES,
   type NumericType,
+  NUMERIC_TYPES,
   numericType,
-  OPERATOR_NUMERIC_TYPES,
 } from "./numeric.ts";
 import type { AstNode } from "./source.ts";
 import type { CtorDecl, Expr, TypeExpr } from "./ast.ts";
@@ -276,15 +276,14 @@ export function withNumericScope<T>(action: () => T): T {
   }
 }
 
-export const operatorNumericConstraint = (): NumericConstraint => ({
-  candidates: OPERATOR_NUMERIC_TYPES,
-  literals: [],
-});
+export const operatorNumericConstraint = (
+  candidates: readonly NumericType[] = NUMERIC_TYPES,
+): NumericConstraint => ({ candidates, literals: [] });
 
-/** Operators retain their implemented Real64/Int32 domain in the first literal slice. */
-export function freshNumeric(name?: string): Ty {
+/** An operand of an overloaded operator, which accepts the types of its Appendix E class. */
+export function freshNumeric(name?: string, candidates: readonly NumericType[] = NUMERIC_TYPES): Ty {
   const t = fresh(name) as Extract<Ty, { tag: "var" }>;
-  markNumeric(t, operatorNumericConstraint());
+  markNumeric(t, operatorNumericConstraint(candidates));
   return t;
 }
 

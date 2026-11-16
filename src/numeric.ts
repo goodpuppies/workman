@@ -14,8 +14,15 @@ export const OPERATOR_NUMERIC_TYPES: readonly NumericType[] = [
   { name: "Int32.Int", bits: 32, signed: true },
 ];
 
+const REAL32_TYPE: NumericType = {
+  name: "Real32.Real",
+  id: BASIS_TYPES.find((type) => type.name === "Real32.Real")!.typeNameId,
+};
+
+/** Every numeric type takes integer literals; Real32 rounds them as Math.fround does. */
 export const INTEGER_LITERAL_TYPES: readonly NumericType[] = [
   ...OPERATOR_NUMERIC_TYPES,
+  REAL32_TYPE,
   ...([8, 16, 32, 64] as const).map((bits) => ({
     name: `Word${bits}.Word`,
     id: BASIS_TYPES.find((type) => type.name === `Word${bits}.Word`)!.typeNameId,
@@ -29,6 +36,17 @@ export const INTEGER_LITERAL_TYPES: readonly NumericType[] = [
     signed: true,
   },
 ];
+
+/**
+ * The overloaded operators accept the classes of the Definition's Appendix E: `+ - *`, ordering
+ * and `%` take every numeric type (`num`), `/` the reals, and unary `-` the signed types
+ * (`realint`), so it never applies to a word.
+ */
+export const NUMERIC_TYPES = INTEGER_LITERAL_TYPES;
+export const REAL_TYPES: readonly NumericType[] = [OPERATOR_NUMERIC_TYPES[0], REAL32_TYPE];
+export const SIGNED_TYPES: readonly NumericType[] = INTEGER_LITERAL_TYPES.filter((type) =>
+  type.bits === undefined || type.signed
+);
 
 // HM's nominal ids are allocated separately from the manifest's semantic ids.
 const numericIdentities = new Map<number, NumericType>();
@@ -64,7 +82,6 @@ export function integerSource(literal: {
   numericType?: string;
 }): string {
   const selected = INTEGER_LITERAL_TYPES.find((type) => type.name === literal.numericType);
-  return selected?.bits === 64
-    ? `${exactInteger(literal.exact ?? String(literal.value))}n`
-    : String(literal.value);
+  if (selected?.bits === 64) return `${exactInteger(literal.exact ?? String(literal.value))}n`;
+  return String(selected === REAL32_TYPE ? Math.fround(literal.value) : literal.value);
 }

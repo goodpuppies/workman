@@ -567,7 +567,7 @@ function coreExprFromSurface(expr: Expr, context?: CoreLoweringContext): CoreExp
       }
       return {
         kind: "CoreApp",
-        callee: i32Operator(expr.op, expr.left, context, I32_BINARY_HELPERS) ??
+        callee: numericOperator(expr.op, expr.left, context, "binary") ??
           { kind: "CoreVar", name: expr.op, node: expr.node },
         arg: {
           kind: "CoreTuple",
@@ -587,7 +587,7 @@ function coreExprFromSurface(expr: Expr, context?: CoreLoweringContext): CoreExp
       }
       return {
         kind: "CoreApp",
-        callee: i32Operator(expr.op, expr.value, context, I32_UNARY_HELPERS) ??
+        callee: numericOperator(expr.op, expr.value, context, "unary") ??
           { kind: "CoreVar", name: expr.op, node: expr.node },
         arg: coreExprFromSurface(expr.value, context),
         node: expr.node,
@@ -864,32 +864,46 @@ function loweringCarrier(
   return { namespace: alias };
 }
 
-const I32_BINARY_HELPERS: Readonly<Record<string, string>> = {
-  "+": "__wm_i32_add",
-  "-": "__wm_i32_sub",
-  "*": "__wm_i32_mul",
-};
-const I32_UNARY_HELPERS: Readonly<Record<string, string>> = { "-": "__wm_i32_neg" };
+type OperatorHelpers = Readonly<{ binary: Readonly<Record<string, string>>; unary?: string }>;
+
+const arithmetic = (prefix: string, ops: readonly string[], unary = true): OperatorHelpers => ({
+  binary: Object.fromEntries(
+    ops.map((op) => [op, `${prefix}_${{ "+": "add", "-": "sub", "*": "mul", "/": "div", "%": "rem" }[op]}`]),
+  ),
+  ...(unary ? { unary: `${prefix}_neg` } : {}),
+});
 
 /**
- * Host Int32.Int arithmetic goes through checked prelude helpers that panic on overflow; comparisons and
- * equality keep the plain operators. The shared Core keeps the operator for backends with a native
- * 32-bit integer.
+ * Prelude helpers for the overloaded arithmetic operators by operand type (Appendix E): checked
+ * integers panic on overflow, words wrap, Real32 rounds to single precision, and integer `%`
+ * fails on a zero divisor. Real64 keeps the plain JS operators. Comparisons and equality keep
+ * the plain operators for every type, since JS orders numbers and BigInts alike. Words have no
+ * negation. The shared Core keeps the operator for backends with native numeric types.
  */
-function i32Operator(
+const NUMERIC_OPERATOR_HELPERS: Readonly<Record<string, OperatorHelpers>> = {
+  "Int32.Int": arithmetic("__wm_i32", ["+", "-", "*", "%"]),
+  "Int64.Int": arithmetic("__wm_i64", ["+", "-", "*", "%"]),
+  "Word8.Word": arithmetic("__wm_w8", ["+", "-", "*", "%"], false),
+  "Word16.Word": arithmetic("__wm_w16", ["+", "-", "*", "%"], false),
+  "Word32.Word": arithmetic("__wm_w32", ["+", "-", "*", "%"], false),
+  "Word64.Word": arithmetic("__wm_w64", ["+", "-", "*", "%"], false),
+  "Real32.Real": arithmetic("__wm_f32", ["+", "-", "*", "/", "%"]),
+};
+
+function numericOperator(
   op: string,
   operand: Expr,
   context: CoreLoweringContext | undefined,
-  helpers: Readonly<Record<string, string>>,
+  arity: "binary" | "unary",
 ): CoreExpr | undefined {
   if (!context || context.target === "shared") return undefined;
-  const helper = helpers[op];
-  if (!helper) return undefined;
   const type = context.types.get(operand);
   if (!type) return undefined;
-  const resolved = prune(type);
-  if (resolved.tag !== "prim" || resolved.name !== "Int32.Int") return undefined;
-  return { kind: "CoreVar", name: helper, node: operand.node };
+  const selected = numericType(prune(type));
+  const helpers = selected && NUMERIC_OPERATOR_HELPERS[selected.name];
+  if (!helpers) return undefined;
+  const helper = arity === "binary" ? helpers.binary[op] : op === "-" ? helpers.unary : undefined;
+  return helper ? { kind: "CoreVar", name: helper, node: operand.node } : undefined;
 }
 
 /**

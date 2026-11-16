@@ -1,6 +1,6 @@
 # 0.8.0 release plan
 
-Status: 2026-11-16, in progress. Done: 1 (`viaErr`), 2 (collection names), 3 (missing counterparts). Step 8 is under
+Status: 2026-11-16, in progress. Done: 1 (`viaErr`), 2 (collection names), 3 (missing counterparts), 4 (operator table). Step 8 is under
 way: the [gap audit](subml-gap-audit.md) records what porting frontend-v2 to SML added. Nothing
 is tagged or published.
 
@@ -64,7 +64,8 @@ the Basis classes `realint`, `wordint` and `num`. Not user-definable overloading
 
 | Operators | Types |
 |---|---|
-| `+ - *`, unary `-`, ordering | `Int32`, `Int64`, `Word8`–`Word64`, `Real32`, `Real64` |
+| `+ - *`, ordering | `Int32`, `Int64`, `Word8`–`Word64`, `Real32`, `Real64` |
+| unary `-` | `Int32`, `Int64`, `Real32`, `Real64`: Appendix E's `~` is `realint`, so words are excluded |
 | `/` | `Real32`, `Real64` |
 | `%` | all of the above |
 

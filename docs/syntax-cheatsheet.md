@@ -48,13 +48,13 @@ these operators, not SML fixity declarations. WM has no user-defined fixity decl
 
 | Operator or equivalent | Meaning | Priority | Example expression | Evaluates to | Notes |
 | :---: | :--- | :---: | :--- | :--- | :--- |
-| `*` | Multiplication | 7 | `8 * 3` | `24` | `Real64` or `Int32` |
-| `/` | Division | 7 | `3.0 / 2.0` | `1.5` | Example uses `Real64` |
-| `Number.div` | Flooring division | Call | `Number.div(3, 2)` | `1` | Equivalent of SML `div` on integer-valued numbers |
-| `Number.mod` | Flooring modulo | Call | `Number.mod(8, 3)` | `2` | Equivalent of SML `mod` on integer-valued numbers |
-| `%` | Truncating remainder | 7 | `8 % 3` | `2` | Differs from flooring modulo for negative operands |
-| `+` | Addition | 6 | `3 + 4` | `7` | `Real64` or `Int32` |
-| `-` | Subtraction | 6 | `3 - -2` | `5` | Unary `-` negates a number; parentheses are optional |
+| `*` | Multiplication | 7 | `8 * 3` | `24` | Any numeric type; see [Numbers](./numbers.md#arithmetic-operators) |
+| `/` | Division | 7 | `3.0 / 2.0` | `1.5` | `Real64` or `Real32` only |
+| `Int32.div` | Flooring division | Call | `Int32.div(3, 2)` | `1` | Equivalent of SML `div` |
+| `Int32.mod` | Flooring modulo | Call | `Int32.mod(8, 3)` | `2` | Equivalent of SML `mod` |
+| `%` | Truncating remainder | 7 | `8 % 3` | `2` | Any numeric type; differs from flooring modulo for negative operands |
+| `+` | Addition | 6 | `3 + 4` | `7` | Any numeric type |
+| `-` | Subtraction | 6 | `3 - -2` | `5` | Any numeric type; unary `-` negates a signed integer or real |
 | `++` | String concatenation | 6 | `"foo" ++ "bar"` | `"foobar"` | Both operands must be strings |
 | `[head, ..tail]` | List construction | Delimited | `[1, ..[2, 3, 4]]` | `[1, 2, 3, 4]` | Equivalent of SML `::` |
 | `List.append` | List concatenation | Call | `List.append([1, 2], [3, 4])` | `[1, 2, 3, 4]` | Equivalent of SML `@` |

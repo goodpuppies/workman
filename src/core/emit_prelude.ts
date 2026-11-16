@@ -406,6 +406,49 @@ const __wm_c_struct_to_buffer = (name, value) => {
     "const __wm_i32_sub = ([a, b]) => __wm_i32_check(a - b);",
     "const __wm_i32_mul = ([a, b]) => __wm_i32_check(a * b);",
     "const __wm_i32_neg = (a) => __wm_i32_check(-a);",
+    // `%` truncates toward zero for every numeric type, as JS does; `| 0` turns `-1 % 1`'s -0
+    // into 0. Integer `%` by zero fails like `Int32.mod`, never yielding NaN or a RangeError.
+    `const __wm_i32_rem = ([a, b]) => b === 0
+  ? __wm_fail("Panic", "Int32 division by zero")
+  : (a % b) | 0;`,
+    // Int64 values are BigInts kept in range, as std/js/int64.js keeps them.
+    `const __wm_i64_check = (value) => value >= -(1n << 63n) && value < (1n << 63n)
+  ? value
+  : __wm_fail("Panic", "Int64 overflow");`,
+    "const __wm_i64_add = ([a, b]) => __wm_i64_check(a + b);",
+    "const __wm_i64_sub = ([a, b]) => __wm_i64_check(a - b);",
+    "const __wm_i64_mul = ([a, b]) => __wm_i64_check(a * b);",
+    "const __wm_i64_neg = (a) => __wm_i64_check(-a);",
+    `const __wm_i64_rem = ([a, b]) => b === 0n
+  ? __wm_fail("Panic", "Int64 division by zero")
+  : a % b;`,
+    // Word arithmetic wraps, as std/js/word.js does: 8- to 32-bit words are numbers, Word64 a BigInt.
+    ...[8, 16, 32].flatMap((bits) => {
+      const wrap = bits === 32 ? "(value) >>> 0" : `(value) & ${(1 << bits) - 1}`;
+      const multiply = bits === 32 ? "Math.imul(a, b) >>> 0" : `__wm_w${bits}_wrap(a * b)`;
+      return [
+        `const __wm_w${bits}_wrap = (value) => ${wrap};`,
+        `const __wm_w${bits}_add = ([a, b]) => __wm_w${bits}_wrap(a + b);`,
+        `const __wm_w${bits}_sub = ([a, b]) => __wm_w${bits}_wrap(a - b);`,
+        `const __wm_w${bits}_mul = ([a, b]) => ${multiply};`,
+        `const __wm_w${bits}_rem = ([a, b]) => b === 0
+  ? __wm_fail("Panic", "Word${bits} division by zero")
+  : a % b;`,
+      ];
+    }),
+    "const __wm_w64_add = ([a, b]) => BigInt.asUintN(64, a + b);",
+    "const __wm_w64_sub = ([a, b]) => BigInt.asUintN(64, a - b);",
+    "const __wm_w64_mul = ([a, b]) => BigInt.asUintN(64, a * b);",
+    `const __wm_w64_rem = ([a, b]) => b === 0n
+  ? __wm_fail("Panic", "Word64 division by zero")
+  : a % b;`,
+    // Real32 values are numbers rounded to single precision after each operation.
+    "const __wm_f32_add = ([a, b]) => Math.fround(a + b);",
+    "const __wm_f32_sub = ([a, b]) => Math.fround(a - b);",
+    "const __wm_f32_mul = ([a, b]) => Math.fround(a * b);",
+    "const __wm_f32_div = ([a, b]) => Math.fround(a / b);",
+    "const __wm_f32_rem = ([a, b]) => Math.fround(a % b);",
+    "const __wm_f32_neg = (a) => Math.fround(-a);",
     `const __wm_i32_in_range = (value) => value >= -2147483648 && value <= 2147483647;`,
     `const __wm_i32_option = (value) => __wm_i32_in_range(value)
   ? __wm_basis_Some(value | 0)

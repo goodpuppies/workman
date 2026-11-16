@@ -1,3 +1,4 @@
+import { SIGNED_TYPES } from "../numeric.ts";
 import { taintExpression } from "./taint.ts";
 import { holdResult } from "../types.ts";
 import type { Expr } from "../ast.ts";
@@ -514,7 +515,7 @@ function inferExprInner(expr: Expr, context: InferContext, expected?: Ty): Ty {
         if (operand.kind === "Int") negatedLiterals.add(operand);
         const numeric = operand.kind === "Int"
           ? freshIntegerLiteral(operand, true, context.dialect.domain === "gpu")
-          : freshNumeric();
+          : freshNumeric(undefined, SIGNED_TYPES);
         recordExpectedExprType(facts, expr.value, numeric);
         let value: Ty;
         try {
