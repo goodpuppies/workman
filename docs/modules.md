@@ -18,7 +18,7 @@ Every behavior has exactly one owner:
   file's public environment.
 - **Explicit Workman extensions** own everything that cannot be defined by SML translation:
   nominal records, pinned patterns, the JavaScript FFI, GPU regions, and the bare-namespace
-  `carrier` rewrite.
+  `carrier` and `Self` rewrites.
 
 ## Environments and qualified names
 
@@ -60,7 +60,11 @@ Imports project the original semantic objects: schemes, constructor status, and 
 identities are preserved, never re-elaborated. A single named-import clause may not bind one
 local name twice in the same namespace; this is a simultaneous-clause well-formedness rule, not a
 cross-declaration collision policy. Bare `Lib` in expression position is a syntactic extension
-meaning `Lib.carrier`, tried only after ordinary value lookup; it adds no value binding.
+meaning `Lib.carrier`, tried only after ordinary value lookup; it adds no value binding. Bare `Lib`
+in type position likewise means `Lib.Self`, tried only after ordinary type lookup, with any type
+arguments passed on (`Lib<a>` is `Lib.Self<a>`); it adds no type binding. A module opts in by
+declaring `type Self = ...`: if `meters.wm` declares `type Self = Number`, then after
+`from "./meters.wm" import * as Meters` an annotation can say `(x: Meters)`.
 
 ### Library imports
 
@@ -139,7 +143,7 @@ facts instead.
 
 - the file-module protocol itself (`ModuleId`, graph, initialization once, failure memory);
 - named imports with renaming as a surface form (SML would spell this with structure bindings);
-- the bare-namespace `carrier` expression rewrite;
+- the bare-namespace `carrier` expression rewrite and its `Self` type twin;
 - nominal records with stable field identities;
 - pinned patterns;
 - the JavaScript FFI and reflected foreign types;

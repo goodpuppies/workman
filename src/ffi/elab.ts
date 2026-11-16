@@ -7,6 +7,7 @@ import { collectFfiDecl, generatedJsImports, generatedTypeAliases } from "./impo
 import { type ObjectAccess, rememberLetObjectAccess } from "./receiver/receiver.ts";
 import { rewriteDeclCalls } from "./receiver/rewrite_decl.ts";
 import {
+  isActiveWorkmanNamespace,
   rewriteExprCalls,
   setActiveRecordFields,
   setActiveWorkmanNamespaces,
@@ -181,7 +182,7 @@ function collectForeignTypeNames(
 
 function isReflectedForeignTypeName(name: string, localTypes: Set<string>): boolean {
   if (name.includes(".")) return false;
-  if (localTypes.has(name)) return false;
+  if (localTypes.has(name) || isActiveWorkmanNamespace(name)) return false;
   return !builtInTypeNames.has(name) && !name.startsWith("Js.");
 }
 

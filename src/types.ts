@@ -1274,10 +1274,20 @@ export function typeFromAst(
     return resolved(variable);
   }
   const path = pathOf(expr);
-  const qualified = isQualified(path) && options.strEnv
+  let qualified = isQualified(path) && options.strEnv
     ? resolveLongType(options.strEnv, path)
     : undefined;
-  const info = qualified?.info ?? typeEnv.get(expr.name);
+  let info = qualified?.info ?? typeEnv.get(expr.name);
+  // The type twin of the bare-namespace `carrier` rewrite: a bare `Lib` that names no type means
+  // `Lib.Self`, so `Int32` is `Int32.Int` once `std/int32.wm` declares `type Self = Int`.
+  if (!info && !isQualified(path)) {
+    const namespace = options.strEnv?.get(expr.name);
+    const self = namespace?.tyEnv.get("Self");
+    if (namespace && self) {
+      qualified = { info: self, root: namespace };
+      info = self;
+    }
+  }
   if (!info) throw new Error(`unknown type ${expr.name}`);
   // HM has no subtyping to apply a TS default such as `Buffer<ArrayBufferLike>` to a
   // `Buffer<ArrayBuffer>`, so an omitted argument is inferred, where free variables are allowed.
@@ -1290,7 +1300,7 @@ export function typeFromAst(
     info,
     qualified
       ? Object.freeze({
-        name: path.qualifiers[0],
+        name: path.qualifiers[0] ?? expr.name,
         environment: qualified.root,
       })
       : undefined,

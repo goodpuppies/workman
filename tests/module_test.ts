@@ -238,6 +238,75 @@ Deno.test("only a bare namespace value resolves to its carrier export", async ()
   assertEquals(output, ["true"]);
 });
 
+Deno.test("a bare namespace in type position resolves its Self type", async () => {
+  const virtualFs = new Map<string, string>([
+    ["/test/meters.wm", "type Self = I32; type Pair<a> = (a, a);"],
+    ["/test/box.wm", "type Self<a> = | Box<a>;"],
+    [
+      "/test/main.wm",
+      'from "./meters.wm" import * as Meters; ' +
+      'from "./box.wm" import * as Box; ' +
+      "let double = (x: Meters) => { x + x }; " +
+      "let explicit = (x: Meters.Self) => { double(x) }; " +
+      "let boxed: Box<String> = Box.Box(\"a\");",
+    ],
+  ]);
+
+  const main = (await checkVirtual("/test/main.wm", virtualFs)).get("/test/main.wm");
+  if (!main) throw new Error("missing main result");
+  expectBinding(main.env, "double", { type: "I32 -> I32", vars: 0 });
+  expectBinding(main.env, "explicit", { type: "I32 -> I32", vars: 0 });
+  expectBinding(main.env, "boxed", { type: "Self<String>", vars: 0 });
+});
+
+Deno.test("a bare namespace in a JS import signature is its Self type, not a JS type", async () => {
+  const virtualFs = new Map<string, string>([
+    ["/test/meters.wm", "type Self = Number;"],
+    [
+      "/test/main.wm",
+      'from "./meters.wm" import * as Meters; ' +
+      'from js.global("Math") import unsafe { abs: Meters -> Meters }; ' +
+      "let main = () => { print(abs(-2)) };",
+    ],
+  ]);
+
+  const javaScript = await compileVirtual("/test/main.wm", virtualFs);
+  const output: string[] = [];
+  const original = console.log;
+  console.log = (value) => output.push(String(value));
+  try {
+    await importProgram(`data:text/javascript;base64,${btoa(javaScript)}`);
+  } finally {
+    console.log = original;
+  }
+  assertEquals(output, ["2"]);
+});
+
+Deno.test("a type of the same name wins over a namespace's Self", async () => {
+  const virtualFs = new Map<string, string>([
+    ["/test/meters.wm", "type Self = I32;"],
+    [
+      "/test/main.wm",
+      'from "./meters.wm" import * as Meters; ' +
+      "type Meters = | Meters<String>; " +
+      "let label = (m: Meters) => { match(m) { Meters(s) => { s } } };",
+    ],
+  ]);
+
+  const main = (await checkVirtual("/test/main.wm", virtualFs)).get("/test/main.wm");
+  if (!main) throw new Error("missing main result");
+  expectBinding(main.env, "label", { type: "Meters -> String", vars: 0 });
+});
+
+Deno.test("a bare namespace without Self is not a type", async () => {
+  const virtualFs = new Map<string, string>([
+    ["/test/lib.wm", "let one = 1;"],
+    ["/test/main.wm", 'from "./lib.wm" import * as Lib; let f = (x: Lib) => { x };'],
+  ]);
+
+  await assertRejects(() => checkVirtual("/test/main.wm", virtualFs), Error, "unknown type Lib");
+});
+
 Deno.test("missing qualified members do not fall back through a namespace carrier", async () => {
   const virtualFs = new Map<string, string>([
     [

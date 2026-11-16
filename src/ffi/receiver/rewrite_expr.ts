@@ -28,6 +28,11 @@ export function setActiveWorkmanNamespaces(names: Set<string>): Set<string> {
   return previous;
 }
 
+/** A namespace this module imports: a bare one in a type means its `Self` type, never a JS type. */
+export function isActiveWorkmanNamespace(name: string): boolean {
+  return activeWorkmanNamespaces.has(name);
+}
+
 function isWorkmanQualifiedName(name: string): boolean {
   const separator = name.indexOf(".");
   return separator > 0 && activeWorkmanNamespaces.has(name.slice(0, separator));

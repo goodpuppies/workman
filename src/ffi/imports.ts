@@ -1,6 +1,7 @@
 import type { Decl, JsImportSpec, JsTarget, TypeExpr } from "../ast.ts";
 import { diagnosticError } from "../diagnostic_model.ts";
 import { isDeclaredUnsafeImportSpec, isDeepImportSpec } from "./import_policy.ts";
+import { isActiveWorkmanNamespace } from "./receiver/rewrite_expr.ts";
 import {
   jsConstructMember,
   jsGlobalMember,
@@ -314,6 +315,7 @@ function firstUnimportedManualForeignType(
         type.args.length === 0 &&
         isForeignTypeDeclName(type.name) &&
         !isManualFfiBuiltinType(type.name) &&
+        !isActiveWorkmanNamespace(type.name) &&
         !importedTypeRefs.has(type.name)
       ) {
         return type.name;
