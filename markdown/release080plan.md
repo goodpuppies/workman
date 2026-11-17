@@ -111,7 +111,7 @@ phrase, so the language conformance rule in `docs/spec.md` §1 still holds.
 | Expansion | Why |
 |---|---|
 | `word` types (Word8–Word64) and `Int64`/`Real32` structures | Step 4's operator table must translate; resolves the `word` open question in `docs/spec.md` §11 |
-| `local dec1 in dec2 end` | Private helpers and private `open`; fixes SubsetML's [private-imports issue](../subm/SubsetML/markdown/issues/private-imports.md) and is the translation target for step 7 |
+| `local dec1 in dec2 end` | Private helpers and private `open`; fixes SubsetML's [private-imports issue](../subm/SubsetML/markdown/issues/FIXED-private-imports.md) and is the translation target for step 7 |
 | top-level structure aliases (`structure A = B`) | Resolves the §11 open question; WM already expresses it with `export from … import * as` |
 | `op` | Passes an operator as a function value (`op +`); needs a WM spelling for an operator value |
 

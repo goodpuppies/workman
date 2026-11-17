@@ -48,6 +48,7 @@
           "begin": "\"",
           "end": "\"",
           "patterns": [
+            { "include": "#string-gap" },
             { "include": "#scalar-escapes" },
             {
               "name": "invalid.illegal.escape.workman",
@@ -60,11 +61,13 @@
           "begin": "`",
           "end": "`",
           "patterns": [
+            { "include": "#string-gap" },
             { "include": "#scalar-escapes" },
             {
               "name": "constant.character.escape.workman",
               "match": "\\\\[`$]"
             },
+            { "include": "#interpolation" },
             {
               "name": "invalid.illegal.escape.workman",
               "match": "\\\\."
@@ -363,6 +366,22 @@
       "patterns": [
         { "include": "#block-comment" }
       ]
+    },
+    "interpolation": {
+      "name": "meta.interpolation.workman",
+      "contentName": "meta.embedded.line.workman",
+      "begin": "\\$\\{",
+      "end": "\\}",
+      "beginCaptures": { "0": { "name": "punctuation.section.interpolation.begin.workman" } },
+      "endCaptures": { "0": { "name": "punctuation.section.interpolation.end.workman" } },
+      "patterns": [{ "include": "#interpolation-braces" }, { "include": "$self" }]
+    },
+    "interpolation-braces": {
+      "begin": "\\{",
+      "end": "\\}",
+      "beginCaptures": { "0": { "name": "punctuation.section.block.begin.workman" } },
+      "endCaptures": { "0": { "name": "punctuation.section.block.end.workman" } },
+      "patterns": [{ "include": "#interpolation-braces" }, { "include": "$self" }]
     },
     "string-gap": {
       "name": "constant.character.escape.workman",

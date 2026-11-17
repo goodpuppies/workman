@@ -590,6 +590,23 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
         ],
       },
       {
+        alias: "Monad",
+        values: [
+          "Carrier",
+          "Applicative",
+          "via",
+          "viaErr",
+          "map",
+          "mapErr",
+          "andThen",
+          "traverse",
+        ],
+        types: [
+          "Carrier",
+          "Applicative",
+        ],
+      },
+      {
         alias: "Result",
         values: [
           "Ok",
@@ -603,6 +620,9 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
           "isOk",
           "isErr",
           "toOption",
+          "succeed",
+          "map2",
+          "carrier",
         ],
         types: [
           "Result",
@@ -611,8 +631,6 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
       {
         alias: "List",
         values: [
-          "None",
-          "Some",
           "EmptyList",
           "InvalidCount",
           "InvalidIndex",
@@ -647,7 +665,6 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
           "traverse",
         ],
         types: [
-          "Option",
           "Error",
         ],
       },
@@ -719,8 +736,6 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
       {
         alias: "Bytes",
         values: [
-          "None",
-          "Some",
           "InvalidIndex",
           "OutOfBounds",
           "NonByte",
@@ -743,7 +758,6 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
           "slice",
         ],
         types: [
-          "Option",
           "Error",
           "Reader",
         ],
@@ -990,8 +1004,6 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
         values: [
           "Nil",
           "Cons",
-          "None",
-          "Some",
           "EmptyList",
           "InvalidCount",
           "InvalidIndex",
@@ -1032,7 +1044,6 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
           "compareWith",
         ],
         types: [
-          "Option",
           "Error",
         ],
       },
@@ -1241,9 +1252,9 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
           "isErr",
           "toOption",
           "succeed",
-          "fail",
           "map2",
           "carrier",
+          "fail",
           "debug",
           "map3",
           "map4",
@@ -1520,8 +1531,6 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
       {
         alias: "SmlEscape",
         values: [
-          "None",
-          "Some",
           "NonByte",
           "spellings",
           "escapeByte",
@@ -1529,7 +1538,6 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
           "escapeString",
         ],
         types: [
-          "Option",
           "Error",
         ],
       },
@@ -1583,8 +1591,6 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
       {
         alias: "Utf16Source",
         values: [
-          "None",
-          "Some",
           "InvalidUnit",
           "InvalidIndex",
           "UnicodeError",
@@ -1609,7 +1615,6 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
           "toUtf8",
         ],
         types: [
-          "Option",
           "Error",
           "Tree",
           "Source",
@@ -1644,8 +1649,6 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
       {
         alias: "WonSyntax",
         values: [
-          "None",
-          "Some",
           "native",
           "bytes",
           "digit",
@@ -1661,15 +1664,11 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
           "keyText",
           "duplicate",
         ],
-        types: [
-          "Option",
-        ],
+        types: [],
       },
       {
         alias: "WonParser",
         values: [
-          "None",
-          "Some",
           "Cursor",
           "makeCursor",
           "via",
@@ -1691,15 +1690,12 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
           "decode",
         ],
         types: [
-          "Option",
           "Cursor",
         ],
       },
       {
         alias: "Won",
         values: [
-          "None",
-          "Some",
           "decode",
           "render",
           "encode",
@@ -1727,7 +1723,6 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
           "problemText",
         ],
         types: [
-          "Option",
           "Value",
           "Error",
           "Node",

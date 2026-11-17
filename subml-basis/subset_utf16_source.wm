@@ -23,7 +23,7 @@ from "./subset_char.wm" import * as SubsetChar;
 from "./subset_utf16.wm" import * as SubsetUtf16;
 from "./subset_utf8.wm" import * as SubsetUtf8;
 
-export from "./subset_option_value.wm" import *;
+from "./subset_option_value.wm" import *;
 
 type Error =
   | InvalidUnit<Int32.Int>
