@@ -1080,11 +1080,13 @@ Deno.test("cli run explains stack overflow in the runtime value formatter", asyn
   const input = `${dir}/main.wm`;
   await Deno.writeTextFile(
     input,
+    // A long list displays iteratively; a deeply nested value still exhausts the stack.
     `
-      let rec build = (n, items) => {
-        if (n == 0) { items } else { build(n - 1, [n, ..items]) }
+      type Chain = End | Link<Chain>;
+      let rec build = (n, chain) => {
+        if (n == 0) { chain } else { build(n - 1, Link(chain)) }
       };
-      let main = () => { print(build(50000, [])) };
+      let main = () => { print(build(50000, End)) };
     `,
   );
 

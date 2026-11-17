@@ -48,6 +48,7 @@ const commands = new Set([
   "lsp",
   "problems",
   "pakman",
+  "sml",
   "test",
   "todo",
   "what",
@@ -228,6 +229,10 @@ export async function main(args: string[]): Promise<number> {
       return await problemsCommand(commandArgs);
     case "pakman":
       return await pakmanCommand(commandArgs);
+    case "sml": {
+      const { smlCommand } = await import("./sml_target.ts");
+      return await smlCommand(commandArgs);
+    }
     case "test":
       return await testCommand(commandArgs);
     case "todo":
@@ -600,6 +605,8 @@ commands:
                                 defaults to ./main.wm, or the only .wm file here
   test [paths...] [--filter s]  run the tests in *.test.wm files (testman, a proposal)
   pakman <command> [args]       the package manager (tooling/pakman); wm pakman help
+  sml <file.wm> <out-dir> [--mlton]
+                                translate to SML for MLton (project.mlb); --mlton builds it
   todo <file.wm>                list errors, warnings, typed ? holes, and TODO comments
   what <file.wm>                alias for todo
   type-debug <file.wm>           print staged typechecker state on failure

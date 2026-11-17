@@ -234,6 +234,14 @@ text and `print` with SubsetML Basis functions rather than SML Basis Library nam
 modules automatically, and `print` takes any arity and shows values as WM does. Reals go through
 a new host module, `SubsetRealHost`, for remainder and text; real equality is portable.
 
+`wm sml <file.wm> <out-dir> [--mlton]` ships this as a WM command (docs/sml-target.md). The
+translator is SubsetML's own source compiled through WM to `src/generated/subsetml.js` (built by
+`scripts/sync_subml_basis.ts`), so `wm` needs no native SubsetML. It stages the Basis with the
+host modules' checker declarations and the MLton adapters (`subml-basis/native/`, embedded in
+the assets), and writes a self-contained, relocatable project. Templates now show any value
+`print` can (`${[1, 2]}`). Not yet translated: JS imports and `Task`, numeric functions WM keeps
+generic, `_` names, and display of user datatypes.
+
 ## 9. Chore: `Option` and `Result` are Basis types, defined once
 
 The Definition's initial basis has `bool`, `list`, `unit`, `int`, `real`, `string`, `char`, `ref`

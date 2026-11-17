@@ -59,6 +59,13 @@ const output = [
   ...await sourceEntries(libraryJsPaths),
   "};",
   "",
+  "/** Host-module checker declarations and MLton adapters `wm sml` stages, keyed by repository-relative path. */",
+  "export const nativeBasisSources: Readonly<Record<string, string>> = {",
+  ...await sourceEntries(
+    [...await filePaths("subml-basis/native", ".wm"), ...await filePaths("subml-basis/native", ".sml")].sort(),
+  ),
+  "};",
+  "",
   "/** Zig template used for C header reflection, embedded for packaged compilers. */",
   `export const cHeaderExtractorSource = ${
     JSON.stringify(

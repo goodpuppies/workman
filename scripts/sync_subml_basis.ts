@@ -17,6 +17,8 @@ const SYNCED = "// Synced from subm/SubsetML by scripts/sync_subml_basis.ts. Do 
 const decoder = new TextDecoder();
 const encoder = new TextEncoder();
 const synced = (bytes: Uint8Array) => encoder.encode(SYNCED + decoder.decode(bytes));
+/** Basis modules whose implementation is the host's: a JS adapter here, an SML adapter natively. */
+const HOST_MODULES = ["subset_host", "subset_text_host", "subset_real_host"];
 
 const temporary = await Deno.makeTempDir({ prefix: "subml-basis-" });
 try {
@@ -88,6 +90,26 @@ try {
   await Deno.mkdir(join(output, "js"), { recursive: true });
   for (const [name, bytes] of files) await Deno.writeFile(join(output, name), bytes);
 
+  // `wm sml` translates with the host modules' checker declarations, unchanged so the translator
+  // reads their headers, and stages the MLton adapters that implement them.
+  const native = join(output, "native");
+  await Deno.remove(native, { recursive: true }).catch(() => {});
+  await Deno.mkdir(native, { recursive: true });
+  for (const name of HOST_MODULES) {
+    await Deno.copyFile(join(temporary, `${name}.wm`), join(native, `${name}.wm`));
+    await Deno.copyFile(join(subsetml, "lib", `${name}.sml`), join(native, `${name}.sml`));
+  }
+
+  // The translator itself, SubsetML's own source in Workman, compiled to one JavaScript program.
+  const translator = await new Deno.Command(Deno.execPath(), {
+    args: ["run", "-A", "src/main.ts", "compile", join(subsetml, "src/main.wm"), "src/generated/subsetml.js"],
+    cwd: repository,
+    stderr: "piped",
+  }).output();
+  if (!translator.success) {
+    throw new Error(`compiling the SubsetML translator failed: ${decoder.decode(translator.stderr)}`);
+  }
+
   const hash = async (bytes: Uint8Array) =>
     [...new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(bytes)))]
       .map((value) => value.toString(16).padStart(2, "0")).join("");
@@ -96,6 +118,8 @@ try {
     "lib/subset_host.wm",
     "lib/subset_text_host.wm",
     "lib/subset_real_host.wm",
+    ...HOST_MODULES.map((name) => `lib/${name}.sml`),
+    "src/main.wm",
     ...modules.map(([, m]) => m.source),
   ].sort();
   const commit = await new Deno.Command("git", {
