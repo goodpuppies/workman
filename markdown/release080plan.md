@@ -1,10 +1,11 @@
 # 0.8.0 release plan
 
-Status: 2026-11-17, in progress. Done: 1 (`viaErr`), 2 (collection names), 3 (missing counterparts), 4 (operator table), 5
+Status: 2026-11-17, release prepared. Done: 1 (`viaErr`), 2 (collection names), 3 (missing counterparts), 4 (operator table), 5
 (SubsetML numbers), 6 (scope expansions: `local`, `op`, alias modules, sized numbers), 7 (private declarations),
-9 (source-owned Option/Result definitions), 10 (consistent list display). Step 8 is under
-way: the [gap audit](subml-gap-audit.md) records what porting frontend-v2 to SML added. Nothing
-is tagged or published.
+8 (translation gaps; lifted operators deferred), 9 (source-owned Option/Result definitions), 10
+(consistent list display). The [gap audit](subml-gap-audit.md) records what porting frontend-v2
+to SML added. Release notes are in [releases/0.8.0.md](releases/0.8.0.md). Nothing is tagged or
+published.
 
 0.8.0 is a minor release with breaking API changes. It ships the numeric work since 0.7.0
 (`Int32`/`Real64`/`Real32` names, Basis-owned names, `Int32` literal default), extends the
@@ -307,6 +308,9 @@ changes program output: about a dozen test files and `examples/aoc2021_day1.wm` 
 most of them building lists rather than asserting output; update the ones that assert it.
 
 ## Deferred
+
+- Translating lifted carrier operators (`Ok(2) + 3`, `Vec2` arithmetic) to SML: a niche feature,
+  so `asteroids/game.wm` and `carrier_operators` stay without an SML translation in 0.8.0.
 
 - Removing `Traverse.with`, which `Monad.traverse` replaces, and `List.traverse`, which is
   `Result`-only and duplicated by `Result.traverse`.
