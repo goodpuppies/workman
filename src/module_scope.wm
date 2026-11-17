@@ -1,0 +1,39 @@
+-- Workman's module scope rules, as TypeScript sees them. The rules themselves are SubsetML's
+-- `WmModuleScope` (subm/SubsetML/src/wm_module_scope.sml). SubsetML's WM reader also uses it
+-- to resolve library imports and default bindings.
+-- This module only carries lists across the JavaScript boundary as arrays.
+--
+-- Imported directly from TypeScript through the content mapper; `deno task generate` builds the
+-- runtime artifact that deno.json maps this file to.
+
+from "../subm/SubsetML/src/wm_module_scope.wm" import * as Scope;
+
+-- The library module an import path names, as `{ path, description }`, or None for a file import.
+-- SubsetML's generated modules import their own copy of the Basis's Option, so the result
+-- crosses into the library's here.
+let libraryImport = (specifier: String) => {
+  match(Scope.libraryImport(specifier)) {
+    Scope.Some(found) => { Some(found) },
+    Scope.None => { None }
+  }
+};
+
+-- The namespace a library module opens as (`std/word8_vector.wm` is `Word8Vector`).
+let moduleAlias = (path: String) => { Scope.moduleAlias(path) };
+
+-- Whether every program has the library module `path` open as its namespace, given the
+-- library's module paths.
+let isAutoOpened = (path: String, libraryPaths: Js.Array<String>) => {
+  Scope.isAutoOpened(path, Js.Array.toList(libraryPaths))
+};
+
+-- Whether a program loads the library module `path` only when it imports one like it.
+let isLoadedOnDemand = (path: String) => { Scope.isLoadedOnDemand(path) };
+
+-- The prefix of a `js.host("name")` import path.
+let jsHostImportPrefix = Scope.jsHostImportPrefix;
+let jsHostModulePath = (name: String) => { Scope.jsHostModulePath(name) };
+
+-- The unqualified library values and types in every module, as `{ modulePath, name, sourceName }`.
+let pervasives = Js.Array.fromList(Scope.pervasives);
+let pervasiveTypes = Js.Array.fromList(Scope.pervasiveTypes);

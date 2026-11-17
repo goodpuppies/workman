@@ -1,7 +1,7 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import { fileURLToPath } from "node:url";
 import { posix } from "node:path";
-import { libraryImport } from "../src/host_modules.ts";
+import { jsHostModulePath, libraryImport } from "../src/host_modules.ts";
 import {
   discoverStandardModules,
   libraryModuleAlias,
@@ -17,6 +17,24 @@ Deno.test("library module aliases come from snake_case file names", () => {
   assertEquals(libraryModuleAlias("std/result.wm"), "Result");
   assertEquals(libraryModuleAlias("std/word8_vector.wm"), "Word8Vector");
   assertEquals(libraryModuleAlias("std/pack_word32_little.wm"), "PackWord32Little");
+});
+
+Deno.test("shared library scope preserves host names and explicit relative imports", () => {
+  for (const name of ["table", "", 'a"b\\c', "a\nb\tc", "λ", "😀"]) {
+    assertEquals(jsHostModulePath(name), `host/js/${name}.wm`);
+    assertEquals(libraryImport(`js.host:${name}`), {
+      path: `host/js/${name}.wm`,
+      description: `host module js.host(${JSON.stringify(name)})`,
+    });
+  }
+  for (const prefix of ["basis/", "std/", "pakman/", "testman/", "host/c/"]) {
+    for (const name of ["_x", "1x", "Upper", "a-b", "a/b", "", "é"]) {
+      assertEquals(libraryImport(`${prefix}${name}.wm`), undefined);
+    }
+    assertEquals(libraryImport(`./${prefix}list.wm`), undefined);
+  }
+  assertEquals(libraryModuleAlias("subml-basis/subset_os.wm"), "OS");
+  assertEquals(libraryModuleAlias("subml-basis/subset_list_pair.wm"), "ListPair");
 });
 
 Deno.test("every generated library source is discovered and imports precede importers", async () => {

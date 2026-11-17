@@ -32,7 +32,7 @@ let getItem = match(items) => {
 
 let rec findMap = match(items, f) => {
   ([], _) => { None },
-  ([head, ..rest], f) => {
+  ([head, ..rest], _) => {
     match(f(head)) {
       Some(value) => { Some(value) },
       None => { findMap(rest, f) }
@@ -44,7 +44,7 @@ let rec compareWith = match(left, right, compare) => {
   ([], [], _) => { Equal },
   ([], _, _) => { Less },
   (_, [], _) => { Greater },
-  ([a, ..restA], [b, ..restB], compare) => {
+  ([a, ..restA], [b, ..restB], _) => {
     match(compare(a, b)) {
       Equal => { compareWith(restA, restB, compare) },
       Less => { Less },

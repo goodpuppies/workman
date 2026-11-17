@@ -5,7 +5,7 @@ from "basis/option.wm" import * as SubsetOption;
 export from "basis/option.wm" import *;
 
 let map2 = match(a, b, f) => {
-  (Some(left), Some(right), f) => { Some(f(left, right)) },
+  (Some(left), Some(right), _) => { Some(f(left, right)) },
   (None, _, _) => { None },
   (_, None, _) => { None }
 };

@@ -8,9 +8,26 @@
 // - `from "basis/won.wm"` names the SubsetML Basis module `subml-basis/subset_won.wm`.
 //
 // The module graph resolves these to library modules; a local folder of the same name is imported
-// with an explicit relative path (`"./basis/..."`).
+// with an explicit relative path (`"./basis/..."`). The rules are SubsetML's `WmModuleScope`
+// (src/module_scope.wm), which SubsetML's WM reader shares.
 
-export const JS_HOST_IMPORT_PREFIX = "js.host:";
+// Programs that wm builds import this file at run time (pakman's host), without this repository's
+// import map, so it imports the built artifact of module_scope.wm rather than the `.wm` module.
+import * as moduleScope from "./generated/wm/src/module_scope.wm.js";
+// @ts-types="./integrations/interop.d.mts"
+import { type Option, toNullable } from "./integrations/interop.mjs";
+
+const {
+  jsHostImportPrefix,
+  jsHostModulePath: sharedJsHostModulePath,
+  libraryImport: sharedLibraryImport,
+} = moduleScope as {
+  jsHostImportPrefix: string;
+  jsHostModulePath: (name: string) => string;
+  libraryImport: (specifier: string) => Option<LibraryImport>;
+};
+
+export const JS_HOST_IMPORT_PREFIX: string = jsHostImportPrefix;
 
 /** The host module name of a `js.host` import path, or `undefined` for a file import. */
 export function jsHostImportName(path: string): string | undefined {
@@ -21,7 +38,7 @@ export function jsHostImportName(path: string): string | undefined {
 
 /** Library path of the host module that `js.host(name)` names. */
 export function jsHostModulePath(name: string): string {
-  return `host/js/${name}.wm`;
+  return sharedJsHostModulePath(name);
 }
 
 /** A library module named by an import specifier, with how to describe it in errors. */
@@ -29,6 +46,8 @@ export type LibraryImport = { path: string; description: string };
 
 /** The library module an import specifier names, or `undefined` for a file import. */
 export function libraryImport(specifier: string): LibraryImport | undefined {
+  // Host names are opaque JS strings, including Unicode; preserve them and quote diagnostics
+  // at this boundary. The shared portable resolver classifies byte-string module file names.
   const host = jsHostImportName(specifier);
   if (host !== undefined) {
     return {
@@ -36,21 +55,5 @@ export function libraryImport(specifier: string): LibraryImport | undefined {
       description: `host module js.host(${JSON.stringify(host)})`,
     };
   }
-  const std = /^std\/([a-z][a-z0-9_]*\.wm)$/.exec(specifier);
-  const c = /^host\/c\/([a-z][a-z0-9_]*\.wm)$/.exec(specifier);
-  if (c) return { path: `host/c/${c[1]}`, description: `C host module "${specifier}"` };
-  if (std) return { path: `std/${std[1]}`, description: `library module "${specifier}"` };
-  const pakman = /^pakman\/([a-z][a-z0-9_]*\.wm)$/.exec(specifier);
-  if (pakman) {
-    return { path: `tooling/pakman/api/${pakman[1]}`, description: `pakman module "${specifier}"` };
-  }
-  const testman = /^testman\/([a-z][a-z0-9_]*\.wm)$/.exec(specifier);
-  if (testman) {
-    return { path: `tooling/testman/${testman[1]}`, description: `testman module "${specifier}"` };
-  }
-  const basis = /^basis\/([a-z][a-z0-9_]*\.wm)$/.exec(specifier);
-  if (basis) {
-    return { path: `subml-basis/subset_${basis[1]}`, description: `Basis module "${specifier}"` };
-  }
-  return undefined;
+  return toNullable(sharedLibraryImport(specifier));
 }

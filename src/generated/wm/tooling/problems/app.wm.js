@@ -3012,7 +3012,7 @@ const __wm_scalar_7_1 = skip_622;
 const __wm_scalar_7_2 = remaining_623;
 const __wm_scalar_7_3 = selected_624;
 const __wm_scalar_7_4 = index_625;
-if (__wm_scalar_7_2 === 0) {
+if (__wm_eq(__wm_scalar_7_2, 0)) {
 
 return __wm_basis_Nil;
 } else if (__wm_scalar_7_0 === __wm_basis_Nil) {
@@ -8324,7 +8324,7 @@ const __wm_scalar_9_1 = f_2316;
 if (__wm_scalar_9_0 === __wm_basis_Nil) {
 
 return __wm_basis_None;
-} else if (__wm_scalar_9_0?.ctor === -6 && __wm_eq(__wm_scalar_9_1, f_2316)) {
+} else if (__wm_scalar_9_0?.ctor === -6) {
 const head_2317 = __wm_scalar_9_0.a0;
 const rest_2318 = __wm_scalar_9_0.a1;
 {
@@ -8369,7 +8369,7 @@ return Less_ctor_48;
 } else if (__wm_scalar_10_1 === __wm_basis_Nil) {
 
 return Greater_ctor_50;
-} else if (__wm_scalar_10_0?.ctor === -6 && __wm_scalar_10_1?.ctor === -6 && __wm_eq(__wm_scalar_10_2, compare_2323)) {
+} else if (__wm_scalar_10_0?.ctor === -6 && __wm_scalar_10_1?.ctor === -6) {
 const a_2324 = __wm_scalar_10_0.a0;
 const restA_2325 = __wm_scalar_10_0.a1;
 const b_2326 = __wm_scalar_10_1.a0;

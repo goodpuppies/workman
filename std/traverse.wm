@@ -25,7 +25,7 @@ let with = (.{ succeed, map, andThen }: Carrier<
     ([], _) => {
       succeed([])
     },
-    ([item, ..rest], transform) => {
+    ([item, ..rest], _) => {
       transform(item)
         :> andThen((value) => {
           traverse(rest, transform)

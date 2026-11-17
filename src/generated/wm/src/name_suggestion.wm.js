@@ -4350,7 +4350,7 @@ const __wm_scalar_1_1 = f_1687;
 if (__wm_scalar_1_0 === __wm_basis_Nil) {
 
 return __wm_basis_None;
-} else if (__wm_scalar_1_0?.ctor === -6 && __wm_eq(__wm_scalar_1_1, f_1687)) {
+} else if (__wm_scalar_1_0?.ctor === -6) {
 const head_1688 = __wm_scalar_1_0.a0;
 const rest_1689 = __wm_scalar_1_0.a1;
 {
@@ -4395,7 +4395,7 @@ return Less_ctor_4;
 } else if (__wm_scalar_2_1 === __wm_basis_Nil) {
 
 return Greater_ctor_6;
-} else if (__wm_scalar_2_0?.ctor === -6 && __wm_scalar_2_1?.ctor === -6 && __wm_eq(__wm_scalar_2_2, compare_1694)) {
+} else if (__wm_scalar_2_0?.ctor === -6 && __wm_scalar_2_1?.ctor === -6) {
 const a_1695 = __wm_scalar_2_0.a0;
 const restA_1696 = __wm_scalar_2_0.a1;
 const b_1697 = __wm_scalar_2_1.a0;
@@ -4583,7 +4583,7 @@ const map2_2036__wm_d3 = (a_2031, b_2032, f_2033) => {
 const __wm_scalar_3_0 = a_2031;
 const __wm_scalar_3_1 = b_2032;
 const __wm_scalar_3_2 = f_2033;
-if (__wm_scalar_3_0?.ctor === -2 && __wm_scalar_3_1?.ctor === -2 && __wm_eq(__wm_scalar_3_2, f_2033)) {
+if (__wm_scalar_3_0?.ctor === -2 && __wm_scalar_3_1?.ctor === -2) {
 const left_2034 = __wm_scalar_3_0.a0;
 const right_2035 = __wm_scalar_3_1.a0;
 return { ctor: -2, name: "Some", a0: __wm_tuple_call_2(f_2033, left_2034, right_2035) };

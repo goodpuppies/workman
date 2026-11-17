@@ -5,9 +5,11 @@
 // imports with the SubsetML Basis, writes one `.sml` file per module and a `project.mlb`, and
 // links the host modules to their MLton adapters. Every file it writes stays in the output
 // directory, so the directory builds anywhere: `mlton project.mlb`.
-import { basename, join, resolve } from "node:path";
+import { basename, join, posix, resolve } from "node:path";
 import { librarySources, nativeBasisSources } from "./generated/assets.ts";
 import { createTemporaryDirectory } from "./temporary_directory.ts";
+import { discoverStandardModules } from "./standard_library.ts";
+import { libraryImport } from "./host_modules.ts";
 
 const HOST_MODULES = [
   ["subset_host", "SubsetHost"],
@@ -40,6 +42,22 @@ export async function smlCommand(args: string[]): Promise<number> {
       const match = path.match(/^subml-basis\/([^/]+\.wm)$/);
       if (match) await Deno.writeTextFile(join(basis, match[1]), source);
     }
+    // Stage source-only std extensions in dependency order. JS-backed extensions retain
+    // the reader's source Basis namespace until a native adapter is available for them.
+    const portable = new Set(Object.keys(librarySources).filter((path) => path.startsWith("subml-basis/")));
+    for (const module of await discoverStandardModules()) {
+      if (!module.path.startsWith("std/")) continue;
+      if (module.module.decls.some((decl) =>
+        decl.kind === "JsImportDecl" ||
+        (decl.kind === "ImportDecl" && !portable.has(
+          libraryImport(decl.path)?.path ?? posix.normalize(posix.join(posix.dirname(module.path), decl.path)),
+        ))
+      )) continue;
+      portable.add(module.path);
+      await Deno.mkdir(join(basis, "std"), { recursive: true });
+      await Deno.writeTextFile(join(basis, module.path), module.source);
+    }
+    await Deno.writeTextFile(join(basis, "module-scope.paths"), [...portable].sort().join("\n") + "\n");
     const adapters: string[] = [];
     for (const [name, structure] of HOST_MODULES) {
       const checker = join(basis, `${name}.wm`);

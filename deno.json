@@ -61,6 +61,7 @@
   "imports": {
     "#problems-client": "./src/problems_client.ts",
     "byte_type": "./src/vendor/byte_type/mod.ts",
+    "./src/module_scope.wm": "./src/generated/wm/src/module_scope.wm.js",
     "./src/name_suggestion.wm": "./src/generated/wm/src/name_suggestion.wm.js",
     "./tooling/problems/app.wm": "./src/generated/wm/tooling/problems/app.wm.js",
     "./tooling/tuiman/diagnostic.wm": "./src/generated/wm/tooling/tuiman/diagnostic.wm.js"

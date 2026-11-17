@@ -18,6 +18,11 @@ import {
 } from "./library_pervasives.ts";
 import { libraryImport } from "./host_modules.ts";
 import { inheritSchemeSource } from "./infer/provenance.ts";
+import {
+  isAutoOpened as sharedIsAutoOpened,
+  isLoadedOnDemand as sharedIsLoadedOnDemand,
+  moduleAlias,
+} from "./module_scope.wm";
 
 export type StandardModule = {
   path: string;
@@ -89,31 +94,30 @@ async function loadStandardLibraryUncached(): Promise<InitialImport[]> {
  * `std/` modules and the public SubsetML Basis modules (`subml-basis/subset_*.wm`) are opened as
  * namespaces in every program. A Basis module that a std module of the same name extends is
  * opened through that std module instead (markdown/basis-authority-plan.md). The Basis's host
- * adapters and the host helper modules (`host/js/`, BD17) are never opened implicitly.
+ * adapters and the host helper modules (`host/js/`, BD17) are never opened implicitly. The rule is
+ * SubsetML's `WmModuleScope.isAutoOpened` (src/module_scope.wm).
  */
 function isAutoOpened(
   path: string,
   sources: Readonly<Record<string, string>> = librarySources,
 ): boolean {
-  if (path.startsWith("std/")) return true;
-  const basis = path.match(/^subml-basis\/subset_(\w+)\.wm$/);
-  if (!basis || INTERNAL_BASIS_MODULES.has(basis[1])) return false;
-  return !(`std/${basis[1]}.wm` in sources);
+  return sharedIsAutoOpened(path, libraryPaths(sources));
 }
 
-/** Basis modules that implement other Basis modules for a host, not a public interface. */
-const INTERNAL_BASIS_MODULES = new Set(["host", "text_host", "real_host"]);
+const libraryPathLists = new WeakMap<Readonly<Record<string, string>>, string[]>();
 
-/** Basis namespaces whose SML name isn't the capitalized file name. */
-const BASIS_NAMESPACE_NAMES: Readonly<Record<string, string>> = { os: "OS" };
+function libraryPaths(sources: Readonly<Record<string, string>>): string[] {
+  let paths = libraryPathLists.get(sources);
+  if (!paths) libraryPathLists.set(sources, paths = Object.keys(sources));
+  return paths;
+}
 
 /**
  * Library modules inferred only for a program that imports one of them (`"pakman/…"`, `"testman/…"`), so other
  * programs don't pay for them at startup. They may import any other library module.
  */
 export function isLoadedOnDemand(path: string): boolean {
-  return path.startsWith("tooling/pakman/api/") || path.startsWith("tooling/testman/") ||
-    path.startsWith("host/c/");
+  return sharedIsLoadedOnDemand(path);
 }
 
 const onDemandModuleIds = new Set(
@@ -412,14 +416,7 @@ function libraryEmitName(module: { path: string; alias: string }): string {
  * `subml-basis/subset_string_cvt.wm` defines `StringCvt` (`subset_os.wm` is SML's `OS`).
  */
 export function libraryModuleAlias(path: string): string {
-  const basis = path.match(/^subml-basis\/subset_(\w+)\.wm$/);
-  if (basis && !INTERNAL_BASIS_MODULES.has(basis[1])) {
-    return BASIS_NAMESPACE_NAMES[basis[1]] ?? libraryModuleAlias(`${basis[1]}.wm`);
-  }
-  return posix.basename(path, ".wm")
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join("");
+  return moduleAlias(path);
 }
 
 /**
