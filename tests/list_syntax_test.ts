@@ -104,3 +104,30 @@ Deno.test("main failure messages render list payloads with quoted strings", asyn
     await Deno.remove(path);
   }
 });
+
+Deno.test("long list literals build from a flat array, in order and with their tail", async () => {
+  const items = Array.from({ length: 300 }, (_, index) => index);
+  const source = `let rest = [1000, 1001];
+let rec sum = (xs, acc) => { match(xs) { [] => { acc }, [x, ..tail] => { sum(tail, acc + x) } } };
+let main = () => {
+  let xs = [${items.join(", ")}, ..rest];
+  match(xs) { [first, second, .._] => { print(first); print(second) }, _ => { void } };
+  print(sum(xs, 0))
+};`;
+  const code = await compileVirtual("/test/main.wm", new Map([["/test/main.wm", source]]));
+  // One object literal per item would nest 300 deep, which overflows a small parser stack.
+  assertStringIncludes(code, "__wm_array_to_list([0, 1, 2,");
+  const path = await Deno.makeTempFile({ suffix: ".mjs" });
+  try {
+    await Deno.writeTextFile(path, code);
+    const result = await new Deno.Command(Deno.execPath(), {
+      args: ["run", "--no-config", "--v8-flags=--stack-size=128", path],
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    assertEquals(new TextDecoder().decode(result.stderr), "");
+    assertEquals(new TextDecoder().decode(result.stdout), `0\n1\n${44850 + 2001}\n`);
+  } finally {
+    await Deno.remove(path);
+  }
+});

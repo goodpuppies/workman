@@ -1882,6 +1882,10 @@ function emitCtorApp(expr: Extract<CoreExpr, { kind: "CoreApp" }>): string | und
     : undefined;
   const layout = ctorLayout(ctorId);
   if (!layout || ctorId === undefined) return undefined;
+  if (ctorId === basisCtorId("Cons")) {
+    const long = emitLongList(expr);
+    if (long) return long;
+  }
   if (layout.fieldCount === 1) return emitCtorValue(ctorId, layout.name, [emitExpr(expr.arg)]);
   if (
     layout.fieldCount >= 2 && expr.arg.kind === "CoreTuple" &&
@@ -1890,6 +1894,32 @@ function emitCtorApp(expr: Extract<CoreExpr, { kind: "CoreApp" }>): string | und
     return emitCtorValue(ctorId, layout.name, expr.arg.items.map(emitExpr));
   }
   return undefined;
+}
+
+/** List literals at least this long are built from a flat array. */
+const LONG_LIST = 32;
+
+/**
+ * A long chain of `Cons` applications (a list literal) builds its list from an array, so the
+ * emitted JavaScript does not nest one object literal per item: deep nesting overflows the
+ * parser's stack (a 256-item table in the Basis did, at a 128 KB stack).
+ */
+function emitLongList(expr: Extract<CoreExpr, { kind: "CoreApp" }>): string | undefined {
+  const items: CoreExpr[] = [];
+  let tail: CoreExpr = expr;
+  while (
+    tail.kind === "CoreApp" && tail.callee.kind === "CoreVar" && tail.callee.bindingId === undefined &&
+    tail.callee.ctorId === basisCtorId("Cons") && tail.arg.kind === "CoreTuple" &&
+    tail.arg.items.length === 2
+  ) {
+    items.push(tail.arg.items[0]);
+    tail = tail.arg.items[1];
+  }
+  if (items.length < LONG_LIST) return undefined;
+  const rest = tail.kind === "CoreVar" && tail.bindingId === undefined && tail.ctorId === basisCtorId("Nil")
+    ? ""
+    : `, ${emitExpr(tail)}`;
+  return `__wm_array_to_list([${items.map(emitExpr).join(", ")}]${rest})`;
 }
 
 function emitPrimitiveOperatorApp(

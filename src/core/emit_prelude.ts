@@ -474,8 +474,8 @@ const __wm_c_struct_to_buffer = (name, value) => {
     ? __wm_basis_Err(__wm_js_error(new Error("Json.assert failed")))
     : __wm_basis_Ok(value),
 };`,
-    `const __wm_array_to_list = (items) => {
-  let list = __wm_basis_Nil;
+    `const __wm_array_to_list = (items, tail = __wm_basis_Nil) => {
+  let list = tail;
   for (let index = items.length - 1; index >= 0; index--) {
     list = { ctor: ${basisCtorId("Cons")}, name: "Cons", a0: items[index], a1: list };
   }
