@@ -79,3 +79,21 @@ Deno.test("testman exits after successful suites even with a library's live time
     await Deno.remove(dir, { recursive: true });
   }
 });
+
+Deno.test("wm test returns a failure status for an invalid suite type", async () => {
+  const dir = await Deno.makeTempDir({ prefix: "wm-testman-invalid-" });
+  const cli = fileURLToPath(new URL("../src/main.ts", import.meta.url));
+  try {
+    await Deno.writeTextFile(`${dir}/invalid.test.wm`, "let tests = [1];");
+    const result = await new Deno.Command(Deno.execPath(), {
+      args: ["run", "-A", cli, "test", `${dir}/invalid.test.wm`],
+      stdout: "piped",
+      stderr: "piped",
+      signal: AbortSignal.timeout(20000),
+    }).output();
+    assertEquals(result.code, 1);
+    assertStringIncludes(new TextDecoder().decode(result.stderr), "type error");
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});

@@ -47,7 +47,7 @@ Deno.test("persistent Map preserves old versions and ordered semantics", async (
   assertEquals(result.stderr, "");
   assertEquals(
     result.stdout,
-    "Some(two)\nSome(TWO)\nfalse\nCons((2, TWO), Cons((3, three), Cons((4, four), Nil)))\nCons((2, TWO), Cons((4, four), Nil))\n",
+    "Some(two)\nSome(TWO)\nfalse\n[(2, TWO), (3, three), (4, four)]\n[(2, TWO), (4, four)]\n",
   );
 });
 

@@ -78,11 +78,12 @@ let close = (state: State, expected, owner: Boundary, enclosing) => {
   let matches = match(owner.mateIndex) {
     Some(index) => {state.cursor.tokenIndex == index},
     None => {
-      if (owner.authoredOpen || atBoundary(state, enclosing)) {false} else {
+      if (!owner.authoredOpen && atBoundary(state, enclosing)) {false} else {
         let token = Cursor.current(state.cursor);
         match(token.mateIdx) {Token.NoMate => {true}, Token.Mate(_) => {false}}
       }
-    } // Only a virtual opener may own a free closer; never steal a caller's mate.
+    } // Structural recovery may expose an unpaired closer to an authored opener. Virtual
+      // openers defer to enclosing boundaries; recorded lexical mates are never reassigned.
   };
   if (matches && Cursor.isKind(state.cursor, Token.PunctuationToken(expected))) {
     let (token, next) = consume(state);

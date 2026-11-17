@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects, assertStrictEquals } from "@std/assert";
+import { assertEquals, assertRejects } from "@std/assert";
 import { checkSource, compileLibraryVirtual, compileVirtual } from "../src/compiler.ts";
 import { FrontendDiagnosticError } from "../src/diagnostics.ts";
 import { expectBinding } from "./type_helpers.ts";
@@ -24,18 +24,23 @@ Deno.test("Result.filter preserves the success and error types through direct ca
 
 Deno.test("Result.filter returns original passing and failed results unchanged", async () => {
   const source = `
+    from js.global("Object") import unsafe { is: (a, a) -> Bool };
     let input = Ok(3);
     let kept = input :> Result.filter(x => x > 0, "rejected");
     let original = Err("original");
     let preserved = original :> Result.filter((_: Real64.Real) => Panic "predicate ran", "replacement");
+    let keptIdentity = is(kept, input);
+    let preservedIdentity = is(preserved, original);
   `;
   const code = await compileLibraryVirtual(
     "/test/filter.wm",
     new Map([["/test/filter.wm", source]]),
   );
   const runtime = await import(`data:text/javascript;base64,${btoa(code)}`);
-  assertStrictEquals(runtime.kept, runtime.input);
-  assertStrictEquals(runtime.preserved, runtime.original);
+  assertEquals(runtime.keptIdentity, true);
+  assertEquals(runtime.preservedIdentity, true);
+  assertEquals(runtime.kept, { ok: true, value: 3 });
+  assertEquals(runtime.preserved, { ok: false, error: "original" });
 });
 
 Deno.test("Result.filter evaluates the predicate once per Ok and skips it for Err", async () => {

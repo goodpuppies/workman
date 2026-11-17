@@ -188,14 +188,14 @@ Deno.test("expanded List helpers evaluate with current argument order", async ()
   assertEquals(
     result.stdout,
     "3\n" +
-      "Cons(1, Cons(2, Cons(3, Cons(4, Nil))))\n" +
-      "Cons(3, Cons(4, Nil))\n" +
-      "Ok(Cons(1, Cons(2, Nil)))\n" +
-      "Ok(Cons(3, Nil))\n" +
+      "[1, 2, 3, 4]\n" +
+      "[3, 4]\n" +
+      "Ok([1, 2])\n" +
+      "Ok([3])\n" +
       "Ok(2)\n" +
       "Err(OutOfBounds)\n" +
       "6\n" +
-      "Cons(3, Cons(2, Cons(1, Nil)))\n" +
+      "[3, 2, 1]\n" +
       "true\n" +
       "true\n",
   );
@@ -474,7 +474,7 @@ Deno.test("Result and Option combinators evaluate correctly", async () => {
   assertEquals(result.code, 0);
   assertEquals(
     result.stdout,
-    "Ok(42)\nErr(bad: negative)\n0\n4\n9\nCons(2, Cons(3, Cons(4, Nil)))\nOk(Cons(1, Cons(2, Cons(3, Nil))))\nSome(Cons(1, Cons(2, Cons(3, Nil))))\nOk([2, 4, 6])\nOk([2, 4, 6])\n3\nCons(1, Cons(2, Cons(3, Nil)))\n",
+    "Ok(42)\nErr(bad: negative)\n0\n4\n9\n[2, 3, 4]\nOk([1, 2, 3])\nSome([1, 2, 3])\nOk([2, 4, 6])\nOk([2, 4, 6])\n3\n[1, 2, 3]\n",
   );
 });
 

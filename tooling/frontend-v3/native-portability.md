@@ -18,7 +18,7 @@ independent of editor modules.
 
 ## Current editor checkpoint
 
-The canonical parser/projector/View closure translates, builds with MLton, and passes eight
+The canonical parser/projector/View closure translates, builds with MLton, and passes ten
 WM/native regression cases. Run `python3 scripts/check_frontend_v3_projector_native.py` from the
 repository root. It exercises missing expressions, lambdas, calls, blocks and damaged comments
 through the same authored parser and View implementation.
@@ -34,8 +34,10 @@ projector needs no specialization or duplicate implementation.
 This native test uses MLton's target Basis. The generated graph still fails the restricted
 `check-portable` profile on bootstrap `not`; see the
 [remaining pervasive lowering work](../../markdown/issues/wm-native-output-still-uses-bootstrap-pervasives.md).
-The ordinary WM test runner also has a separately tracked
-[Test identity/exit-status failure](../../markdown/issues/wm-test-runner-reports-distinct-test-identities.md).
+The ordinary WM suite now passes all 61 cases after using the public testman API consistently
+and correcting two list-recovery boundaries. The
+[Test identity issue](../../markdown/issues/wm-test-runner-reports-distinct-test-identities.md)
+records the resolution and passing exit-status regression.
 
 ## Existing agreements
 

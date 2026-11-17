@@ -2,7 +2,7 @@
 -- what it records, and everything it refuses.
 
 from js.module("../src/host.ts") import * as Host;
-from "../../testman/test.wm" import *;
+from "testman/test.wm" import *;
 from "../src/apply.wm" import { apply, isSafePath, Plan, Placement };
 from "../src/io.wm" import { writeText, readText, mkdirp, exists, readTextOr, describe };
 from "./support.wm" import { withTempDir };

@@ -1,6 +1,6 @@
 -- The WON a package prints for `make`, read back by pakman.
 
-from "../../testman/test.wm" import *;
+from "testman/test.wm" import *;
 from "pakman/model.wm" import *;
 from "pakman/plan.wm" import { encodePlan, decodePlan, decodeRef };
 from "pakman/won.wm" import * as D;

@@ -1,7 +1,7 @@
 -- End to end: `wm pakman` installing the test packages in tests/pkgs into
 -- throwaway roots, and refusing the broken ones.
 
-from "../../testman/test.wm" import *;
+from "testman/test.wm" import *;
 from "../src/io.wm" import { readText, exists, mkdirp, writeText, runCapture };
 from "./support.wm" import { withTempDir, pakman, readLink, Run };
 

@@ -137,15 +137,34 @@ curried/tuple calls against WM execution, and the translation suite passes.
 With `--basis`, SubsetML now supplies private opens of the source Option/Result datatypes for
 unqualified type and constructor uses. Basis-returned options match bare `Some`/`None`; authored
 datatypes and imports still shadow the defaults. The private leak rule distinguishes newly
-declared types from imported types. The bootstrap Option remains in the compatibility checker;
-its removal and the manifest changes are still release step 9.
+declared types from imported types. The compatibility checker now derives its host Option
+definition from embedded shared source, and WM's constructor descriptors generate from source
+declarations (release step 9).
 
-The frontend-v3 parser/projector/View closure now builds with MLton and passes eight WM/native
+The frontend-v3 parser/projector/View closure now builds with MLton and passes ten WM/native
 cases (`scripts/check_frontend_v3_projector_native.py`). Its older generic error was a scoped
 type variable in a nested callback annotation, also rejected by MLton in a reduced SML case.
 Annotating the `items` helper's argument as `Ast.Items<a>` scopes that variable at the helper.
 The JavaScript editor/preview adapters now decode the library Result ABI; their three parser
 and preview tests pass. All ten direct projector tests pass too.
+
+### Syntax and validation follow-up, 2026-11-17
+
+Computed patterns, cond-style matches, implicit pipeline lambdas (including `==>`), capture-clause
+syntax and piped conditionals now translate. Record member pipes project/call ordinary records;
+receiver types must still be established by inference or annotations. Pattern tests compare WM
+and native effects and results, including short-circuiting and shadowed outer names.
+`sml-entry --basis DIR` defaults the panic provider to the supplied Basis's process module;
+explicit runtime overrides and native adapter selection remain available.
+
+The frontend-v3 WM suite now uses the same public testman API as its runner and passes 61 tests.
+This exposed and fixed missing list-closer ownership and declaration-boundary recovery; both are
+included in the ten native/WM cases. JSON boundary tests and the Result.filter identity test also
+pass after updating their library ABI assumptions.
+
+Remaining feature probes: inline record types, unnamed record updates, template strings,
+carrier groups and portable Monad/Carrier support. The restricted native profile still needs
+bootstrap-pervasive lowerings.
 
 ## Recommendation for 0.8.0
 

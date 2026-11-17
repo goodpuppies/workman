@@ -1,6 +1,6 @@
 # Result.filter export identity test fails at the JS boundary
 
-Status: open, 2026-11-16. Reproduces with the previous hand-authored Basis manifest as well as
+Status: fixed, 2026-11-17. Reproduced with the previous hand-authored Basis manifest as well as
 the source-generated descriptors; it is not introduced by descriptor generation.
 
 ```sh
@@ -15,3 +15,7 @@ establish whether `Result.filter` preserved the internal WM object as its source
 The test needs to check internal identity before export, or the library ABI needs an explicit
 identity-preservation contract. The predicate count, skipped-Err predicate, result types and
 value assertions in the other Result.filter tests pass.
+
+Resolution: the test now checks `Object.is` on the internal WM values before export and separately
+asserts the public `{ ok, value/error }` shapes. This verifies Result.filter's identity promise
+without requiring identity preservation for independently converted JS Result wrappers.

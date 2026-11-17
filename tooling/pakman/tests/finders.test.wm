@@ -1,6 +1,6 @@
 from "std/json.wm" import * as Document;
 -- Provider-neutral release rules on normalized metadata, without network access.
-from "../../testman/test.wm" import *;
+from "testman/test.wm" import *;
 from "pakman/finders.wm" import { Release, ReleaseAsset, matchText, releaseCandidates, stableReleases, projectPath, decodeReleases, decodeGithubTag, decodeGitlabTag };
 from "pakman/model.wm" import { Candidate };
 

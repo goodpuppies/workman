@@ -158,8 +158,10 @@ correspondence diff, additive preview and mark/pair attribution. The WM suite ha
 passing cases at that checkpoint. The first parser slice is now integrated below;
 complete language coverage remains pending.
 
-Native checkpoint (2026-11-16): the parser/projector/View closure builds and passes eight
-WM/native cases via `scripts/check_frontend_v3_projector_native.py`. The generic `items` helper
+Native checkpoint (2026-11-17): the parser/projector/View closure builds and passes ten
+WM/native cases via `scripts/check_frontend_v3_projector_native.py`. The full WM suite passes
+61 cases, including list recovery across mismatched closers and following declarations.
+The generic `items` helper
 now scopes `a` at its parameter annotation, and SubsetML supplies the source Basis's Option
 constructors. See [native-portability.md](native-portability.md) for the resolved blockers.
 

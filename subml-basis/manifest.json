@@ -1,6 +1,6 @@
 {
   "source": "SubsetML",
-  "commit": "d2bceabc0ec28852b953750e1613405a4f067ced",
+  "commit": "6369e60ccc13f6a2d165429f692bf9c49a328b41",
   "modules": [
     "SubsetBool",
     "SubsetBytes",

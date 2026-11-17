@@ -1,4 +1,4 @@
-from "../../testman/test.wm" import *;
+from "testman/test.wm" import *;
 from "../src/editor/hints.wm" import * as Hints;
 from "../src/editor/preview.wm" import * as Preview;
 from "basis/utf16_source.wm" import * as Source;

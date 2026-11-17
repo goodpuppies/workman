@@ -1,4 +1,4 @@
-from "../../testman/test.wm" import *;
+from "testman/test.wm" import *;
 from "./support.wm" import { withTempDir, pakman, readLink, Run };
 from "../src/io.wm" import { readText, exists, runCapture };
 

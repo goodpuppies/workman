@@ -459,11 +459,11 @@ Deno.test("repl shows lists in list syntax, at any depth", async () => {
   assertEquals(result.stdout.includes("Cons"), false);
 });
 
-Deno.test("repl keeps constructors for a user's own Cons type and for print", async () => {
+Deno.test("repl keeps user Cons constructors and print uses list syntax", async () => {
   const own = await runCliWithStdin(["repl"], "type Mine = Cons<Real64.Real, Mine> | Nil;\nCons(1, Nil);\n");
   assertStringIncludes(own.stdout, "it = Cons(1, Nil) : Mine");
   const printed = await runCliWithStdin(["repl"], "print([1, 2]);\n");
-  assertStringIncludes(printed.stdout, "Cons(1, Cons(2, Nil))");
+  assertStringIncludes(printed.stdout, "[1, 2]");
 });
 
 Deno.test("repl shows a long list without exhausting the stack", async () => {

@@ -397,6 +397,10 @@ and listLiteral = (state: State.State, boundaries) => {
   let (open, afterOpen) = State.consume(state);
   let owner = State.frame(open, Token.RightBracket);
   let nested = [owner, ..boundaries];
+  let end = (state: State.State) => {
+    eof(state) || State.atBoundary(state, nested) || isLet(state)
+      || kind(state, Token.PunctuationToken(Token.Semicolon))
+  };
   let spreadKind = Token.PunctuationToken(Token.DoubleDot);
   let tail = (state: State.State, before, elements) => {
     let (spread, afterSpread) = State.consume(state);
@@ -406,7 +410,7 @@ and listLiteral = (state: State.State, boundaries) => {
     } else {(None, afterValue)};
     (Ast.ListBody(elements, Some(Ast.SpreadTail(before, spread, value, trailing))), next)
   };
-  let (contents, afterContents) = if (eof(afterOpen) || State.atBoundary(afterOpen, nested)) {
+  let (contents, afterContents) = if (end(afterOpen)) {
     (Ast.ListBody(Ast.EmptyItems, None), afterOpen)
   } else {
     if (kind(afterOpen, spreadKind)) {tail(afterOpen, None, Ast.EmptyItems)} else {
@@ -421,7 +425,7 @@ and listLiteral = (state: State.State, boundaries) => {
             tail(afterComma, Some(Marks.AuthoredSlot(comma)),
               Ast.NonemptyItems(Ast.Separated(first, Lists.reverse(followingRev), None)))
           } else {
-            if (eof(afterComma) || State.atBoundary(afterComma, nested)) {
+            if (end(afterComma)) {
               (Ast.ListBody(Ast.NonemptyItems(Ast.Separated(first, Lists.reverse(followingRev), Some(comma))), None), afterComma)
             } else {
               let (value, next) = expression(afterComma, nested);

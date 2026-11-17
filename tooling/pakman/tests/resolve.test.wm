@@ -1,7 +1,7 @@
 -- Choosing a version: selectors, channels, the minimum-age gate, and holding
 -- back packages whose upstream only offers its newest build.
 
-from "../../testman/test.wm" import *;
+from "testman/test.wm" import *;
 from "pakman/model.wm" import { Candidate, Host, System, Package, source, Checksum };
 from "../src/packages.wm" import { PackageInfo };
 from "../src/lock.wm" import { LockEntry, LockedSource };

@@ -1,6 +1,6 @@
 -- The lock file: ordering, writing and reading, and other formats.
 
-from "../../testman/test.wm" import *;
+from "testman/test.wm" import *;
 from "../src/lock.wm" import { LockEntry, LockedSource, upsert, find, read, write };
 from "../src/io.wm" import { writeText };
 from "./support.wm" import { withTempDir };

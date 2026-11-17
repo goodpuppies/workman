@@ -1,4 +1,4 @@
-from "../../testman/test.wm" import *;
+from "testman/test.wm" import *;
 from "../src/parser/program.wm" import * as Parser;
 from "../src/editor/view.wm" import * as View;
 from "basis/utf16_source.wm" import * as TextSource;

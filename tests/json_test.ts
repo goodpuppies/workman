@@ -141,30 +141,30 @@ Deno.test("portable JSON rejects malformed syntax and ill-formed Unicode with of
     assertStringIncludes(m.diagnostic(source), "byte ", JSON.stringify(source));
   }
   assertStringIncludes(m.diagnostic("[1,]"), "byte 3:");
-  assertEquals(m.limited(["[]", 1]), true);
-  assertEquals(m.limited(["[[]]", 1]), false);
-  assertEquals(m.limited(["0", 0]), true);
-  assertEquals(m.limited(["0", -1]), false);
+  assertEquals(m.limited("[]", 1), true);
+  assertEquals(m.limited("[[]]", 1), false);
+  assertEquals(m.limited("0", 0), true);
+  assertEquals(m.limited("0", -1), false);
   assertEquals(m.normalize("[".repeat(129) + "]".repeat(129)), "FAILED");
 });
 
 Deno.test("portable JSON accessors preserve paths, nulls, duplicate keys and dynamic names", async () => {
   const m = await runtime();
-  assertEquals(m.field(['{"東京":"🦊"}', "東京"]), "🦊");
-  assertEquals(m.field(['{"x":"first","x":"last"}', "x"]), "last");
+  assertEquals(m.field('{"東京":"🦊"}', "東京"), "🦊");
+  assertEquals(m.field('{"x":"first","x":"last"}', "x"), "last");
   assertEquals(m.normalize('{"x":1,"x":2}'), '{"x":1,"x":2}');
   assertEquals(
     m.nestedError('{"releases":[{"name":1}]}'),
     '$["releases"][0]["name"]: expected text',
   );
   assertEquals(m.nestedError('{"releases":[{}]}'), '$["releases"][0]["name"]: missing');
-  assertEquals(m.optional(["{}", "x"]), "missing");
-  assertEquals(m.optional(['{"x":null}', "x"]), "null");
-  assertEquals(m.optional(['{"x":false}', "x"]), "present");
-  assertEquals(m.optional(["[]", "x"]), "$: expected object");
+  assertEquals(m.optional("{}", "x"), "missing");
+  assertEquals(m.optional('{"x":null}', "x"), "null");
+  assertEquals(m.optional('{"x":false}', "x"), "present");
+  assertEquals(m.optional("[]", "x"), "$: expected object");
   assertEquals(m.atError(-1), "$[-1]: missing");
   assertEquals(m.atError(-2147483648), "$[-2147483648]: missing");
-  assertEquals(m.keys('{"a":1,"b":2,"a":3}'), "Cons(a, Cons(b, Nil))");
+  assertEquals(m.keys('{"a":1,"b":2,"a":3}'), "[a, b]");
 });
 
 Deno.test("portable JSON handles wide containers and long escape sequences in constant call stack", async () => {

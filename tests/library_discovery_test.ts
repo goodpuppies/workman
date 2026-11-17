@@ -96,7 +96,10 @@ Deno.test("library discovery reports missing imports, cycles, and duplicate name
   await assertRejects(
     () =>
       discoverStandardModules(
-        { "std/a.wm": 'from js.module("./js/a.js") import unsafe { f: Real64.Real -> Real64.Real };\n' },
+        {
+          "std/a.wm":
+            'from js.module("./js/a.js") import unsafe { f: Real64.Real -> Real64.Real };\n',
+        },
         {},
       ),
     Error,
@@ -276,7 +279,7 @@ Deno.test("Task operations defined in std/task.wm keep their behavior", async ()
     };
   `);
   assertEquals(result.stderr, "");
-  assertEquals(result.stdout, "Cons(7, Cons(70, Nil))\n");
+  assertEquals(result.stdout, "[7, 70]\n");
 });
 
 Deno.test("tooling analysis resolves std constructors in patterns", async () => {
@@ -406,7 +409,7 @@ let main = () => {
   assertEquals(result.code, 0);
   assertEquals(
     result.stdout,
-    "Ok(List(Cons(Number(1), Cons(Boolean(true), Nil))))\ntrue\nOk(true)\nlocal\n",
+    "Ok(List([Number(1), Boolean(true)]))\ntrue\nOk(true)\nlocal\n",
   );
 });
 

@@ -8,7 +8,7 @@ repository = Path(__file__).resolve().parents[1]
 subsetml = repository / "subm/SubsetML"
 compiler = subsetml / "bin/subsetml"
 entry = repository / "tests/fixtures/frontend_v3_project_native.wm"
-expected = "frontend-v3 native projector: 8 cases passed"
+expected = "frontend-v3 native projector: 10 cases passed"
 
 with tempfile.TemporaryDirectory(prefix="frontend-v3-projector-") as temporary:
     output = Path(temporary)

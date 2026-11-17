@@ -308,7 +308,7 @@ const __wm_eq = (left, right) => {
   }
   return true;
 };
-const __wm_show = (value, seen = new WeakSet(), quoteStrings = false, listSyntax = false) => {
+const __wm_show = (value, seen = new WeakSet(), quoteStrings = false) => {
   if (value === undefined) return "void";
   if (value === null) return "null";
   if (typeof value === "string") return quoteStrings ? JSON.stringify(value) : value;
@@ -328,35 +328,43 @@ const __wm_show = (value, seen = new WeakSet(), quoteStrings = false, listSyntax
     ).join(", ") + "]";
   } else if (value[__wm_vector_data] !== undefined) {
     shown = "Vector[" + value[__wm_vector_data]
-      .map((item) => __wm_show(item, seen, quoteStrings, listSyntax)).join(", ") + "]";
+      .map((item) => __wm_show(item, seen, quoteStrings)).join(", ") + "]";
   } else if (value[__wm_vector_slice_data] !== undefined) {
     const slice = value[__wm_vector_slice_data];
     shown = "VectorSlice[" + slice.vector[__wm_vector_data]
       .slice(slice.offset, slice.offset + slice.length)
-      .map((item) => __wm_show(item, seen, quoteStrings, listSyntax)).join(", ") + "]";
+      .map((item) => __wm_show(item, seen, quoteStrings)).join(", ") + "]";
   } else if (__wm_is_tuple(value)) {
-    shown = "(" + value.map((item) => __wm_show(item, seen, quoteStrings, listSyntax)).join(", ") + ")";
-  } else if (listSyntax && (value.ctor === -6 || value.ctor === -5)) {
-    shown = "[" + __wm_list_to_array(value)
-      .map((item) => __wm_show(item, seen, quoteStrings, listSyntax)).join(", ") + "]";
+    shown = "(" + value.map((item) => __wm_show(item, seen, quoteStrings)).join(", ") + ")";
+  } else if (value.ctor === -6 || value.ctor === -5) {
+    const items = [];
+    const spine = new WeakSet();
+    let cursor = value;
+    while (cursor?.ctor === -6) {
+      if (spine.has(cursor)) { items.push("<cycle>"); break; }
+      spine.add(cursor);
+      items.push(__wm_show(cursor.a0, seen, quoteStrings));
+      cursor = cursor.a1;
+    }
+    shown = "[" + items.join(", ") + "]";
   } else if ("ctor" in value) {
     if (!("a0" in value)) {
       shown = value.name;
     } else {
       const payload = __wm_ctor_payload(value);
       shown = value.name + "(" + (__wm_is_tuple(payload) ? payload : [payload])
-        .map((part) => __wm_show(part, seen, quoteStrings, listSyntax)).join(", ") + ")";
+        .map((part) => __wm_show(part, seen, quoteStrings)).join(", ") + ")";
     }
   } else if (globalThis.Array.isArray(value)) {
-    shown = "[" + value.map((item) => __wm_show(item, seen, quoteStrings, listSyntax)).join(", ") + "]";
+    shown = "[" + value.map((item) => __wm_show(item, seen, quoteStrings)).join(", ") + "]";
   } else {
-    shown = "{ " + Object.keys(value).sort().map((key) => key + " = " + __wm_show(value[key], seen, quoteStrings, listSyntax)).join(", ") + " }";
+    shown = "{ " + Object.keys(value).sort().map((key) => key + " = " + __wm_show(value[key], seen, quoteStrings)).join(", ") + " }";
   }
   seen.delete(value);
   return shown;
 };
 const print = (value) => console.log(__wm_show(value));
-const __wm_repl_show = (value) => __wm_show(value, new WeakSet(), true, true);
+const __wm_repl_show = (value) => __wm_show(value, new WeakSet(), true);
 const __wm_text_of = (value) => {
   try {
     return __wm_show(value);

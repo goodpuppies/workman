@@ -1,4 +1,4 @@
-from "../../testman/test.wm" import *;
+from "testman/test.wm" import *;
 from "../src/surface/ast.wm" import * as Ast;
 from "../src/source/mark.wm" import * as Marks;
 from "../src/lexer/lexer.wm" import * as Lexer;

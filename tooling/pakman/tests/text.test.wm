@@ -1,4 +1,4 @@
-from "../../testman/test.wm" import *;
+from "testman/test.wm" import *;
 from "pakman/text.wm" import { compare, before, packageStoreName };
 from "pakman/number.wm" import { parseIntOr };
 from "../src/semver.wm" import { parse };

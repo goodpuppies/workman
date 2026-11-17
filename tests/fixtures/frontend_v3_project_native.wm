@@ -23,10 +23,12 @@ let passed = Lists.all([
   verify("f(g x)", "f(g(x));\n"),
   verify("let f=()=>{let x=1;x}", "let f = () => {\n  let x = 1;\n  x\n};\n"),
   verify("f(x,,y)", "f(x, ?, y);\n"),
+  verify("f([a)", "f([a]);\n"),
+  verify("let x=[a,\nlet y=1", "let x = [a,];\nlet y = 1;\n"),
   verify("let f=(x:Int)=>x;", "let f = (x:Int)=>x;\n"),
   verify("/*", "/*"),
 ], (value) => { value });
 let main = () => {
-  if (passed) { print("frontend-v3 native projector: 8 cases passed") }
+  if (passed) { print("frontend-v3 native projector: 10 cases passed") }
   else { Panic("frontend-v3 projector regression") }
 };

@@ -1,7 +1,8 @@
 # 0.8.0 release plan
 
-Status: 2026-11-16, in progress. Done: 1 (`viaErr`), 2 (collection names), 3 (missing counterparts), 4 (operator table), 5
-(SubsetML numbers), 6 (scope expansions: `local`, `op`, alias modules, sized numbers), 7 (private declarations). Step 8 is under
+Status: 2026-11-17, in progress. Done: 1 (`viaErr`), 2 (collection names), 3 (missing counterparts), 4 (operator table), 5
+(SubsetML numbers), 6 (scope expansions: `local`, `op`, alias modules, sized numbers), 7 (private declarations),
+9 (source-owned Option/Result definitions), 10 (consistent list display). Step 8 is under
 way: the [gap audit](subml-gap-audit.md) records what porting frontend-v2 to SML added. Nothing
 is tagged or published.
 
@@ -187,11 +188,29 @@ its native lifecycle/refusal/host tests pass. Postfix type annotations fix group
 arguments, with JS/native parity coverage. Bare Option/Result constructors now use the source
 Basis with `--basis`, and the private leak check permits imported types. The frontend-v3
 parser/projector/View closure builds with MLton and passes eight WM/native cases after scoping
-the generic helper's type parameter. See the gap audit's follow-up for details. Bootstrap Option
-removal and the compiler manifest refactor remain step 9.
+the generic helper's type parameter. See the gap audit's follow-up for details. The source-owned
+Option/Result work is recorded in step 9.
 The native graph still needs [bootstrap pervasive lowerings](issues/wm-native-output-still-uses-bootstrap-pervasives.md)
 to pass `check-portable`; the [WM test runner identity/exit-status failure](issues/wm-test-runner-reports-distinct-test-identities.md)
-also remains open.
+was resolved by using the public testman import consistently. The malformed-suite status test
+passes; the frontend-v3 WM suite now passes all 61 cases.
+
+Progress 2026-11-17: computed/cond-style patterns preserve guard order, effects and outer scope;
+implicit pipeline lambdas (including `==>`), capture-clause syntax, piped conditionals and record
+member pipes translate. Capture contracts remain WM's validation responsibility; capture lists
+are parsed and erased in SML. `sml-entry --basis DIR` defaults Panic to the supplied Basis process
+module, with explicit overrides retained. Native/WM pattern and pipe parity, translation tests,
+portable selfcheck, round trips, backend-name tests and native panic checks pass.
+
+The list-display and validation follow-up passes the collection/library regressions, generated
+parser checks and TypeScript check. Frontend-v3 passes 61 WM tests and ten WM/native parity
+cases. Pakman passes all 92 WM tests with a writable temporary cache and host access for its
+bubblewrap-isolated build fixtures; the restricted execution sandbox blocks their namespace
+socket setup before the callbacks run.
+
+Remaining step-8 features: inline record types, unnamed record updates, template strings, carrier
+groups and portable Monad/Carrier support. The restricted-profile bootstrap-pervasive lowering
+work also remains; these native tests use the supported target Basis environment.
 
 ## 9. Chore: `Option` and `Result` are Basis types, defined once
 
@@ -228,13 +247,27 @@ datatype descriptors now generate from source declarations via `generate-assets`
 entries retain identity, arity, source location and stable constructor ID allocation; source
 supplies parameter names, constructor names/payloads and runtime spellings. The adoption check
 uses this generated contract, including alpha-renamed parameters. Reproducibility and source-change
-tests cover generation. Removing the compatibility checker's bootstrap Option remains to be done;
-compatibility interfaces that mention host Option need to be handled as part of that removal.
-One wider regression check remains separately tracked: the pre-existing
+tests cover generation. The compatibility checker's hand-authored Option datatype table and
+reserved `optionName` definition are removed too: it elaborates an embedded copy of the shared
+source declaration at the reserved host identity. Host APIs (`Int.fromString`, `Option.map`,
+etc.) remain compatibility interfaces, with host Option distinct from an explicitly imported
+source datatype. `check-portable` still supplies neither. This preserves the existing SML host
+compatibility contract without defining the datatype twice. The follow-up passes portable
+selfcheck, 108 language fixtures, WM-entry and Basis tests, round trips, and the SML target
+compiler bootstrap. Profile tests also verify host/source nominal separation and host
+`Int.fromString`/`Option.map` interoperability.
+The pre-existing
 [Result.filter export identity assertion](issues/result-filter-export-identity-test-fails-at-js-boundary.md)
-compares distinct JS Result wrappers and also fails with the old manifest.
+was fixed by checking internal identity before export and public JS values separately. The two
+JSON boundary tests likewise pass after migrating their calls to the positional library ABI.
 
 ## 10. Chore: show lists as lists everywhere
+
+Done 2026-11-17. `print`, `Text.of`, interpolation and main-failure messages use bracketed list
+syntax at every depth. The rendering flag is removed; REPL string quoting stays intact, and user
+datatypes named Cons/Nil retain their constructor spelling. Long and cyclic foreign list spines
+are handled without recursive spine traversal. Updated output expectations pass collection and
+library tests, with focused print/Text/interpolation/error-message and REPL coverage.
 
 `__wm_show` (`src/core/emit_prelude.ts`) already renders a list as `[1, 2, 3]` behind a
 `listSyntax` flag, but only the REPL's `__wm_repl_show` passes it. `print`, `Text.of` and
