@@ -190,8 +190,8 @@ Basis with `--basis`, and the private leak check permits imported types. The fro
 parser/projector/View closure builds with MLton and passes eight WM/native cases after scoping
 the generic helper's type parameter. See the gap audit's follow-up for details. The source-owned
 Option/Result work is recorded in step 9.
-The native graph still needs [bootstrap pervasive lowerings](issues/wm-native-output-still-uses-bootstrap-pervasives.md)
-to pass `check-portable`; the [WM test runner identity/exit-status failure](issues/wm-test-runner-reports-distinct-test-identities.md)
+The native graph needed [bootstrap pervasive lowerings](issues/FIXED-wm-native-output-still-uses-bootstrap-pervasives.md)
+to pass `check-portable` (since fixed); the [WM test runner identity/exit-status failure](issues/wm-test-runner-reports-distinct-test-identities.md)
 was resolved by using the public testman import consistently. The malformed-suite status test
 passes; the frontend-v3 WM suite now passes all 61 cases.
 
@@ -227,7 +227,12 @@ requires all seven fields; a custom carrier stubs the ones it doesn't support, a
 functions no longer accept other record types with matching fields. Equality is no longer lifted
 over carriers: `Ok(1) == Ok(1)` is `true`, as in SML, and `Ok(2) == 2` is a type error
 (upgrade note for the release; `markdown/issues/lifted-equality-operator.md`). Step 8's
-features are complete. The restricted-profile bootstrap-pervasive lowering work remains; these native tests use the supported target Basis environment.
+features are complete.
+
+Translated WM now passes `check-portable`: the reader spells `!`, `%`, real equality, template
+text and `print` with SubsetML Basis functions rather than SML Basis Library names, imports their
+modules automatically, and `print` takes any arity and shows values as WM does. Reals go through
+a new host module, `SubsetRealHost`, for remainder and text; real equality is portable.
 
 ## 9. Chore: `Option` and `Result` are Basis types, defined once
 

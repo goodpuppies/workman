@@ -3039,14 +3039,21 @@ return toNative_1050({ ctor: -6, name: "Cons", a0: c_1053, a1: __wm_basis_Nil })
 }
 __wm_fail("Match", "pattern match failure in function");
 };
-const isPrefix_1059__wm_d2 = (value_1055, prefix_1056) => {
-return SubsetResult_42.andThen__wm_d2(fromNative_1006(value_1055), (__arg) => {
+const fromChar_1056 = (__arg) => {
 if (true) {
-const bytes_1057 = __arg;
-return SubsetResult_42.map__wm_d2(fromNative_1006(prefix_1056), (__arg) => {
+const c_1055 = __arg;
+return SubsetTextHost_45.fromCodes({ ctor: -6, name: "Cons", a0: SubsetTextHost_45.charCode(c_1055), a1: __wm_basis_Nil });
+}
+__wm_fail("Match", "pattern match failure in function");
+};
+const isPrefix_1061__wm_d2 = (value_1057, prefix_1058) => {
+return SubsetResult_42.andThen__wm_d2(fromNative_1006(value_1057), (__arg) => {
 if (true) {
-const wanted_1058 = __arg;
-return __wm_tuple_call_2(SubsetBytes_46.isPrefix, bytes_1057, wanted_1058);
+const bytes_1059 = __arg;
+return SubsetResult_42.map__wm_d2(fromNative_1006(prefix_1058), (__arg) => {
+if (true) {
+const wanted_1060 = __arg;
+return __wm_tuple_call_2(SubsetBytes_46.isPrefix, bytes_1059, wanted_1060);
 }
 __wm_fail("Match", "pattern match failure in function");
 });
@@ -3054,19 +3061,19 @@ __wm_fail("Match", "pattern match failure in function");
 __wm_fail("Match", "pattern match failure in function");
 });
 };
-const isPrefix_1059 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 2) return isPrefix_1059__wm_d2(__arg[0], __arg[1]);
+const isPrefix_1061 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 2) return isPrefix_1061__wm_d2(__arg[0], __arg[1]);
 __wm_fail("Match", "pattern match failure in function");
 };
-Object.defineProperty(isPrefix_1059, __wm_tuple_entry_2, { value: isPrefix_1059__wm_d2 });
-const isSuffix_1064__wm_d2 = (value_1060, suffix_1061) => {
-return SubsetResult_42.andThen__wm_d2(fromNative_1006(value_1060), (__arg) => {
+Object.defineProperty(isPrefix_1061, __wm_tuple_entry_2, { value: isPrefix_1061__wm_d2 });
+const isSuffix_1066__wm_d2 = (value_1062, suffix_1063) => {
+return SubsetResult_42.andThen__wm_d2(fromNative_1006(value_1062), (__arg) => {
 if (true) {
-const bytes_1062 = __arg;
-return SubsetResult_42.map__wm_d2(fromNative_1006(suffix_1061), (__arg) => {
+const bytes_1064 = __arg;
+return SubsetResult_42.map__wm_d2(fromNative_1006(suffix_1063), (__arg) => {
 if (true) {
-const wanted_1063 = __arg;
-return SubsetBytes_46.isSuffix__wm_d2(bytes_1062, wanted_1063);
+const wanted_1065 = __arg;
+return SubsetBytes_46.isSuffix__wm_d2(bytes_1064, wanted_1065);
 }
 __wm_fail("Match", "pattern match failure in function");
 });
@@ -3074,19 +3081,19 @@ __wm_fail("Match", "pattern match failure in function");
 __wm_fail("Match", "pattern match failure in function");
 });
 };
-const isSuffix_1064 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 2) return isSuffix_1064__wm_d2(__arg[0], __arg[1]);
+const isSuffix_1066 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 2) return isSuffix_1066__wm_d2(__arg[0], __arg[1]);
 __wm_fail("Match", "pattern match failure in function");
 };
-Object.defineProperty(isSuffix_1064, __wm_tuple_entry_2, { value: isSuffix_1064__wm_d2 });
-const isSubstring_1069__wm_d2 = (value_1065, needle_1066) => {
-return SubsetResult_42.andThen__wm_d2(fromNative_1006(value_1065), (__arg) => {
+Object.defineProperty(isSuffix_1066, __wm_tuple_entry_2, { value: isSuffix_1066__wm_d2 });
+const isSubstring_1071__wm_d2 = (value_1067, needle_1068) => {
+return SubsetResult_42.andThen__wm_d2(fromNative_1006(value_1067), (__arg) => {
 if (true) {
-const bytes_1067 = __arg;
-return SubsetResult_42.map__wm_d2(fromNative_1006(needle_1066), (__arg) => {
+const bytes_1069 = __arg;
+return SubsetResult_42.map__wm_d2(fromNative_1006(needle_1068), (__arg) => {
 if (true) {
-const wanted_1068 = __arg;
-return SubsetBytes_46.isSubstring__wm_d2(bytes_1067, wanted_1068);
+const wanted_1070 = __arg;
+return SubsetBytes_46.isSubstring__wm_d2(bytes_1069, wanted_1070);
 }
 __wm_fail("Match", "pattern match failure in function");
 });
@@ -3094,33 +3101,33 @@ __wm_fail("Match", "pattern match failure in function");
 __wm_fail("Match", "pattern match failure in function");
 });
 };
-const isSubstring_1069 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 2) return isSubstring_1069__wm_d2(__arg[0], __arg[1]);
+const isSubstring_1071 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 2) return isSubstring_1071__wm_d2(__arg[0], __arg[1]);
 __wm_fail("Match", "pattern match failure in function");
 };
-Object.defineProperty(isSubstring_1069, __wm_tuple_entry_2, { value: isSubstring_1069__wm_d2 });
-const fields_1073__wm_d2 = (value_1070, delimiter_1071) => {
-return SubsetResult_42.andThen__wm_d2(fromNative_1006(value_1070), (__arg) => {
+Object.defineProperty(isSubstring_1071, __wm_tuple_entry_2, { value: isSubstring_1071__wm_d2 });
+const fields_1075__wm_d2 = (value_1072, delimiter_1073) => {
+return SubsetResult_42.andThen__wm_d2(fromNative_1006(value_1072), (__arg) => {
 if (true) {
-const bytes_1072 = __arg;
-return SubsetList_43.traverse__wm_d2(SubsetBytes_46.fields__wm_d2(bytes_1072, delimiter_1071), toNative_1050);
+const bytes_1074 = __arg;
+return SubsetList_43.traverse__wm_d2(SubsetBytes_46.fields__wm_d2(bytes_1074, delimiter_1073), toNative_1050);
 }
 __wm_fail("Match", "pattern match failure in function");
 });
 };
-const fields_1073 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 2) return fields_1073__wm_d2(__arg[0], __arg[1]);
+const fields_1075 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 2) return fields_1075__wm_d2(__arg[0], __arg[1]);
 __wm_fail("Match", "pattern match failure in function");
 };
-Object.defineProperty(fields_1073, __wm_tuple_entry_2, { value: fields_1073__wm_d2 });
-const tokens_1078__wm_d2 = (value_1074, delimiter_1075) => {
-return SubsetResult_42.map__wm_d2(fields_1073__wm_d2(value_1074, delimiter_1075), (__arg) => {
+Object.defineProperty(fields_1075, __wm_tuple_entry_2, { value: fields_1075__wm_d2 });
+const tokens_1080__wm_d2 = (value_1076, delimiter_1077) => {
+return SubsetResult_42.map__wm_d2(fields_1075__wm_d2(value_1076, delimiter_1077), (__arg) => {
 if (true) {
-const pieces_1076 = __arg;
-return SubsetList_43.filter__wm_d2(pieces_1076, (__arg) => {
+const pieces_1078 = __arg;
+return SubsetList_43.filter__wm_d2(pieces_1078, (__arg) => {
 if (true) {
-const piece_1077 = __arg;
-return !__wm_eq(piece_1077, "");
+const piece_1079 = __arg;
+return !__wm_eq(piece_1079, "");
 }
 __wm_fail("Match", "pattern match failure in function");
 });
@@ -3128,44 +3135,44 @@ __wm_fail("Match", "pattern match failure in function");
 __wm_fail("Match", "pattern match failure in function");
 });
 };
-const tokens_1078 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 2) return tokens_1078__wm_d2(__arg[0], __arg[1]);
+const tokens_1080 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 2) return tokens_1080__wm_d2(__arg[0], __arg[1]);
 __wm_fail("Match", "pattern match failure in function");
 };
-Object.defineProperty(tokens_1078, __wm_tuple_entry_2, { value: tokens_1078__wm_d2 });
-const extract_1089__wm_d3 = (value_1079, start_1080, count_1081) => {
-return SubsetResult_42.andThen__wm_d2(SubsetResult_42.mapErr__wm_d2(fromNative_1006(value_1079), StringError_ctor_27), (__arg) => {
+Object.defineProperty(tokens_1080, __wm_tuple_entry_2, { value: tokens_1080__wm_d2 });
+const extract_1091__wm_d3 = (value_1081, start_1082, count_1083) => {
+return SubsetResult_42.andThen__wm_d2(SubsetResult_42.mapErr__wm_d2(fromNative_1006(value_1081), StringError_ctor_27), (__arg) => {
 if (true) {
-const bytes_1082 = __arg;
-return SubsetResult_42.andThen__wm_d2(SubsetResult_42.mapErr__wm_d2(SubsetList_43.drop__wm_d2(bytes_1082, start_1080), (__arg) => {
+const bytes_1084 = __arg;
+return SubsetResult_42.andThen__wm_d2(SubsetResult_42.mapErr__wm_d2(SubsetList_43.drop__wm_d2(bytes_1084, start_1082), (__arg) => {
 if (true) {
-const error_1083 = __arg;
+const error_1085 = __arg;
 return InvalidIndex_ctor_26;
 }
 __wm_fail("Match", "pattern match failure in function");
 }), (__arg) => {
 if (true) {
-const rest_1084 = __arg;
-const selected_1087 = ((__v) => {
+const rest_1086 = __arg;
+const selected_1089 = ((__v) => {
 if (__v?.ctor === -1) {
 
-return { ctor: -3, name: "Ok", a0: rest_1084 };
+return { ctor: -3, name: "Ok", a0: rest_1086 };
 } else if (__v?.ctor === -2) {
-const size_1085 = __v.a0;
-return SubsetResult_42.mapErr__wm_d2(SubsetList_43.take__wm_d2(rest_1084, size_1085), (__arg) => {
+const size_1087 = __v.a0;
+return SubsetResult_42.mapErr__wm_d2(SubsetList_43.take__wm_d2(rest_1086, size_1087), (__arg) => {
 if (true) {
-const error_1086 = __arg;
+const error_1088 = __arg;
 return InvalidIndex_ctor_26;
 }
 __wm_fail("Match", "pattern match failure in function");
 });
 }
 __wm_fail("Match", "non-exhaustive match");
-})(count_1081);
-return SubsetResult_42.andThen__wm_d2(selected_1087, (__arg) => {
+})(count_1083);
+return SubsetResult_42.andThen__wm_d2(selected_1089, (__arg) => {
 if (true) {
-const chosen_1088 = __arg;
-return SubsetResult_42.mapErr__wm_d2(toNative_1050(chosen_1088), StringError_ctor_27);
+const chosen_1090 = __arg;
+return SubsetResult_42.mapErr__wm_d2(toNative_1050(chosen_1090), StringError_ctor_27);
 }
 __wm_fail("Match", "pattern match failure in function");
 });
@@ -3176,47 +3183,47 @@ __wm_fail("Match", "pattern match failure in function");
 __wm_fail("Match", "pattern match failure in function");
 });
 };
-const extract_1089 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 3) return extract_1089__wm_d3(__arg[0], __arg[1], __arg[2]);
+const extract_1091 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 3) return extract_1091__wm_d3(__arg[0], __arg[1], __arg[2]);
 __wm_fail("Match", "pattern match failure in function");
 };
-Object.defineProperty(extract_1089, __wm_tuple_entry_3, { value: extract_1089__wm_d3 });
-const substring_1093__wm_d3 = (value_1090, start_1091, count_1092) => {
-return extract_1089__wm_d3(value_1090, start_1091, { ctor: -2, name: "Some", a0: count_1092 });
+Object.defineProperty(extract_1091, __wm_tuple_entry_3, { value: extract_1091__wm_d3 });
+const substring_1095__wm_d3 = (value_1092, start_1093, count_1094) => {
+return extract_1091__wm_d3(value_1092, start_1093, { ctor: -2, name: "Some", a0: count_1094 });
 };
-const substring_1093 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 3) return substring_1093__wm_d3(__arg[0], __arg[1], __arg[2]);
+const substring_1095 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 3) return substring_1095__wm_d3(__arg[0], __arg[1], __arg[2]);
 __wm_fail("Match", "pattern match failure in function");
 };
-Object.defineProperty(substring_1093, __wm_tuple_entry_3, { value: substring_1093__wm_d3 });
-const map_1097__wm_d2 = (value_1094, transform_1095) => {
-return SubsetResult_42.andThen__wm_d2(fromNative_1006(value_1094), (__arg) => {
+Object.defineProperty(substring_1095, __wm_tuple_entry_3, { value: substring_1095__wm_d3 });
+const map_1099__wm_d2 = (value_1096, transform_1097) => {
+return SubsetResult_42.andThen__wm_d2(fromNative_1006(value_1096), (__arg) => {
 if (true) {
-const bytes_1096 = __arg;
-return toNative_1050(SubsetList_43.map__wm_d2(bytes_1096, transform_1095));
+const bytes_1098 = __arg;
+return toNative_1050(SubsetList_43.map__wm_d2(bytes_1098, transform_1097));
 }
 __wm_fail("Match", "pattern match failure in function");
 });
 };
-const map_1097 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 2) return map_1097__wm_d2(__arg[0], __arg[1]);
+const map_1099 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 2) return map_1099__wm_d2(__arg[0], __arg[1]);
 __wm_fail("Match", "pattern match failure in function");
 };
-Object.defineProperty(map_1097, __wm_tuple_entry_2, { value: map_1097__wm_d2 });
-const translate_1103__wm_d2 = (value_1098, transform_1099) => {
-return SubsetResult_42.andThen__wm_d2(fromNative_1006(value_1098), (__arg) => {
+Object.defineProperty(map_1099, __wm_tuple_entry_2, { value: map_1099__wm_d2 });
+const translate_1105__wm_d2 = (value_1100, transform_1101) => {
+return SubsetResult_42.andThen__wm_d2(fromNative_1006(value_1100), (__arg) => {
 if (true) {
-const bytes_1100 = __arg;
-return SubsetResult_42.andThen__wm_d2(SubsetList_43.traverse__wm_d2(bytes_1100, (__arg) => {
+const bytes_1102 = __arg;
+return SubsetResult_42.andThen__wm_d2(SubsetList_43.traverse__wm_d2(bytes_1102, (__arg) => {
 if (true) {
-const c_1101 = __arg;
-return fromNative_1006(transform_1099(c_1101));
+const c_1103 = __arg;
+return fromNative_1006(transform_1101(c_1103));
 }
 __wm_fail("Match", "pattern match failure in function");
 }), (__arg) => {
 if (true) {
-const pieces_1102 = __arg;
-return toNative_1050(SubsetList_43.concat(pieces_1102));
+const pieces_1104 = __arg;
+return toNative_1050(SubsetList_43.concat(pieces_1104));
 }
 __wm_fail("Match", "pattern match failure in function");
 });
@@ -3224,12 +3231,12 @@ __wm_fail("Match", "pattern match failure in function");
 __wm_fail("Match", "pattern match failure in function");
 });
 };
-const translate_1103 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 2) return translate_1103__wm_d2(__arg[0], __arg[1]);
+const translate_1105 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 2) return translate_1105__wm_d2(__arg[0], __arg[1]);
 __wm_fail("Match", "pattern match failure in function");
 };
-Object.defineProperty(translate_1103, __wm_tuple_entry_2, { value: translate_1103__wm_d2 });
-return { "NonByte": NonByte_ctor_25, "InvalidIndex": InvalidIndex_ctor_26, "StringError": StringError_ctor_27, "fromNative": fromNative_1006, "compare": compare_1012, "compare__wm_d2": compare_1012__wm_d2, "concat": concat_1013, "concatWith": concatWith_1038, "concatWith__wm_d2": concatWith_1038__wm_d2, "toNative": toNative_1050, "size": size_1052, "str": str_1054, "isPrefix": isPrefix_1059, "isPrefix__wm_d2": isPrefix_1059__wm_d2, "isSuffix": isSuffix_1064, "isSuffix__wm_d2": isSuffix_1064__wm_d2, "isSubstring": isSubstring_1069, "isSubstring__wm_d2": isSubstring_1069__wm_d2, "fields": fields_1073, "fields__wm_d2": fields_1073__wm_d2, "tokens": tokens_1078, "tokens__wm_d2": tokens_1078__wm_d2, "extract": extract_1089, "extract__wm_d3": extract_1089__wm_d3, "substring": substring_1093, "substring__wm_d3": substring_1093__wm_d3, "map": map_1097, "map__wm_d2": map_1097__wm_d2, "translate": translate_1103, "translate__wm_d2": translate_1103__wm_d2 };
+Object.defineProperty(translate_1105, __wm_tuple_entry_2, { value: translate_1105__wm_d2 });
+return { "NonByte": NonByte_ctor_25, "InvalidIndex": InvalidIndex_ctor_26, "StringError": StringError_ctor_27, "fromNative": fromNative_1006, "compare": compare_1012, "compare__wm_d2": compare_1012__wm_d2, "concat": concat_1013, "concatWith": concatWith_1038, "concatWith__wm_d2": concatWith_1038__wm_d2, "toNative": toNative_1050, "size": size_1052, "str": str_1054, "fromChar": fromChar_1056, "isPrefix": isPrefix_1061, "isPrefix__wm_d2": isPrefix_1061__wm_d2, "isSuffix": isSuffix_1066, "isSuffix__wm_d2": isSuffix_1066__wm_d2, "isSubstring": isSubstring_1071, "isSubstring__wm_d2": isSubstring_1071__wm_d2, "fields": fields_1075, "fields__wm_d2": fields_1075__wm_d2, "tokens": tokens_1080, "tokens__wm_d2": tokens_1080__wm_d2, "extract": extract_1091, "extract__wm_d3": extract_1091__wm_d3, "substring": substring_1095, "substring__wm_d3": substring_1095__wm_d3, "map": map_1099, "map__wm_d2": map_1099__wm_d2, "translate": translate_1105, "translate__wm_d2": translate_1105__wm_d2 };
   },
   (value) => { __wm_lib_subml_basis_subset_string = value; },
 );
@@ -3245,50 +3252,50 @@ const SubsetList_51 = __wm_lib_subml_basis_subset_list;
 const InvalidInteger_ctor_28 = Object.freeze({ ctor: 28, name: "InvalidInteger" });
 const Overflow_ctor_29 = Object.freeze({ ctor: 29, name: "Overflow" });
 const StringError_ctor_30 = (__payload) => ({ ctor: 30, name: "StringError", a0: __payload });
-const digits_1120__wm_d2 = (bytes_1104, negative_1105) => {
-const last_1106 = (negative_1105 ? 8 : 7);
-const finish_1110__wm_d3 = (rest_1107, acc_1108, seen_1109) => {
-if (seen_1109) {
-return { ctor: -3, name: "Ok", a0: [(negative_1105 ? acc_1108 : __wm_tuple_call_2(__wm_i32_sub, 0, acc_1108)), rest_1107] };
+const digits_1122__wm_d2 = (bytes_1106, negative_1107) => {
+const last_1108 = (negative_1107 ? 8 : 7);
+const finish_1112__wm_d3 = (rest_1109, acc_1110, seen_1111) => {
+if (seen_1111) {
+return { ctor: -3, name: "Ok", a0: [(negative_1107 ? acc_1110 : __wm_tuple_call_2(__wm_i32_sub, 0, acc_1110)), rest_1109] };
 } else {
 return { ctor: -4, name: "Err", a0: InvalidInteger_ctor_28 };
 }
 };
-const finish_1110 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 3) return finish_1110__wm_d3(__arg[0], __arg[1], __arg[2]);
+const finish_1112 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 3) return finish_1112__wm_d3(__arg[0], __arg[1], __arg[2]);
 __wm_fail("Match", "pattern match failure in function");
 };
-Object.defineProperty(finish_1110, __wm_tuple_entry_3, { value: finish_1110__wm_d3 });
-const go_1111__wm_d3 = (rest_1112, acc_1113, seen_1114) => {
+Object.defineProperty(finish_1112, __wm_tuple_entry_3, { value: finish_1112__wm_d3 });
+const go_1113__wm_d3 = (rest_1114, acc_1115, seen_1116) => {
 __wm_tail_31: while (true) {
 {
-const __wm_tail_value_49 = rest_1112;
+const __wm_tail_value_49 = rest_1114;
 if (__wm_tail_value_49 === __wm_basis_Nil) {
 
-return finish_1110__wm_d3(rest_1112, acc_1113, seen_1114);
+return finish_1112__wm_d3(rest_1114, acc_1115, seen_1116);
 } else if (__wm_tail_value_49?.ctor === -6) {
-const c_1115 = __wm_tail_value_49.a0;
-const tail_1116 = __wm_tail_value_49.a1;
-if (SubsetChar_50.isDigit(c_1115)) {
+const c_1117 = __wm_tail_value_49.a0;
+const tail_1118 = __wm_tail_value_49.a1;
+if (SubsetChar_50.isDigit(c_1117)) {
 {
-const __wm_tail_value_50 = SubsetChar_50.toCode(c_1115);
+const __wm_tail_value_50 = SubsetChar_50.toCode(c_1117);
 if (__wm_tail_value_50?.ctor === -4) {
-const error_1117 = __wm_tail_value_50.a0;
+const error_1119 = __wm_tail_value_50.a0;
 return { ctor: -4, name: "Err", a0: InvalidInteger_ctor_28 };
 } else if (__wm_tail_value_50?.ctor === -3) {
-const code_1118 = __wm_tail_value_50.a0;
+const code_1120 = __wm_tail_value_50.a0;
 {
-const digit_1119 = __wm_tuple_call_2(__wm_i32_sub, code_1118, 48);
-if (((acc_1113 < __wm_i32_neg(214748364)) ? true : (__wm_eq(acc_1113, __wm_i32_neg(214748364)) ? (digit_1119 > last_1106) : false))) {
+const digit_1121 = __wm_tuple_call_2(__wm_i32_sub, code_1120, 48);
+if (((acc_1115 < __wm_i32_neg(214748364)) ? true : (__wm_eq(acc_1115, __wm_i32_neg(214748364)) ? (digit_1121 > last_1108) : false))) {
 return { ctor: -4, name: "Err", a0: Overflow_ctor_29 };
 } else {
 {
-const __wm_tail_arg_51_0 = tail_1116;
-const __wm_tail_arg_51_1 = __wm_tuple_call_2(__wm_i32_sub, __wm_tuple_call_2(__wm_i32_mul, acc_1113, 10), digit_1119);
+const __wm_tail_arg_51_0 = tail_1118;
+const __wm_tail_arg_51_1 = __wm_tuple_call_2(__wm_i32_sub, __wm_tuple_call_2(__wm_i32_mul, acc_1115, 10), digit_1121);
 const __wm_tail_arg_51_2 = true;
-rest_1112 = __wm_tail_arg_51_0;
-acc_1113 = __wm_tail_arg_51_1;
-seen_1114 = __wm_tail_arg_51_2;
+rest_1114 = __wm_tail_arg_51_0;
+acc_1115 = __wm_tail_arg_51_1;
+seen_1116 = __wm_tail_arg_51_2;
 continue __wm_tail_31;
 }
 }
@@ -3297,54 +3304,54 @@ continue __wm_tail_31;
 __wm_fail("Match", "non-exhaustive match");
 }
 } else {
-return finish_1110__wm_d3(rest_1112, acc_1113, seen_1114);
+return finish_1112__wm_d3(rest_1114, acc_1115, seen_1116);
 }
 }
 __wm_fail("Match", "non-exhaustive match");
 }
 }
 };
-const go_1111 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 3) return go_1111__wm_d3(__arg[0], __arg[1], __arg[2]);
+const go_1113 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 3) return go_1113__wm_d3(__arg[0], __arg[1], __arg[2]);
 __wm_fail("Match", "pattern match failure in function");
 };
-Object.defineProperty(go_1111, __wm_tuple_entry_3, { value: go_1111__wm_d3 });
-return go_1111__wm_d3(bytes_1104, 0, false);
+Object.defineProperty(go_1113, __wm_tuple_entry_3, { value: go_1113__wm_d3 });
+return go_1113__wm_d3(bytes_1106, 0, false);
 };
-const digits_1120 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 2) return digits_1120__wm_d2(__arg[0], __arg[1]);
+const digits_1122 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 2) return digits_1122__wm_d2(__arg[0], __arg[1]);
 __wm_fail("Match", "pattern match failure in function");
 };
-Object.defineProperty(digits_1120, __wm_tuple_entry_2, { value: digits_1120__wm_d2 });
-const signed_1126 = (__arg) => {
+Object.defineProperty(digits_1122, __wm_tuple_entry_2, { value: digits_1122__wm_d2 });
+const signed_1128 = (__arg) => {
 if (true) {
-const bytes_1121 = __arg;
-const __wm_return_value_18 = bytes_1121;
+const bytes_1123 = __arg;
+const __wm_return_value_18 = bytes_1123;
 if (__wm_return_value_18?.ctor === -6 && __wm_return_value_18.a0 === "~") {
-const rest_1122 = __wm_return_value_18.a1;
-return digits_1120__wm_d2(rest_1122, true);
-} else if (__wm_return_value_18?.ctor === -6 && __wm_return_value_18.a0 === "-") {
-const rest_1123 = __wm_return_value_18.a1;
-return digits_1120__wm_d2(rest_1123, true);
-} else if (__wm_return_value_18?.ctor === -6 && __wm_return_value_18.a0 === "+") {
 const rest_1124 = __wm_return_value_18.a1;
-return digits_1120__wm_d2(rest_1124, false);
+return digits_1122__wm_d2(rest_1124, true);
+} else if (__wm_return_value_18?.ctor === -6 && __wm_return_value_18.a0 === "-") {
+const rest_1125 = __wm_return_value_18.a1;
+return digits_1122__wm_d2(rest_1125, true);
+} else if (__wm_return_value_18?.ctor === -6 && __wm_return_value_18.a0 === "+") {
+const rest_1126 = __wm_return_value_18.a1;
+return digits_1122__wm_d2(rest_1126, false);
 } else if (true) {
-const rest_1125 = __wm_return_value_18;
-return digits_1120__wm_d2(rest_1125, false);
+const rest_1127 = __wm_return_value_18;
+return digits_1122__wm_d2(rest_1127, false);
 }
 __wm_fail("Match", "non-exhaustive match");
 }
 __wm_fail("Match", "pattern match failure in function");
 };
-const fromString_1131 = (__arg) => {
+const fromString_1133 = (__arg) => {
 if (true) {
-const value_1127 = __arg;
-return SubsetResult_49.andThen__wm_d2(SubsetResult_49.mapErr__wm_d2(SubsetString_48.fromNative(value_1127), StringError_ctor_30), (__arg) => {
+const value_1129 = __arg;
+return SubsetResult_49.andThen__wm_d2(SubsetResult_49.mapErr__wm_d2(SubsetString_48.fromNative(value_1129), StringError_ctor_30), (__arg) => {
 if (true) {
-const bytes_1128 = __arg;
-return SubsetResult_49.map__wm_d2(signed_1126(SubsetList_51.dropWhile__wm_d2(bytes_1128, SubsetChar_50.isSpace)), __wm_tuple_function_2((number_1129, rest_1130) => {
-return number_1129;
+const bytes_1130 = __arg;
+return SubsetResult_49.map__wm_d2(signed_1128(SubsetList_51.dropWhile__wm_d2(bytes_1130, SubsetChar_50.isSpace)), __wm_tuple_function_2((number_1131, rest_1132) => {
+return number_1131;
 }));
 }
 __wm_fail("Match", "pattern match failure in function");
@@ -3352,17 +3359,17 @@ __wm_fail("Match", "pattern match failure in function");
 }
 __wm_fail("Match", "pattern match failure in function");
 };
-const complete_1137 = (__arg) => {
+const complete_1139 = (__arg) => {
 if (true) {
-const result_1132 = __arg;
-return SubsetResult_49.andThen__wm_d2(result_1132, __wm_tuple_function_2((number_1133, rest_1134) => {
-const __wm_return_value_19 = rest_1134;
+const result_1134 = __arg;
+return SubsetResult_49.andThen__wm_d2(result_1134, __wm_tuple_function_2((number_1135, rest_1136) => {
+const __wm_return_value_19 = rest_1136;
 if (__wm_return_value_19 === __wm_basis_Nil) {
 
-return { ctor: -3, name: "Ok", a0: number_1133 };
+return { ctor: -3, name: "Ok", a0: number_1135 };
 } else if (__wm_return_value_19?.ctor === -6) {
-const c_1135 = __wm_return_value_19.a0;
-const tail_1136 = __wm_return_value_19.a1;
+const c_1137 = __wm_return_value_19.a0;
+const tail_1138 = __wm_return_value_19.a1;
 return { ctor: -4, name: "Err", a0: InvalidInteger_ctor_28 };
 }
 __wm_fail("Match", "non-exhaustive match");
@@ -3370,33 +3377,113 @@ __wm_fail("Match", "non-exhaustive match");
 }
 __wm_fail("Match", "pattern match failure in function");
 };
-const parseDecimal_1140 = (__arg) => {
+const parseDecimal_1142 = (__arg) => {
 if (true) {
-const value_1138 = __arg;
-return SubsetResult_49.andThen__wm_d2(SubsetResult_49.mapErr__wm_d2(SubsetString_48.fromNative(value_1138), StringError_ctor_30), (__arg) => {
+const value_1140 = __arg;
+return SubsetResult_49.andThen__wm_d2(SubsetResult_49.mapErr__wm_d2(SubsetString_48.fromNative(value_1140), StringError_ctor_30), (__arg) => {
 if (true) {
-const bytes_1139 = __arg;
-return complete_1137(signed_1126(bytes_1139));
+const bytes_1141 = __arg;
+return complete_1139(signed_1128(bytes_1141));
 }
 __wm_fail("Match", "pattern match failure in function");
 });
 }
 __wm_fail("Match", "pattern match failure in function");
 };
-const parseNatural_1143 = (__arg) => {
+const parseNatural_1145 = (__arg) => {
 if (true) {
-const value_1141 = __arg;
-return SubsetResult_49.andThen__wm_d2(SubsetResult_49.mapErr__wm_d2(SubsetString_48.fromNative(value_1141), StringError_ctor_30), (__arg) => {
+const value_1143 = __arg;
+return SubsetResult_49.andThen__wm_d2(SubsetResult_49.mapErr__wm_d2(SubsetString_48.fromNative(value_1143), StringError_ctor_30), (__arg) => {
 if (true) {
-const bytes_1142 = __arg;
-return complete_1137(digits_1120__wm_d2(bytes_1142, false));
+const bytes_1144 = __arg;
+return complete_1139(digits_1122__wm_d2(bytes_1144, false));
 }
 __wm_fail("Match", "pattern match failure in function");
 });
 }
 __wm_fail("Match", "pattern match failure in function");
 };
-return { "InvalidInteger": InvalidInteger_ctor_28, "Overflow": Overflow_ctor_29, "StringError": StringError_ctor_30, "digits": digits_1120, "digits__wm_d2": digits_1120__wm_d2, "signed": signed_1126, "fromString": fromString_1131, "complete": complete_1137, "parseDecimal": parseDecimal_1140, "parseNatural": parseNatural_1143 };
+const rem_1149__wm_d2 = (dividend_1146, divisor_1147) => {
+const m_1148 = __wm_tuple_call_2(Int32.mod, dividend_1146, divisor_1147);
+if ((!__wm_eq(m_1148, 0) ? !__wm_eq((dividend_1146 < 0), (divisor_1147 < 0)) : false)) {
+return __wm_tuple_call_2(__wm_i32_sub, m_1148, divisor_1147);
+} else {
+return m_1148;
+}
+};
+const rem_1149 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 2) return rem_1149__wm_d2(__arg[0], __arg[1]);
+__wm_fail("Match", "pattern match failure in function");
+};
+Object.defineProperty(rem_1149, __wm_tuple_entry_2, { value: rem_1149__wm_d2 });
+const toString_1162 = (__arg) => {
+if (true) {
+const value_1150 = __arg;
+const digit_1151__wm_d2 = (index_1152, entries_1153) => {
+__wm_tail_32: while (true) {
+{
+const __wm_tail_value_52 = entries_1153;
+if (__wm_tail_value_52 === __wm_basis_Nil) {
+
+return "";
+} else if (__wm_tail_value_52?.ctor === -6) {
+const first_1154 = __wm_tail_value_52.a0;
+const rest_1155 = __wm_tail_value_52.a1;
+if ((index_1152 <= 0)) {
+return first_1154;
+} else {
+{
+const __wm_tail_arg_53_0 = __wm_tuple_call_2(__wm_i32_sub, index_1152, 1);
+const __wm_tail_arg_53_1 = rest_1155;
+index_1152 = __wm_tail_arg_53_0;
+entries_1153 = __wm_tail_arg_53_1;
+continue __wm_tail_32;
+}
+}
+}
+__wm_fail("Match", "non-exhaustive match");
+}
+}
+};
+const digit_1151 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 2) return digit_1151__wm_d2(__arg[0], __arg[1]);
+__wm_fail("Match", "pattern match failure in function");
+};
+Object.defineProperty(digit_1151, __wm_tuple_entry_2, { value: digit_1151__wm_d2 });
+const go_1156__wm_d2 = (remaining_1157, acc_1158) => {
+__wm_tail_33: while (true) {
+{
+const residue_1159 = __wm_tuple_call_2(Int32.mod, remaining_1157, 10);
+const text_1160 = digit_1151__wm_d2((__wm_eq(residue_1159, 0) ? 0 : __wm_tuple_call_2(__wm_i32_sub, 10, residue_1159)), { ctor: -6, name: "Cons", a0: "0", a1: { ctor: -6, name: "Cons", a0: "1", a1: { ctor: -6, name: "Cons", a0: "2", a1: { ctor: -6, name: "Cons", a0: "3", a1: { ctor: -6, name: "Cons", a0: "4", a1: { ctor: -6, name: "Cons", a0: "5", a1: { ctor: -6, name: "Cons", a0: "6", a1: { ctor: -6, name: "Cons", a0: "7", a1: { ctor: -6, name: "Cons", a0: "8", a1: { ctor: -6, name: "Cons", a0: "9", a1: __wm_basis_Nil } } } } } } } } } });
+const next_1161 = (__wm_eq(residue_1159, 0) ? __wm_tuple_call_2(Int32.div, remaining_1157, 10) : __wm_tuple_call_2(__wm_i32_add, __wm_tuple_call_2(Int32.div, remaining_1157, 10), 1));
+if (__wm_eq(next_1161, 0)) {
+return { ctor: -6, name: "Cons", a0: text_1160, a1: acc_1158 };
+} else {
+{
+const __wm_tail_arg_54_0 = next_1161;
+const __wm_tail_arg_54_1 = { ctor: -6, name: "Cons", a0: text_1160, a1: acc_1158 };
+remaining_1157 = __wm_tail_arg_54_0;
+acc_1158 = __wm_tail_arg_54_1;
+continue __wm_tail_33;
+}
+}
+}
+}
+};
+const go_1156 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 2) return go_1156__wm_d2(__arg[0], __arg[1]);
+__wm_fail("Match", "pattern match failure in function");
+};
+Object.defineProperty(go_1156, __wm_tuple_entry_2, { value: go_1156__wm_d2 });
+if ((value_1150 < 0)) {
+return SubsetString_48.concat({ ctor: -6, name: "Cons", a0: "-", a1: go_1156__wm_d2(value_1150, __wm_basis_Nil) });
+} else {
+return SubsetString_48.concat(go_1156__wm_d2(__wm_i32_neg(value_1150), __wm_basis_Nil));
+}
+}
+__wm_fail("Match", "pattern match failure in function");
+};
+return { "InvalidInteger": InvalidInteger_ctor_28, "Overflow": Overflow_ctor_29, "StringError": StringError_ctor_30, "digits": digits_1122, "digits__wm_d2": digits_1122__wm_d2, "signed": signed_1128, "fromString": fromString_1133, "complete": complete_1139, "parseDecimal": parseDecimal_1142, "parseNatural": parseNatural_1145, "rem": rem_1149, "rem__wm_d2": rem_1149__wm_d2, "toString": toString_1162 };
   },
   (value) => { __wm_lib_subml_basis_subset_int32 = value; },
 );
@@ -3408,14 +3495,17 @@ __wm_define_module(
 const InvalidInteger_ctor_28 = __wm_lib_subml_basis_subset_int32["InvalidInteger"];
 const Overflow_ctor_29 = __wm_lib_subml_basis_subset_int32["Overflow"];
 const StringError_ctor_30 = __wm_lib_subml_basis_subset_int32["StringError"];
-const digits_1120 = __wm_lib_subml_basis_subset_int32["digits"];
-const digits_1120__wm_d2 = __wm_lib_subml_basis_subset_int32["digits__wm_d2"];
-const signed_1126 = __wm_lib_subml_basis_subset_int32["signed"];
-const fromString_1131 = __wm_lib_subml_basis_subset_int32["fromString"];
-const complete_1137 = __wm_lib_subml_basis_subset_int32["complete"];
-const parseDecimal_1140 = __wm_lib_subml_basis_subset_int32["parseDecimal"];
-const parseNatural_1143 = __wm_lib_subml_basis_subset_int32["parseNatural"];
-return { "div": __wm_basis_Int32.div, "mod": __wm_basis_Int32.mod, "checkedAdd": __wm_basis_Int32.checkedAdd, "checkedSub": __wm_basis_Int32.checkedSub, "checkedMul": __wm_basis_Int32.checkedMul, "toReal64": __wm_basis_Int32.toReal64, "fromReal64": __wm_basis_Int32.fromReal64, "toString": __wm_basis_Int32.toString, "minimum": __wm_basis_Int32.minimum, "maximum": __wm_basis_Int32.maximum, "InvalidInteger": InvalidInteger_ctor_28, "Overflow": Overflow_ctor_29, "StringError": StringError_ctor_30, "digits": digits_1120, "digits__wm_d2": digits_1120__wm_d2, "signed": signed_1126, "fromString": fromString_1131, "complete": complete_1137, "parseDecimal": parseDecimal_1140, "parseNatural": parseNatural_1143 };
+const digits_1122 = __wm_lib_subml_basis_subset_int32["digits"];
+const digits_1122__wm_d2 = __wm_lib_subml_basis_subset_int32["digits__wm_d2"];
+const signed_1128 = __wm_lib_subml_basis_subset_int32["signed"];
+const fromString_1133 = __wm_lib_subml_basis_subset_int32["fromString"];
+const complete_1139 = __wm_lib_subml_basis_subset_int32["complete"];
+const parseDecimal_1142 = __wm_lib_subml_basis_subset_int32["parseDecimal"];
+const parseNatural_1145 = __wm_lib_subml_basis_subset_int32["parseNatural"];
+const rem_1149 = __wm_lib_subml_basis_subset_int32["rem"];
+const rem_1149__wm_d2 = __wm_lib_subml_basis_subset_int32["rem__wm_d2"];
+const toString_1162 = __wm_lib_subml_basis_subset_int32["toString"];
+return { "div": __wm_basis_Int32.div, "mod": __wm_basis_Int32.mod, "checkedAdd": __wm_basis_Int32.checkedAdd, "checkedSub": __wm_basis_Int32.checkedSub, "checkedMul": __wm_basis_Int32.checkedMul, "toReal64": __wm_basis_Int32.toReal64, "fromReal64": __wm_basis_Int32.fromReal64, "minimum": __wm_basis_Int32.minimum, "maximum": __wm_basis_Int32.maximum, "InvalidInteger": InvalidInteger_ctor_28, "Overflow": Overflow_ctor_29, "StringError": StringError_ctor_30, "digits": digits_1122, "digits__wm_d2": digits_1122__wm_d2, "signed": signed_1128, "fromString": fromString_1133, "complete": complete_1139, "parseDecimal": parseDecimal_1142, "parseNatural": parseNatural_1145, "rem": rem_1149, "rem__wm_d2": rem_1149__wm_d2, "toString": toString_1162 };
   },
   (value) => { __wm_std_Int32 = value; },
 );
@@ -3439,36 +3529,36 @@ const OutOfRange_ctor_49 = Object.freeze({ ctor: 49, name: "OutOfRange" });
 const OddLength_ctor_50 = Object.freeze({ ctor: 50, name: "OddLength" });
 const UnpairedSurrogate_ctor_51 = Object.freeze({ ctor: 51, name: "UnpairedSurrogate" });
 const Error_ctor_52 = (__payload) => ({ ctor: 52, name: "Error", a0: __payload[0], a1: __payload[1] });
-const split_1176__wm_d2 = (value_1174, base_1175) => {
-return [__wm_tuple_call_2(Int32.div, value_1174, base_1175), __wm_tuple_call_2(Int32.mod, value_1174, base_1175)];
+const split_1194__wm_d2 = (value_1192, base_1193) => {
+return [__wm_tuple_call_2(Int32.div, value_1192, base_1193), __wm_tuple_call_2(Int32.mod, value_1192, base_1193)];
 };
-const split_1176 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 2) return split_1176__wm_d2(__arg[0], __arg[1]);
+const split_1194 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 2) return split_1194__wm_d2(__arg[0], __arg[1]);
 __wm_fail("Match", "pattern match failure in function");
 };
-Object.defineProperty(split_1176, __wm_tuple_entry_2, { value: split_1176__wm_d2 });
-const isScalar_1180 = (__arg) => {
+Object.defineProperty(split_1194, __wm_tuple_entry_2, { value: split_1194__wm_d2 });
+const isScalar_1198 = (__arg) => {
 if (true) {
-const value_1177 = __arg;
-if ((((value_1177 >= 0) ? (value_1177 <= 1114111) : false) ? SubsetBool_52.not(((value_1177 >= 55296) ? (value_1177 <= 57343) : false)) : false)) {
-const __wm_bind_2 = split_1176__wm_d2(value_1177, 1);
+const value_1195 = __arg;
+if ((((value_1195 >= 0) ? (value_1195 <= 1114111) : false) ? SubsetBool_52.not(((value_1195 >= 55296) ? (value_1195 <= 57343) : false)) : false)) {
+const __wm_bind_2 = split_1194__wm_d2(value_1195, 1);
 if (!(__wm_is_tuple(__wm_bind_2) && __wm_bind_2.length === 2)) __wm_fail("Bind", "pattern match failure in let binding");
-const whole_1178 = __wm_bind_2[0];
-const residue_1179 = __wm_bind_2[1];
-return (residue_1179 <= 0);
+const whole_1196 = __wm_bind_2[0];
+const residue_1197 = __wm_bind_2[1];
+return (residue_1197 <= 0);
 } else {
 return false;
 }
 }
 __wm_fail("Match", "pattern match failure in function");
 };
-const scalarError_1182 = (__arg) => {
+const scalarError_1200 = (__arg) => {
 if (true) {
-const value_1181 = __arg;
-if (((value_1181 >= 55296) ? (value_1181 <= 57343) : false)) {
+const value_1199 = __arg;
+if (((value_1199 >= 55296) ? (value_1199 <= 57343) : false)) {
 return Surrogate_ctor_48;
 } else {
-if ((value_1181 > 1114111)) {
+if ((value_1199 > 1114111)) {
 return OutOfRange_ctor_49;
 } else {
 return InvalidScalar_ctor_42;
@@ -3477,21 +3567,21 @@ return InvalidScalar_ctor_42;
 }
 __wm_fail("Match", "pattern match failure in function");
 };
-const encodeCodes_1186__wm_d2 = (codes_1183, index_1184) => {
-return SubsetResult_53.mapErr__wm_d2(SubsetList_54.traverse__wm_d2(codes_1183, SubsetChar_55.fromCode), (__arg) => {
+const encodeCodes_1204__wm_d2 = (codes_1201, index_1202) => {
+return SubsetResult_53.mapErr__wm_d2(SubsetList_54.traverse__wm_d2(codes_1201, SubsetChar_55.fromCode), (__arg) => {
 if (true) {
-const error_1185 = __arg;
-return { ctor: 52, name: "Error", a0: InvalidByte_ctor_43, a1: index_1184 };
+const error_1203 = __arg;
+return { ctor: 52, name: "Error", a0: InvalidByte_ctor_43, a1: index_1202 };
 }
 __wm_fail("Match", "pattern match failure in function");
 });
 };
-const encodeCodes_1186 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 2) return encodeCodes_1186__wm_d2(__arg[0], __arg[1]);
+const encodeCodes_1204 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 2) return encodeCodes_1204__wm_d2(__arg[0], __arg[1]);
 __wm_fail("Match", "pattern match failure in function");
 };
-Object.defineProperty(encodeCodes_1186, __wm_tuple_entry_2, { value: encodeCodes_1186__wm_d2 });
-return { "InvalidScalar": InvalidScalar_ctor_42, "InvalidByte": InvalidByte_ctor_43, "InvalidLeadingByte": InvalidLeadingByte_ctor_44, "InvalidContinuation": InvalidContinuation_ctor_45, "Truncated": Truncated_ctor_46, "Overlong": Overlong_ctor_47, "Surrogate": Surrogate_ctor_48, "OutOfRange": OutOfRange_ctor_49, "OddLength": OddLength_ctor_50, "UnpairedSurrogate": UnpairedSurrogate_ctor_51, "Error": Error_ctor_52, "split": split_1176, "split__wm_d2": split_1176__wm_d2, "isScalar": isScalar_1180, "scalarError": scalarError_1182, "encodeCodes": encodeCodes_1186, "encodeCodes__wm_d2": encodeCodes_1186__wm_d2 };
+Object.defineProperty(encodeCodes_1204, __wm_tuple_entry_2, { value: encodeCodes_1204__wm_d2 });
+return { "InvalidScalar": InvalidScalar_ctor_42, "InvalidByte": InvalidByte_ctor_43, "InvalidLeadingByte": InvalidLeadingByte_ctor_44, "InvalidContinuation": InvalidContinuation_ctor_45, "Truncated": Truncated_ctor_46, "Overlong": Overlong_ctor_47, "Surrogate": Surrogate_ctor_48, "OutOfRange": OutOfRange_ctor_49, "OddLength": OddLength_ctor_50, "UnpairedSurrogate": UnpairedSurrogate_ctor_51, "Error": Error_ctor_52, "split": split_1194, "split__wm_d2": split_1194__wm_d2, "isScalar": isScalar_1198, "scalarError": scalarError_1200, "encodeCodes": encodeCodes_1204, "encodeCodes__wm_d2": encodeCodes_1204__wm_d2 };
   },
   (value) => { __wm_std_Unicode = value; },
 );
@@ -3504,211 +3594,211 @@ const SubsetUnicode_56 = __wm_std_Unicode;
 const SubsetResult_57 = __wm_lib_subml_basis_subset_result;
 const SubsetList_58 = __wm_lib_subml_basis_subset_list;
 const SubsetChar_59 = __wm_std_Char;
-const encodeOne_1196__wm_d2 = (code_1187, index_1188) => {
-if (SubsetUnicode_56.isScalar(code_1187)) {
-const __wm_bind_3 = SubsetUnicode_56.split__wm_d2(code_1187, 64);
+const encodeOne_1214__wm_d2 = (code_1205, index_1206) => {
+if (SubsetUnicode_56.isScalar(code_1205)) {
+const __wm_bind_3 = SubsetUnicode_56.split__wm_d2(code_1205, 64);
 if (!(__wm_is_tuple(__wm_bind_3) && __wm_bind_3.length === 2)) __wm_fail("Bind", "pattern match failure in let binding");
-const a_1189 = __wm_bind_3[0];
-const b_1190 = __wm_bind_3[1];
-const __wm_bind_4 = SubsetUnicode_56.split__wm_d2(a_1189, 64);
+const a_1207 = __wm_bind_3[0];
+const b_1208 = __wm_bind_3[1];
+const __wm_bind_4 = SubsetUnicode_56.split__wm_d2(a_1207, 64);
 if (!(__wm_is_tuple(__wm_bind_4) && __wm_bind_4.length === 2)) __wm_fail("Bind", "pattern match failure in let binding");
-const c_1191 = __wm_bind_4[0];
-const d_1192 = __wm_bind_4[1];
-const __wm_bind_5 = SubsetUnicode_56.split__wm_d2(c_1191, 64);
+const c_1209 = __wm_bind_4[0];
+const d_1210 = __wm_bind_4[1];
+const __wm_bind_5 = SubsetUnicode_56.split__wm_d2(c_1209, 64);
 if (!(__wm_is_tuple(__wm_bind_5) && __wm_bind_5.length === 2)) __wm_fail("Bind", "pattern match failure in let binding");
-const e_1193 = __wm_bind_5[0];
-const f_1194 = __wm_bind_5[1];
-const codes_1195 = ((code_1187 < 128) ? { ctor: -6, name: "Cons", a0: code_1187, a1: __wm_basis_Nil } : ((code_1187 < 2048) ? { ctor: -6, name: "Cons", a0: __wm_tuple_call_2(__wm_i32_add, 192, a_1189), a1: { ctor: -6, name: "Cons", a0: __wm_tuple_call_2(__wm_i32_add, 128, b_1190), a1: __wm_basis_Nil } } : ((code_1187 < 65536) ? { ctor: -6, name: "Cons", a0: __wm_tuple_call_2(__wm_i32_add, 224, c_1191), a1: { ctor: -6, name: "Cons", a0: __wm_tuple_call_2(__wm_i32_add, 128, d_1192), a1: { ctor: -6, name: "Cons", a0: __wm_tuple_call_2(__wm_i32_add, 128, b_1190), a1: __wm_basis_Nil } } } : { ctor: -6, name: "Cons", a0: __wm_tuple_call_2(__wm_i32_add, 240, e_1193), a1: { ctor: -6, name: "Cons", a0: __wm_tuple_call_2(__wm_i32_add, 128, f_1194), a1: { ctor: -6, name: "Cons", a0: __wm_tuple_call_2(__wm_i32_add, 128, d_1192), a1: { ctor: -6, name: "Cons", a0: __wm_tuple_call_2(__wm_i32_add, 128, b_1190), a1: __wm_basis_Nil } } } })));
-return SubsetUnicode_56.encodeCodes__wm_d2(codes_1195, index_1188);
+const e_1211 = __wm_bind_5[0];
+const f_1212 = __wm_bind_5[1];
+const codes_1213 = ((code_1205 < 128) ? { ctor: -6, name: "Cons", a0: code_1205, a1: __wm_basis_Nil } : ((code_1205 < 2048) ? { ctor: -6, name: "Cons", a0: __wm_tuple_call_2(__wm_i32_add, 192, a_1207), a1: { ctor: -6, name: "Cons", a0: __wm_tuple_call_2(__wm_i32_add, 128, b_1208), a1: __wm_basis_Nil } } : ((code_1205 < 65536) ? { ctor: -6, name: "Cons", a0: __wm_tuple_call_2(__wm_i32_add, 224, c_1209), a1: { ctor: -6, name: "Cons", a0: __wm_tuple_call_2(__wm_i32_add, 128, d_1210), a1: { ctor: -6, name: "Cons", a0: __wm_tuple_call_2(__wm_i32_add, 128, b_1208), a1: __wm_basis_Nil } } } : { ctor: -6, name: "Cons", a0: __wm_tuple_call_2(__wm_i32_add, 240, e_1211), a1: { ctor: -6, name: "Cons", a0: __wm_tuple_call_2(__wm_i32_add, 128, f_1212), a1: { ctor: -6, name: "Cons", a0: __wm_tuple_call_2(__wm_i32_add, 128, d_1210), a1: { ctor: -6, name: "Cons", a0: __wm_tuple_call_2(__wm_i32_add, 128, b_1208), a1: __wm_basis_Nil } } } })));
+return SubsetUnicode_56.encodeCodes__wm_d2(codes_1213, index_1206);
 } else {
-return { ctor: -4, name: "Err", a0: { ctor: 52, name: "Error", a0: SubsetUnicode_56.scalarError(code_1187), a1: index_1188 } };
+return { ctor: -4, name: "Err", a0: { ctor: 52, name: "Error", a0: SubsetUnicode_56.scalarError(code_1205), a1: index_1206 } };
 }
 };
-const encodeOne_1196 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 2) return encodeOne_1196__wm_d2(__arg[0], __arg[1]);
+const encodeOne_1214 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 2) return encodeOne_1214__wm_d2(__arg[0], __arg[1]);
 __wm_fail("Match", "pattern match failure in function");
 };
-Object.defineProperty(encodeOne_1196, __wm_tuple_entry_2, { value: encodeOne_1196__wm_d2 });
-const encode_1208 = (__arg) => {
+Object.defineProperty(encodeOne_1214, __wm_tuple_entry_2, { value: encodeOne_1214__wm_d2 });
+const encode_1226 = (__arg) => {
 if (true) {
-const scalars_1197 = __arg;
-let go_1198 = (__arg) => {
-__wm_tail_32: while (true) {
-if (true) {
-const $wm_match_0_1199 = __arg;
-{
-const __wm_tail_value_52 = $wm_match_0_1199;
-if (__wm_is_tuple(__wm_tail_value_52) && __wm_tail_value_52.length === 3 && __wm_tail_value_52[0] === __wm_basis_Nil) {
-const index_1200 = __wm_tail_value_52[1];
-const acc_1201 = __wm_tail_value_52[2];
-return { ctor: -3, name: "Ok", a0: SubsetList_58.reverse(acc_1201) };
-} else if (__wm_is_tuple(__wm_tail_value_52) && __wm_tail_value_52.length === 3 && __wm_tail_value_52[0]?.ctor === -6) {
-const code_1202 = __wm_tail_value_52[0].a0;
-const rest_1203 = __wm_tail_value_52[0].a1;
-const index_1204 = __wm_tail_value_52[1];
-const acc_1205 = __wm_tail_value_52[2];
-{
-const __wm_tail_value_53 = encodeOne_1196__wm_d2(code_1202, index_1204);
-if (__wm_tail_value_53?.ctor === -4) {
-const error_1206 = __wm_tail_value_53.a0;
-return { ctor: -4, name: "Err", a0: error_1206 };
-} else if (__wm_tail_value_53?.ctor === -3) {
-const bytes_1207 = __wm_tail_value_53.a0;
-__arg = [rest_1203, __wm_tuple_call_2(__wm_i32_add, index_1204, 1), SubsetList_58.reverseAppend__wm_d2(bytes_1207, acc_1205)];
-continue __wm_tail_32;
-}
-__wm_fail("Match", "non-exhaustive match");
-}
-}
-__wm_fail("Match", "non-exhaustive match");
-}
-}
-__wm_fail("Match", "pattern match failure in function");
-}
-};
-return __wm_tuple_call_3(go_1198, scalars_1197, 0, __wm_basis_Nil);
-}
-__wm_fail("Match", "pattern match failure in function");
-};
-const decodeOne_1228__wm_d2 = (bytes_1209, offset_1210) => {
-const __wm_return_value_20 = bytes_1209;
-if (__wm_return_value_20 === __wm_basis_Nil) {
-
-return { ctor: -4, name: "Err", a0: { ctor: 52, name: "Error", a0: SubsetUnicode_56.Truncated, a1: offset_1210 } };
-} else if (__wm_return_value_20?.ctor === -6) {
-const lead_1211 = __wm_return_value_20.a0;
-const rest_1212 = __wm_return_value_20.a1;
-const __wm_return_value_21 = SubsetChar_59.toCode(lead_1211);
-if (__wm_return_value_21?.ctor === -4) {
-const error_1213 = __wm_return_value_21.a0;
-return { ctor: -4, name: "Err", a0: { ctor: 52, name: "Error", a0: SubsetUnicode_56.InvalidByte, a1: offset_1210 } };
-} else if (__wm_return_value_21?.ctor === -3) {
-const first_1214 = __wm_return_value_21.a0;
-const continuation_1227__wm_d3 = (count_1215, initial_1216, minimum_1217) => {
-const go_1218__wm_d4 = (remaining_1219, input_1220, code_1221, consumed_1222) => {
-__wm_tail_33: while (true) {
-if ((remaining_1219 <= 0)) {
-if ((code_1221 < minimum_1217)) {
-return { ctor: -4, name: "Err", a0: { ctor: 52, name: "Error", a0: SubsetUnicode_56.Overlong, a1: offset_1210 } };
-} else {
-if (SubsetUnicode_56.isScalar(code_1221)) {
-return { ctor: -3, name: "Ok", a0: [code_1221, input_1220, consumed_1222] };
-} else {
-return { ctor: -4, name: "Err", a0: { ctor: 52, name: "Error", a0: SubsetUnicode_56.scalarError(code_1221), a1: offset_1210 } };
-}
-}
-} else {
-{
-const __wm_tail_value_54 = input_1220;
-if (__wm_tail_value_54 === __wm_basis_Nil) {
-
-return { ctor: -4, name: "Err", a0: { ctor: 52, name: "Error", a0: SubsetUnicode_56.Truncated, a1: __wm_tuple_call_2(__wm_i32_add, offset_1210, consumed_1222) } };
-} else if (__wm_tail_value_54?.ctor === -6) {
-const c_1223 = __wm_tail_value_54.a0;
-const tail_1224 = __wm_tail_value_54.a1;
-{
-const __wm_tail_value_55 = SubsetChar_59.toCode(c_1223);
-if (__wm_tail_value_55?.ctor === -4) {
-const error_1225 = __wm_tail_value_55.a0;
-return { ctor: -4, name: "Err", a0: { ctor: 52, name: "Error", a0: SubsetUnicode_56.InvalidByte, a1: __wm_tuple_call_2(__wm_i32_add, offset_1210, consumed_1222) } };
-} else if (__wm_tail_value_55?.ctor === -3) {
-const value_1226 = __wm_tail_value_55.a0;
-if (((value_1226 >= 128) ? (value_1226 <= 191) : false)) {
-{
-const __wm_tail_arg_56_0 = __wm_tuple_call_2(__wm_i32_sub, remaining_1219, 1);
-const __wm_tail_arg_56_1 = tail_1224;
-const __wm_tail_arg_56_2 = __wm_tuple_call_2(__wm_i32_sub, __wm_tuple_call_2(__wm_i32_add, __wm_tuple_call_2(__wm_i32_mul, code_1221, 64), value_1226), 128);
-const __wm_tail_arg_56_3 = __wm_tuple_call_2(__wm_i32_add, consumed_1222, 1);
-remaining_1219 = __wm_tail_arg_56_0;
-input_1220 = __wm_tail_arg_56_1;
-code_1221 = __wm_tail_arg_56_2;
-consumed_1222 = __wm_tail_arg_56_3;
-continue __wm_tail_33;
-}
-} else {
-return { ctor: -4, name: "Err", a0: { ctor: 52, name: "Error", a0: SubsetUnicode_56.InvalidContinuation, a1: __wm_tuple_call_2(__wm_i32_add, offset_1210, consumed_1222) } };
-}
-}
-__wm_fail("Match", "non-exhaustive match");
-}
-}
-__wm_fail("Match", "non-exhaustive match");
-}
-}
-}
-};
-const go_1218 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 4) return go_1218__wm_d4(__arg[0], __arg[1], __arg[2], __arg[3]);
-__wm_fail("Match", "pattern match failure in function");
-};
-Object.defineProperty(go_1218, __wm_tuple_entry_4, { value: go_1218__wm_d4 });
-return go_1218__wm_d4(count_1215, rest_1212, initial_1216, 1);
-};
-const continuation_1227 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 3) return continuation_1227__wm_d3(__arg[0], __arg[1], __arg[2]);
-__wm_fail("Match", "pattern match failure in function");
-};
-Object.defineProperty(continuation_1227, __wm_tuple_entry_3, { value: continuation_1227__wm_d3 });
-if ((first_1214 < 128)) {
-return { ctor: -3, name: "Ok", a0: [first_1214, rest_1212, 1] };
-} else {
-if (((first_1214 >= 194) ? (first_1214 <= 223) : false)) {
-return continuation_1227__wm_d3(1, __wm_tuple_call_2(__wm_i32_sub, first_1214, 192), 128);
-} else {
-if (((first_1214 >= 224) ? (first_1214 <= 239) : false)) {
-return continuation_1227__wm_d3(2, __wm_tuple_call_2(__wm_i32_sub, first_1214, 224), 2048);
-} else {
-if (((first_1214 >= 240) ? (first_1214 <= 244) : false)) {
-return continuation_1227__wm_d3(3, __wm_tuple_call_2(__wm_i32_sub, first_1214, 240), 65536);
-} else {
-return { ctor: -4, name: "Err", a0: { ctor: 52, name: "Error", a0: SubsetUnicode_56.InvalidLeadingByte, a1: offset_1210 } };
-}
-}
-}
-}
-}
-__wm_fail("Match", "non-exhaustive match");
-}
-__wm_fail("Match", "non-exhaustive match");
-};
-const decodeOne_1228 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 2) return decodeOne_1228__wm_d2(__arg[0], __arg[1]);
-__wm_fail("Match", "pattern match failure in function");
-};
-Object.defineProperty(decodeOne_1228, __wm_tuple_entry_2, { value: decodeOne_1228__wm_d2 });
-const decode_1242 = (__arg) => {
-if (true) {
-const bytes_1229 = __arg;
-let go_1230 = (__arg) => {
+const scalars_1215 = __arg;
+let go_1216 = (__arg) => {
 __wm_tail_34: while (true) {
 if (true) {
-const $wm_match_1_1231 = __arg;
+const $wm_match_0_1217 = __arg;
 {
-const __wm_tail_value_57 = $wm_match_1_1231;
-if (__wm_is_tuple(__wm_tail_value_57) && __wm_tail_value_57.length === 3 && __wm_tail_value_57[0] === __wm_basis_Nil) {
-const offset_1232 = __wm_tail_value_57[1];
-const acc_1233 = __wm_tail_value_57[2];
-return { ctor: -3, name: "Ok", a0: SubsetList_58.reverse(acc_1233) };
-} else if (__wm_is_tuple(__wm_tail_value_57) && __wm_tail_value_57.length === 3) {
-const input_1234 = __wm_tail_value_57[0];
-const offset_1235 = __wm_tail_value_57[1];
-const acc_1236 = __wm_tail_value_57[2];
+const __wm_tail_value_55 = $wm_match_0_1217;
+if (__wm_is_tuple(__wm_tail_value_55) && __wm_tail_value_55.length === 3 && __wm_tail_value_55[0] === __wm_basis_Nil) {
+const index_1218 = __wm_tail_value_55[1];
+const acc_1219 = __wm_tail_value_55[2];
+return { ctor: -3, name: "Ok", a0: SubsetList_58.reverse(acc_1219) };
+} else if (__wm_is_tuple(__wm_tail_value_55) && __wm_tail_value_55.length === 3 && __wm_tail_value_55[0]?.ctor === -6) {
+const code_1220 = __wm_tail_value_55[0].a0;
+const rest_1221 = __wm_tail_value_55[0].a1;
+const index_1222 = __wm_tail_value_55[1];
+const acc_1223 = __wm_tail_value_55[2];
 {
-const __wm_tail_value_58 = decodeOne_1228__wm_d2(input_1234, offset_1235);
-if (__wm_tail_value_58?.ctor === -4) {
-const error_1237 = __wm_tail_value_58.a0;
-return { ctor: -4, name: "Err", a0: error_1237 };
-} else if (__wm_tail_value_58?.ctor === -3) {
-const decoded_1238 = __wm_tail_value_58.a0;
-{
-const __wm_bind_6 = decoded_1238;
-if (!(__wm_is_tuple(__wm_bind_6) && __wm_bind_6.length === 3)) __wm_fail("Bind", "pattern match failure in let binding");
-const code_1239 = __wm_bind_6[0];
-const rest_1240 = __wm_bind_6[1];
-const consumed_1241 = __wm_bind_6[2];
-__arg = [rest_1240, __wm_tuple_call_2(__wm_i32_add, offset_1235, consumed_1241), { ctor: -6, name: "Cons", a0: code_1239, a1: acc_1236 }];
+const __wm_tail_value_56 = encodeOne_1214__wm_d2(code_1220, index_1222);
+if (__wm_tail_value_56?.ctor === -4) {
+const error_1224 = __wm_tail_value_56.a0;
+return { ctor: -4, name: "Err", a0: error_1224 };
+} else if (__wm_tail_value_56?.ctor === -3) {
+const bytes_1225 = __wm_tail_value_56.a0;
+__arg = [rest_1221, __wm_tuple_call_2(__wm_i32_add, index_1222, 1), SubsetList_58.reverseAppend__wm_d2(bytes_1225, acc_1223)];
 continue __wm_tail_34;
 }
+__wm_fail("Match", "non-exhaustive match");
+}
+}
+__wm_fail("Match", "non-exhaustive match");
+}
+}
+__wm_fail("Match", "pattern match failure in function");
+}
+};
+return __wm_tuple_call_3(go_1216, scalars_1215, 0, __wm_basis_Nil);
+}
+__wm_fail("Match", "pattern match failure in function");
+};
+const decodeOne_1246__wm_d2 = (bytes_1227, offset_1228) => {
+const __wm_return_value_20 = bytes_1227;
+if (__wm_return_value_20 === __wm_basis_Nil) {
+
+return { ctor: -4, name: "Err", a0: { ctor: 52, name: "Error", a0: SubsetUnicode_56.Truncated, a1: offset_1228 } };
+} else if (__wm_return_value_20?.ctor === -6) {
+const lead_1229 = __wm_return_value_20.a0;
+const rest_1230 = __wm_return_value_20.a1;
+const __wm_return_value_21 = SubsetChar_59.toCode(lead_1229);
+if (__wm_return_value_21?.ctor === -4) {
+const error_1231 = __wm_return_value_21.a0;
+return { ctor: -4, name: "Err", a0: { ctor: 52, name: "Error", a0: SubsetUnicode_56.InvalidByte, a1: offset_1228 } };
+} else if (__wm_return_value_21?.ctor === -3) {
+const first_1232 = __wm_return_value_21.a0;
+const continuation_1245__wm_d3 = (count_1233, initial_1234, minimum_1235) => {
+const go_1236__wm_d4 = (remaining_1237, input_1238, code_1239, consumed_1240) => {
+__wm_tail_35: while (true) {
+if ((remaining_1237 <= 0)) {
+if ((code_1239 < minimum_1235)) {
+return { ctor: -4, name: "Err", a0: { ctor: 52, name: "Error", a0: SubsetUnicode_56.Overlong, a1: offset_1228 } };
+} else {
+if (SubsetUnicode_56.isScalar(code_1239)) {
+return { ctor: -3, name: "Ok", a0: [code_1239, input_1238, consumed_1240] };
+} else {
+return { ctor: -4, name: "Err", a0: { ctor: 52, name: "Error", a0: SubsetUnicode_56.scalarError(code_1239), a1: offset_1228 } };
+}
+}
+} else {
+{
+const __wm_tail_value_57 = input_1238;
+if (__wm_tail_value_57 === __wm_basis_Nil) {
+
+return { ctor: -4, name: "Err", a0: { ctor: 52, name: "Error", a0: SubsetUnicode_56.Truncated, a1: __wm_tuple_call_2(__wm_i32_add, offset_1228, consumed_1240) } };
+} else if (__wm_tail_value_57?.ctor === -6) {
+const c_1241 = __wm_tail_value_57.a0;
+const tail_1242 = __wm_tail_value_57.a1;
+{
+const __wm_tail_value_58 = SubsetChar_59.toCode(c_1241);
+if (__wm_tail_value_58?.ctor === -4) {
+const error_1243 = __wm_tail_value_58.a0;
+return { ctor: -4, name: "Err", a0: { ctor: 52, name: "Error", a0: SubsetUnicode_56.InvalidByte, a1: __wm_tuple_call_2(__wm_i32_add, offset_1228, consumed_1240) } };
+} else if (__wm_tail_value_58?.ctor === -3) {
+const value_1244 = __wm_tail_value_58.a0;
+if (((value_1244 >= 128) ? (value_1244 <= 191) : false)) {
+{
+const __wm_tail_arg_59_0 = __wm_tuple_call_2(__wm_i32_sub, remaining_1237, 1);
+const __wm_tail_arg_59_1 = tail_1242;
+const __wm_tail_arg_59_2 = __wm_tuple_call_2(__wm_i32_sub, __wm_tuple_call_2(__wm_i32_add, __wm_tuple_call_2(__wm_i32_mul, code_1239, 64), value_1244), 128);
+const __wm_tail_arg_59_3 = __wm_tuple_call_2(__wm_i32_add, consumed_1240, 1);
+remaining_1237 = __wm_tail_arg_59_0;
+input_1238 = __wm_tail_arg_59_1;
+code_1239 = __wm_tail_arg_59_2;
+consumed_1240 = __wm_tail_arg_59_3;
+continue __wm_tail_35;
+}
+} else {
+return { ctor: -4, name: "Err", a0: { ctor: 52, name: "Error", a0: SubsetUnicode_56.InvalidContinuation, a1: __wm_tuple_call_2(__wm_i32_add, offset_1228, consumed_1240) } };
+}
+}
+__wm_fail("Match", "non-exhaustive match");
+}
+}
+__wm_fail("Match", "non-exhaustive match");
+}
+}
+}
+};
+const go_1236 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 4) return go_1236__wm_d4(__arg[0], __arg[1], __arg[2], __arg[3]);
+__wm_fail("Match", "pattern match failure in function");
+};
+Object.defineProperty(go_1236, __wm_tuple_entry_4, { value: go_1236__wm_d4 });
+return go_1236__wm_d4(count_1233, rest_1230, initial_1234, 1);
+};
+const continuation_1245 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 3) return continuation_1245__wm_d3(__arg[0], __arg[1], __arg[2]);
+__wm_fail("Match", "pattern match failure in function");
+};
+Object.defineProperty(continuation_1245, __wm_tuple_entry_3, { value: continuation_1245__wm_d3 });
+if ((first_1232 < 128)) {
+return { ctor: -3, name: "Ok", a0: [first_1232, rest_1230, 1] };
+} else {
+if (((first_1232 >= 194) ? (first_1232 <= 223) : false)) {
+return continuation_1245__wm_d3(1, __wm_tuple_call_2(__wm_i32_sub, first_1232, 192), 128);
+} else {
+if (((first_1232 >= 224) ? (first_1232 <= 239) : false)) {
+return continuation_1245__wm_d3(2, __wm_tuple_call_2(__wm_i32_sub, first_1232, 224), 2048);
+} else {
+if (((first_1232 >= 240) ? (first_1232 <= 244) : false)) {
+return continuation_1245__wm_d3(3, __wm_tuple_call_2(__wm_i32_sub, first_1232, 240), 65536);
+} else {
+return { ctor: -4, name: "Err", a0: { ctor: 52, name: "Error", a0: SubsetUnicode_56.InvalidLeadingByte, a1: offset_1228 } };
+}
+}
+}
+}
+}
+__wm_fail("Match", "non-exhaustive match");
+}
+__wm_fail("Match", "non-exhaustive match");
+};
+const decodeOne_1246 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 2) return decodeOne_1246__wm_d2(__arg[0], __arg[1]);
+__wm_fail("Match", "pattern match failure in function");
+};
+Object.defineProperty(decodeOne_1246, __wm_tuple_entry_2, { value: decodeOne_1246__wm_d2 });
+const decode_1260 = (__arg) => {
+if (true) {
+const bytes_1247 = __arg;
+let go_1248 = (__arg) => {
+__wm_tail_36: while (true) {
+if (true) {
+const $wm_match_1_1249 = __arg;
+{
+const __wm_tail_value_60 = $wm_match_1_1249;
+if (__wm_is_tuple(__wm_tail_value_60) && __wm_tail_value_60.length === 3 && __wm_tail_value_60[0] === __wm_basis_Nil) {
+const offset_1250 = __wm_tail_value_60[1];
+const acc_1251 = __wm_tail_value_60[2];
+return { ctor: -3, name: "Ok", a0: SubsetList_58.reverse(acc_1251) };
+} else if (__wm_is_tuple(__wm_tail_value_60) && __wm_tail_value_60.length === 3) {
+const input_1252 = __wm_tail_value_60[0];
+const offset_1253 = __wm_tail_value_60[1];
+const acc_1254 = __wm_tail_value_60[2];
+{
+const __wm_tail_value_61 = decodeOne_1246__wm_d2(input_1252, offset_1253);
+if (__wm_tail_value_61?.ctor === -4) {
+const error_1255 = __wm_tail_value_61.a0;
+return { ctor: -4, name: "Err", a0: error_1255 };
+} else if (__wm_tail_value_61?.ctor === -3) {
+const decoded_1256 = __wm_tail_value_61.a0;
+{
+const __wm_bind_6 = decoded_1256;
+if (!(__wm_is_tuple(__wm_bind_6) && __wm_bind_6.length === 3)) __wm_fail("Bind", "pattern match failure in let binding");
+const code_1257 = __wm_bind_6[0];
+const rest_1258 = __wm_bind_6[1];
+const consumed_1259 = __wm_bind_6[2];
+__arg = [rest_1258, __wm_tuple_call_2(__wm_i32_add, offset_1253, consumed_1259), { ctor: -6, name: "Cons", a0: code_1257, a1: acc_1254 }];
+continue __wm_tail_36;
+}
 }
 __wm_fail("Match", "non-exhaustive match");
 }
@@ -3719,11 +3809,11 @@ __wm_fail("Match", "non-exhaustive match");
 __wm_fail("Match", "pattern match failure in function");
 }
 };
-return __wm_tuple_call_3(go_1230, bytes_1229, 0, __wm_basis_Nil);
+return __wm_tuple_call_3(go_1248, bytes_1247, 0, __wm_basis_Nil);
 }
 __wm_fail("Match", "pattern match failure in function");
 };
-return { "encodeOne": encodeOne_1196, "encodeOne__wm_d2": encodeOne_1196__wm_d2, "encode": encode_1208, "decodeOne": decodeOne_1228, "decodeOne__wm_d2": decodeOne_1228__wm_d2, "decode": decode_1242 };
+return { "encodeOne": encodeOne_1214, "encodeOne__wm_d2": encodeOne_1214__wm_d2, "encode": encode_1226, "decodeOne": decodeOne_1246, "decodeOne__wm_d2": decodeOne_1246__wm_d2, "decode": decode_1260 };
   },
   (value) => { __wm_std_Utf8 = value; },
 );
@@ -3743,232 +3833,232 @@ const SubsetOrder_75 = __wm_std_Order;
 const SubsetBytes_76 = __wm_std_Bytes;
 const InvalidIndex_ctor_53 = Object.freeze({ ctor: 53, name: "InvalidIndex" });
 const UnicodeError_ctor_54 = (__payload) => ({ ctor: 54, name: "UnicodeError", a0: __payload });
-const toUtf8_1407 = (__arg) => {
+const toUtf8_1425 = (__arg) => {
 if (true) {
-const value_1403 = __arg;
-const __wm_return_value_22 = SubsetString_69.fromNative(SubsetTextHost_70.encodeUtf8(value_1403));
+const value_1421 = __arg;
+const __wm_return_value_22 = SubsetString_69.fromNative(SubsetTextHost_70.encodeUtf8(value_1421));
 if (__wm_return_value_22?.ctor === -4 && __wm_return_value_22.a0?.ctor === 25) {
-const offset_1404 = __wm_return_value_22.a0.a0;
-return { ctor: -4, name: "Err", a0: { ctor: 52, name: "Error", a0: SubsetUnicode_68.InvalidScalar, a1: offset_1404 } };
+const offset_1422 = __wm_return_value_22.a0.a0;
+return { ctor: -4, name: "Err", a0: { ctor: 52, name: "Error", a0: SubsetUnicode_68.InvalidScalar, a1: offset_1422 } };
 } else if (__wm_return_value_22?.ctor === -3) {
-const bytes_1405 = __wm_return_value_22.a0;
-return SubsetResult_71.map__wm_d2(SubsetUtf8_72.decode(bytes_1405), (__arg) => {
-if (true) {
-const scalars_1406 = __arg;
-return bytes_1405;
-}
-__wm_fail("Match", "pattern match failure in function");
-});
-}
-__wm_fail("Match", "non-exhaustive match");
-}
-__wm_fail("Match", "pattern match failure in function");
-};
-const fromUtf8_1412 = (__arg) => {
-if (true) {
-const bytes_1408 = __arg;
-return SubsetResult_71.andThen__wm_d2(SubsetUtf8_72.decode(bytes_1408), (__arg) => {
-if (true) {
-const scalars_1409 = __arg;
-const __wm_return_value_23 = SubsetString_69.toNative(bytes_1408);
-if (__wm_return_value_23?.ctor === -3) {
-const native_1410 = __wm_return_value_23.a0;
-return { ctor: -3, name: "Ok", a0: SubsetTextHost_70.decodeUtf8(native_1410) };
-} else if (__wm_return_value_23?.ctor === -4 && __wm_return_value_23.a0?.ctor === 25) {
-const offset_1411 = __wm_return_value_23.a0.a0;
-return { ctor: -4, name: "Err", a0: { ctor: 52, name: "Error", a0: SubsetUnicode_68.InvalidByte, a1: offset_1411 } };
-}
-__wm_fail("Match", "non-exhaustive match");
-}
-__wm_fail("Match", "pattern match failure in function");
-});
-}
-__wm_fail("Match", "pattern match failure in function");
-};
-const explode_1414 = (__arg) => {
-if (true) {
-const value_1413 = __arg;
-return SubsetResult_71.andThen__wm_d2(toUtf8_1407(value_1413), SubsetUtf8_72.decode);
-}
-__wm_fail("Match", "pattern match failure in function");
-};
-const implode_1416 = (__arg) => {
-if (true) {
-const scalars_1415 = __arg;
-return SubsetResult_71.andThen__wm_d2(SubsetUtf8_72.encode(scalars_1415), fromUtf8_1412);
-}
-__wm_fail("Match", "pattern match failure in function");
-};
-const str_1418 = (__arg) => {
-if (true) {
-const scalar_1417 = __arg;
-return implode_1416({ ctor: -6, name: "Cons", a0: scalar_1417, a1: __wm_basis_Nil });
-}
-__wm_fail("Match", "pattern match failure in function");
-};
-const size_1420 = (__arg) => {
-if (true) {
-const value_1419 = __arg;
-return SubsetResult_71.map__wm_d2(explode_1414(value_1419), SubsetList_73.length);
-}
-__wm_fail("Match", "pattern match failure in function");
-};
-const extract_1431__wm_d3 = (value_1421, start_1422, count_1423) => {
-return SubsetResult_71.andThen__wm_d2(SubsetResult_71.mapErr__wm_d2(explode_1414(value_1421), UnicodeError_ctor_54), (__arg) => {
+const bytes_1423 = __wm_return_value_22.a0;
+return SubsetResult_71.map__wm_d2(SubsetUtf8_72.decode(bytes_1423), (__arg) => {
 if (true) {
 const scalars_1424 = __arg;
-return SubsetResult_71.andThen__wm_d2(SubsetResult_71.mapErr__wm_d2(SubsetList_73.drop__wm_d2(scalars_1424, start_1422), (__arg) => {
-if (true) {
-const error_1425 = __arg;
-return InvalidIndex_ctor_53;
-}
-__wm_fail("Match", "pattern match failure in function");
-}), (__arg) => {
-if (true) {
-const rest_1426 = __arg;
-const selected_1429 = ((__v) => {
-if (__v?.ctor === -1) {
-
-return { ctor: -3, name: "Ok", a0: rest_1426 };
-} else if (__v?.ctor === -2) {
-const size_1427 = __v.a0;
-return SubsetResult_71.mapErr__wm_d2(SubsetList_73.take__wm_d2(rest_1426, size_1427), (__arg) => {
-if (true) {
-const error_1428 = __arg;
-return InvalidIndex_ctor_53;
+return bytes_1423;
 }
 __wm_fail("Match", "pattern match failure in function");
 });
 }
 __wm_fail("Match", "non-exhaustive match");
-})(count_1423);
-return SubsetResult_71.andThen__wm_d2(selected_1429, (__arg) => {
+}
+__wm_fail("Match", "pattern match failure in function");
+};
+const fromUtf8_1430 = (__arg) => {
 if (true) {
-const chosen_1430 = __arg;
-return SubsetResult_71.mapErr__wm_d2(implode_1416(chosen_1430), UnicodeError_ctor_54);
-}
-__wm_fail("Match", "pattern match failure in function");
-});
-}
-__wm_fail("Match", "pattern match failure in function");
-});
-}
-__wm_fail("Match", "pattern match failure in function");
-});
-};
-const extract_1431 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 3) return extract_1431__wm_d3(__arg[0], __arg[1], __arg[2]);
-__wm_fail("Match", "pattern match failure in function");
-};
-Object.defineProperty(extract_1431, __wm_tuple_entry_3, { value: extract_1431__wm_d3 });
-const substring_1435__wm_d3 = (value_1432, start_1433, count_1434) => {
-return extract_1431__wm_d3(value_1432, start_1433, { ctor: -2, name: "Some", a0: count_1434 });
-};
-const substring_1435 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 3) return substring_1435__wm_d3(__arg[0], __arg[1], __arg[2]);
-__wm_fail("Match", "pattern match failure in function");
-};
-Object.defineProperty(substring_1435, __wm_tuple_entry_3, { value: substring_1435__wm_d3 });
-const map_1439__wm_d2 = (value_1436, transform_1437) => {
-return SubsetResult_71.andThen__wm_d2(explode_1414(value_1436), (__arg) => {
+const bytes_1426 = __arg;
+return SubsetResult_71.andThen__wm_d2(SubsetUtf8_72.decode(bytes_1426), (__arg) => {
 if (true) {
-const scalars_1438 = __arg;
-return implode_1416(SubsetList_73.map__wm_d2(scalars_1438, transform_1437));
+const scalars_1427 = __arg;
+const __wm_return_value_23 = SubsetString_69.toNative(bytes_1426);
+if (__wm_return_value_23?.ctor === -3) {
+const native_1428 = __wm_return_value_23.a0;
+return { ctor: -3, name: "Ok", a0: SubsetTextHost_70.decodeUtf8(native_1428) };
+} else if (__wm_return_value_23?.ctor === -4 && __wm_return_value_23.a0?.ctor === 25) {
+const offset_1429 = __wm_return_value_23.a0.a0;
+return { ctor: -4, name: "Err", a0: { ctor: 52, name: "Error", a0: SubsetUnicode_68.InvalidByte, a1: offset_1429 } };
+}
+__wm_fail("Match", "non-exhaustive match");
 }
 __wm_fail("Match", "pattern match failure in function");
 });
-};
-const map_1439 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 2) return map_1439__wm_d2(__arg[0], __arg[1]);
+}
 __wm_fail("Match", "pattern match failure in function");
 };
-Object.defineProperty(map_1439, __wm_tuple_entry_2, { value: map_1439__wm_d2 });
-const translate_1445__wm_d2 = (value_1440, transform_1441) => {
-return SubsetResult_71.andThen__wm_d2(explode_1414(value_1440), (__arg) => {
+const explode_1432 = (__arg) => {
+if (true) {
+const value_1431 = __arg;
+return SubsetResult_71.andThen__wm_d2(toUtf8_1425(value_1431), SubsetUtf8_72.decode);
+}
+__wm_fail("Match", "pattern match failure in function");
+};
+const implode_1434 = (__arg) => {
+if (true) {
+const scalars_1433 = __arg;
+return SubsetResult_71.andThen__wm_d2(SubsetUtf8_72.encode(scalars_1433), fromUtf8_1430);
+}
+__wm_fail("Match", "pattern match failure in function");
+};
+const str_1436 = (__arg) => {
+if (true) {
+const scalar_1435 = __arg;
+return implode_1434({ ctor: -6, name: "Cons", a0: scalar_1435, a1: __wm_basis_Nil });
+}
+__wm_fail("Match", "pattern match failure in function");
+};
+const size_1438 = (__arg) => {
+if (true) {
+const value_1437 = __arg;
+return SubsetResult_71.map__wm_d2(explode_1432(value_1437), SubsetList_73.length);
+}
+__wm_fail("Match", "pattern match failure in function");
+};
+const extract_1449__wm_d3 = (value_1439, start_1440, count_1441) => {
+return SubsetResult_71.andThen__wm_d2(SubsetResult_71.mapErr__wm_d2(explode_1432(value_1439), UnicodeError_ctor_54), (__arg) => {
 if (true) {
 const scalars_1442 = __arg;
-return SubsetResult_71.andThen__wm_d2(SubsetList_73.traverse__wm_d2(scalars_1442, (__arg) => {
+return SubsetResult_71.andThen__wm_d2(SubsetResult_71.mapErr__wm_d2(SubsetList_73.drop__wm_d2(scalars_1442, start_1440), (__arg) => {
 if (true) {
-const scalar_1443 = __arg;
-return toUtf8_1407(transform_1441(scalar_1443));
+const error_1443 = __arg;
+return InvalidIndex_ctor_53;
 }
 __wm_fail("Match", "pattern match failure in function");
 }), (__arg) => {
 if (true) {
-const pieces_1444 = __arg;
-return fromUtf8_1412(SubsetList_73.concat(pieces_1444));
-}
-__wm_fail("Match", "pattern match failure in function");
-});
-}
-__wm_fail("Match", "pattern match failure in function");
-});
-};
-const translate_1445 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 2) return translate_1445__wm_d2(__arg[0], __arg[1]);
-__wm_fail("Match", "pattern match failure in function");
-};
-Object.defineProperty(translate_1445, __wm_tuple_entry_2, { value: translate_1445__wm_d2 });
-const trim_1449__wm_d2 = (value_1446, predicate_1447) => {
-return SubsetResult_71.andThen__wm_d2(explode_1414(value_1446), (__arg) => {
+const rest_1444 = __arg;
+const selected_1447 = ((__v) => {
+if (__v?.ctor === -1) {
+
+return { ctor: -3, name: "Ok", a0: rest_1444 };
+} else if (__v?.ctor === -2) {
+const size_1445 = __v.a0;
+return SubsetResult_71.mapErr__wm_d2(SubsetList_73.take__wm_d2(rest_1444, size_1445), (__arg) => {
 if (true) {
-const scalars_1448 = __arg;
-return implode_1416(SubsetList_73.reverse(SubsetList_73.dropWhile__wm_d2(SubsetList_73.reverse(SubsetList_73.dropWhile__wm_d2(scalars_1448, predicate_1447)), predicate_1447)));
+const error_1446 = __arg;
+return InvalidIndex_ctor_53;
+}
+__wm_fail("Match", "pattern match failure in function");
+});
+}
+__wm_fail("Match", "non-exhaustive match");
+})(count_1441);
+return SubsetResult_71.andThen__wm_d2(selected_1447, (__arg) => {
+if (true) {
+const chosen_1448 = __arg;
+return SubsetResult_71.mapErr__wm_d2(implode_1434(chosen_1448), UnicodeError_ctor_54);
+}
+__wm_fail("Match", "pattern match failure in function");
+});
+}
+__wm_fail("Match", "pattern match failure in function");
+});
 }
 __wm_fail("Match", "pattern match failure in function");
 });
 };
-const trim_1449 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 2) return trim_1449__wm_d2(__arg[0], __arg[1]);
+const extract_1449 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 3) return extract_1449__wm_d3(__arg[0], __arg[1], __arg[2]);
 __wm_fail("Match", "pattern match failure in function");
 };
-Object.defineProperty(trim_1449, __wm_tuple_entry_2, { value: trim_1449__wm_d2 });
-const compare_1464__wm_d2 = (left_1450, right_1451) => {
-const firstUnit_1453 = (__arg) => {
+Object.defineProperty(extract_1449, __wm_tuple_entry_3, { value: extract_1449__wm_d3 });
+const substring_1453__wm_d3 = (value_1450, start_1451, count_1452) => {
+return extract_1449__wm_d3(value_1450, start_1451, { ctor: -2, name: "Some", a0: count_1452 });
+};
+const substring_1453 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 3) return substring_1453__wm_d3(__arg[0], __arg[1], __arg[2]);
+__wm_fail("Match", "pattern match failure in function");
+};
+Object.defineProperty(substring_1453, __wm_tuple_entry_3, { value: substring_1453__wm_d3 });
+const map_1457__wm_d2 = (value_1454, transform_1455) => {
+return SubsetResult_71.andThen__wm_d2(explode_1432(value_1454), (__arg) => {
 if (true) {
-const scalar_1452 = __arg;
-if ((scalar_1452 < 65536)) {
-return scalar_1452;
+const scalars_1456 = __arg;
+return implode_1434(SubsetList_73.map__wm_d2(scalars_1456, transform_1455));
+}
+__wm_fail("Match", "pattern match failure in function");
+});
+};
+const map_1457 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 2) return map_1457__wm_d2(__arg[0], __arg[1]);
+__wm_fail("Match", "pattern match failure in function");
+};
+Object.defineProperty(map_1457, __wm_tuple_entry_2, { value: map_1457__wm_d2 });
+const translate_1463__wm_d2 = (value_1458, transform_1459) => {
+return SubsetResult_71.andThen__wm_d2(explode_1432(value_1458), (__arg) => {
+if (true) {
+const scalars_1460 = __arg;
+return SubsetResult_71.andThen__wm_d2(SubsetList_73.traverse__wm_d2(scalars_1460, (__arg) => {
+if (true) {
+const scalar_1461 = __arg;
+return toUtf8_1425(transform_1459(scalar_1461));
+}
+__wm_fail("Match", "pattern match failure in function");
+}), (__arg) => {
+if (true) {
+const pieces_1462 = __arg;
+return fromUtf8_1430(SubsetList_73.concat(pieces_1462));
+}
+__wm_fail("Match", "pattern match failure in function");
+});
+}
+__wm_fail("Match", "pattern match failure in function");
+});
+};
+const translate_1463 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 2) return translate_1463__wm_d2(__arg[0], __arg[1]);
+__wm_fail("Match", "pattern match failure in function");
+};
+Object.defineProperty(translate_1463, __wm_tuple_entry_2, { value: translate_1463__wm_d2 });
+const trim_1467__wm_d2 = (value_1464, predicate_1465) => {
+return SubsetResult_71.andThen__wm_d2(explode_1432(value_1464), (__arg) => {
+if (true) {
+const scalars_1466 = __arg;
+return implode_1434(SubsetList_73.reverse(SubsetList_73.dropWhile__wm_d2(SubsetList_73.reverse(SubsetList_73.dropWhile__wm_d2(scalars_1466, predicate_1465)), predicate_1465)));
+}
+__wm_fail("Match", "pattern match failure in function");
+});
+};
+const trim_1467 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 2) return trim_1467__wm_d2(__arg[0], __arg[1]);
+__wm_fail("Match", "pattern match failure in function");
+};
+Object.defineProperty(trim_1467, __wm_tuple_entry_2, { value: trim_1467__wm_d2 });
+const compare_1482__wm_d2 = (left_1468, right_1469) => {
+const firstUnit_1471 = (__arg) => {
+if (true) {
+const scalar_1470 = __arg;
+if ((scalar_1470 < 65536)) {
+return scalar_1470;
 } else {
-return __wm_tuple_call_2(__wm_i32_add, 55296, __wm_tuple_call_2(Int32.div, __wm_tuple_call_2(__wm_i32_sub, scalar_1452, 65536), 1024));
+return __wm_tuple_call_2(__wm_i32_add, 55296, __wm_tuple_call_2(Int32.div, __wm_tuple_call_2(__wm_i32_sub, scalar_1470, 65536), 1024));
 }
 }
 __wm_fail("Match", "pattern match failure in function");
 };
-let order_1454 = (__arg) => {
-__wm_tail_35: while (true) {
+let order_1472 = (__arg) => {
+__wm_tail_37: while (true) {
 if (true) {
-const $wm_match_0_1455 = __arg;
+const $wm_match_0_1473 = __arg;
 {
-const __wm_tail_value_59 = $wm_match_0_1455;
-if (__wm_is_tuple(__wm_tail_value_59) && __wm_tail_value_59.length === 2 && __wm_tail_value_59[0] === __wm_basis_Nil && __wm_tail_value_59[1] === __wm_basis_Nil) {
+const __wm_tail_value_62 = $wm_match_0_1473;
+if (__wm_is_tuple(__wm_tail_value_62) && __wm_tail_value_62.length === 2 && __wm_tail_value_62[0] === __wm_basis_Nil && __wm_tail_value_62[1] === __wm_basis_Nil) {
 
 return SubsetOrder_75.Equal;
-} else if (__wm_is_tuple(__wm_tail_value_59) && __wm_tail_value_59.length === 2 && __wm_tail_value_59[0] === __wm_basis_Nil) {
-const rest_1456 = __wm_tail_value_59[1];
+} else if (__wm_is_tuple(__wm_tail_value_62) && __wm_tail_value_62.length === 2 && __wm_tail_value_62[0] === __wm_basis_Nil) {
+const rest_1474 = __wm_tail_value_62[1];
 return SubsetOrder_75.Less;
-} else if (__wm_is_tuple(__wm_tail_value_59) && __wm_tail_value_59.length === 2 && __wm_tail_value_59[1] === __wm_basis_Nil) {
-const rest_1457 = __wm_tail_value_59[0];
+} else if (__wm_is_tuple(__wm_tail_value_62) && __wm_tail_value_62.length === 2 && __wm_tail_value_62[1] === __wm_basis_Nil) {
+const rest_1475 = __wm_tail_value_62[0];
 return SubsetOrder_75.Greater;
-} else if (__wm_is_tuple(__wm_tail_value_59) && __wm_tail_value_59.length === 2 && __wm_tail_value_59[0]?.ctor === -6 && __wm_tail_value_59[1]?.ctor === -6) {
-const a_1458 = __wm_tail_value_59[0].a0;
-const xs_1459 = __wm_tail_value_59[0].a1;
-const b_1460 = __wm_tail_value_59[1].a0;
-const ys_1461 = __wm_tail_value_59[1].a1;
-if ((firstUnit_1453(a_1458) < firstUnit_1453(b_1460))) {
-return SubsetOrder_75.Less;
-} else {
-if ((firstUnit_1453(a_1458) > firstUnit_1453(b_1460))) {
-return SubsetOrder_75.Greater;
-} else {
-if ((a_1458 < b_1460)) {
+} else if (__wm_is_tuple(__wm_tail_value_62) && __wm_tail_value_62.length === 2 && __wm_tail_value_62[0]?.ctor === -6 && __wm_tail_value_62[1]?.ctor === -6) {
+const a_1476 = __wm_tail_value_62[0].a0;
+const xs_1477 = __wm_tail_value_62[0].a1;
+const b_1478 = __wm_tail_value_62[1].a0;
+const ys_1479 = __wm_tail_value_62[1].a1;
+if ((firstUnit_1471(a_1476) < firstUnit_1471(b_1478))) {
 return SubsetOrder_75.Less;
 } else {
-if ((a_1458 > b_1460)) {
+if ((firstUnit_1471(a_1476) > firstUnit_1471(b_1478))) {
 return SubsetOrder_75.Greater;
 } else {
-__arg = [xs_1459, ys_1461];
-continue __wm_tail_35;
+if ((a_1476 < b_1478)) {
+return SubsetOrder_75.Less;
+} else {
+if ((a_1476 > b_1478)) {
+return SubsetOrder_75.Greater;
+} else {
+__arg = [xs_1477, ys_1479];
+continue __wm_tail_37;
 }
 }
 }
@@ -3980,13 +4070,13 @@ __wm_fail("Match", "non-exhaustive match");
 __wm_fail("Match", "pattern match failure in function");
 }
 };
-return SubsetResult_71.andThen__wm_d2(explode_1414(left_1450), (__arg) => {
+return SubsetResult_71.andThen__wm_d2(explode_1432(left_1468), (__arg) => {
 if (true) {
-const xs_1462 = __arg;
-return SubsetResult_71.map__wm_d2(explode_1414(right_1451), (__arg) => {
+const xs_1480 = __arg;
+return SubsetResult_71.map__wm_d2(explode_1432(right_1469), (__arg) => {
 if (true) {
-const ys_1463 = __arg;
-return __wm_tuple_call_2(order_1454, xs_1462, ys_1463);
+const ys_1481 = __arg;
+return __wm_tuple_call_2(order_1472, xs_1480, ys_1481);
 }
 __wm_fail("Match", "pattern match failure in function");
 });
@@ -3994,19 +4084,19 @@ __wm_fail("Match", "pattern match failure in function");
 __wm_fail("Match", "pattern match failure in function");
 });
 };
-const compare_1464 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 2) return compare_1464__wm_d2(__arg[0], __arg[1]);
+const compare_1482 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 2) return compare_1482__wm_d2(__arg[0], __arg[1]);
 __wm_fail("Match", "pattern match failure in function");
 };
-Object.defineProperty(compare_1464, __wm_tuple_entry_2, { value: compare_1464__wm_d2 });
-const isPrefix_1469__wm_d2 = (value_1465, prefix_1466) => {
-return SubsetResult_71.andThen__wm_d2(toUtf8_1407(value_1465), (__arg) => {
+Object.defineProperty(compare_1482, __wm_tuple_entry_2, { value: compare_1482__wm_d2 });
+const isPrefix_1487__wm_d2 = (value_1483, prefix_1484) => {
+return SubsetResult_71.andThen__wm_d2(toUtf8_1425(value_1483), (__arg) => {
 if (true) {
-const bytes_1467 = __arg;
-return SubsetResult_71.map__wm_d2(toUtf8_1407(prefix_1466), (__arg) => {
+const bytes_1485 = __arg;
+return SubsetResult_71.map__wm_d2(toUtf8_1425(prefix_1484), (__arg) => {
 if (true) {
-const wanted_1468 = __arg;
-return __wm_tuple_call_2(SubsetBytes_76.isPrefix, bytes_1467, wanted_1468);
+const wanted_1486 = __arg;
+return __wm_tuple_call_2(SubsetBytes_76.isPrefix, bytes_1485, wanted_1486);
 }
 __wm_fail("Match", "pattern match failure in function");
 });
@@ -4014,19 +4104,19 @@ __wm_fail("Match", "pattern match failure in function");
 __wm_fail("Match", "pattern match failure in function");
 });
 };
-const isPrefix_1469 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 2) return isPrefix_1469__wm_d2(__arg[0], __arg[1]);
+const isPrefix_1487 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 2) return isPrefix_1487__wm_d2(__arg[0], __arg[1]);
 __wm_fail("Match", "pattern match failure in function");
 };
-Object.defineProperty(isPrefix_1469, __wm_tuple_entry_2, { value: isPrefix_1469__wm_d2 });
-const isSuffix_1474__wm_d2 = (value_1470, suffix_1471) => {
-return SubsetResult_71.andThen__wm_d2(toUtf8_1407(value_1470), (__arg) => {
+Object.defineProperty(isPrefix_1487, __wm_tuple_entry_2, { value: isPrefix_1487__wm_d2 });
+const isSuffix_1492__wm_d2 = (value_1488, suffix_1489) => {
+return SubsetResult_71.andThen__wm_d2(toUtf8_1425(value_1488), (__arg) => {
 if (true) {
-const bytes_1472 = __arg;
-return SubsetResult_71.map__wm_d2(toUtf8_1407(suffix_1471), (__arg) => {
+const bytes_1490 = __arg;
+return SubsetResult_71.map__wm_d2(toUtf8_1425(suffix_1489), (__arg) => {
 if (true) {
-const wanted_1473 = __arg;
-return SubsetBytes_76.isSuffix__wm_d2(bytes_1472, wanted_1473);
+const wanted_1491 = __arg;
+return SubsetBytes_76.isSuffix__wm_d2(bytes_1490, wanted_1491);
 }
 __wm_fail("Match", "pattern match failure in function");
 });
@@ -4034,19 +4124,19 @@ __wm_fail("Match", "pattern match failure in function");
 __wm_fail("Match", "pattern match failure in function");
 });
 };
-const isSuffix_1474 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 2) return isSuffix_1474__wm_d2(__arg[0], __arg[1]);
+const isSuffix_1492 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 2) return isSuffix_1492__wm_d2(__arg[0], __arg[1]);
 __wm_fail("Match", "pattern match failure in function");
 };
-Object.defineProperty(isSuffix_1474, __wm_tuple_entry_2, { value: isSuffix_1474__wm_d2 });
-const isSubstring_1479__wm_d2 = (value_1475, needle_1476) => {
-return SubsetResult_71.andThen__wm_d2(toUtf8_1407(value_1475), (__arg) => {
+Object.defineProperty(isSuffix_1492, __wm_tuple_entry_2, { value: isSuffix_1492__wm_d2 });
+const isSubstring_1497__wm_d2 = (value_1493, needle_1494) => {
+return SubsetResult_71.andThen__wm_d2(toUtf8_1425(value_1493), (__arg) => {
 if (true) {
-const bytes_1477 = __arg;
-return SubsetResult_71.map__wm_d2(toUtf8_1407(needle_1476), (__arg) => {
+const bytes_1495 = __arg;
+return SubsetResult_71.map__wm_d2(toUtf8_1425(needle_1494), (__arg) => {
 if (true) {
-const wanted_1478 = __arg;
-return SubsetBytes_76.isSubstring__wm_d2(bytes_1477, wanted_1478);
+const wanted_1496 = __arg;
+return SubsetBytes_76.isSubstring__wm_d2(bytes_1495, wanted_1496);
 }
 __wm_fail("Match", "pattern match failure in function");
 });
@@ -4054,39 +4144,39 @@ __wm_fail("Match", "pattern match failure in function");
 __wm_fail("Match", "pattern match failure in function");
 });
 };
-const isSubstring_1479 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 2) return isSubstring_1479__wm_d2(__arg[0], __arg[1]);
+const isSubstring_1497 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 2) return isSubstring_1497__wm_d2(__arg[0], __arg[1]);
 __wm_fail("Match", "pattern match failure in function");
 };
-Object.defineProperty(isSubstring_1479, __wm_tuple_entry_2, { value: isSubstring_1479__wm_d2 });
-const fields_1494__wm_d2 = (value_1480, delimiter_1481) => {
-return SubsetResult_71.andThen__wm_d2(toUtf8_1407(value_1480), (__arg) => {
+Object.defineProperty(isSubstring_1497, __wm_tuple_entry_2, { value: isSubstring_1497__wm_d2 });
+const fields_1512__wm_d2 = (value_1498, delimiter_1499) => {
+return SubsetResult_71.andThen__wm_d2(toUtf8_1425(value_1498), (__arg) => {
 if (true) {
-const bytes_1482 = __arg;
-return SubsetResult_71.andThen__wm_d2(SubsetUtf8_72.decode(bytes_1482), (__arg) => {
+const bytes_1500 = __arg;
+return SubsetResult_71.andThen__wm_d2(SubsetUtf8_72.decode(bytes_1500), (__arg) => {
 if (true) {
-const scalars_1483 = __arg;
-let split_1484 = (__arg) => {
-__wm_tail_36: while (true) {
+const scalars_1501 = __arg;
+let split_1502 = (__arg) => {
+__wm_tail_38: while (true) {
 if (true) {
-const $wm_match_1_1485 = __arg;
+const $wm_match_1_1503 = __arg;
 {
-const __wm_tail_value_60 = $wm_match_1_1485;
-if (__wm_is_tuple(__wm_tail_value_60) && __wm_tail_value_60.length === 3 && __wm_tail_value_60[0] === __wm_basis_Nil) {
-const field_1486 = __wm_tail_value_60[1];
-const acc_1487 = __wm_tail_value_60[2];
-return SubsetList_73.reverse({ ctor: -6, name: "Cons", a0: SubsetList_73.reverse(field_1486), a1: acc_1487 });
-} else if (__wm_is_tuple(__wm_tail_value_60) && __wm_tail_value_60.length === 3 && __wm_tail_value_60[0]?.ctor === -6) {
-const scalar_1488 = __wm_tail_value_60[0].a0;
-const rest_1489 = __wm_tail_value_60[0].a1;
-const field_1490 = __wm_tail_value_60[1];
-const acc_1491 = __wm_tail_value_60[2];
-if (delimiter_1481(scalar_1488)) {
-__arg = [rest_1489, __wm_basis_Nil, { ctor: -6, name: "Cons", a0: SubsetList_73.reverse(field_1490), a1: acc_1491 }];
-continue __wm_tail_36;
+const __wm_tail_value_63 = $wm_match_1_1503;
+if (__wm_is_tuple(__wm_tail_value_63) && __wm_tail_value_63.length === 3 && __wm_tail_value_63[0] === __wm_basis_Nil) {
+const field_1504 = __wm_tail_value_63[1];
+const acc_1505 = __wm_tail_value_63[2];
+return SubsetList_73.reverse({ ctor: -6, name: "Cons", a0: SubsetList_73.reverse(field_1504), a1: acc_1505 });
+} else if (__wm_is_tuple(__wm_tail_value_63) && __wm_tail_value_63.length === 3 && __wm_tail_value_63[0]?.ctor === -6) {
+const scalar_1506 = __wm_tail_value_63[0].a0;
+const rest_1507 = __wm_tail_value_63[0].a1;
+const field_1508 = __wm_tail_value_63[1];
+const acc_1509 = __wm_tail_value_63[2];
+if (delimiter_1499(scalar_1506)) {
+__arg = [rest_1507, __wm_basis_Nil, { ctor: -6, name: "Cons", a0: SubsetList_73.reverse(field_1508), a1: acc_1509 }];
+continue __wm_tail_38;
 } else {
-__arg = [rest_1489, { ctor: -6, name: "Cons", a0: scalar_1488, a1: field_1490 }, acc_1491];
-continue __wm_tail_36;
+__arg = [rest_1507, { ctor: -6, name: "Cons", a0: scalar_1506, a1: field_1508 }, acc_1509];
+continue __wm_tail_38;
 }
 }
 __wm_fail("Match", "non-exhaustive match");
@@ -4095,34 +4185,34 @@ __wm_fail("Match", "non-exhaustive match");
 __wm_fail("Match", "pattern match failure in function");
 }
 };
-const text_1493 = (__arg) => {
+const text_1511 = (__arg) => {
 if (true) {
-const codes_1492 = __arg;
-return SubsetResult_71.andThen__wm_d2(SubsetUtf8_72.encode(codes_1492), fromUtf8_1412);
+const codes_1510 = __arg;
+return SubsetResult_71.andThen__wm_d2(SubsetUtf8_72.encode(codes_1510), fromUtf8_1430);
 }
 __wm_fail("Match", "pattern match failure in function");
 };
-return SubsetList_73.traverse__wm_d2(__wm_tuple_call_3(split_1484, scalars_1483, __wm_basis_Nil, __wm_basis_Nil), text_1493);
-}
-__wm_fail("Match", "pattern match failure in function");
-});
+return SubsetList_73.traverse__wm_d2(__wm_tuple_call_3(split_1502, scalars_1501, __wm_basis_Nil, __wm_basis_Nil), text_1511);
 }
 __wm_fail("Match", "pattern match failure in function");
 });
+}
+__wm_fail("Match", "pattern match failure in function");
+});
 };
-const fields_1494 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 2) return fields_1494__wm_d2(__arg[0], __arg[1]);
+const fields_1512 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 2) return fields_1512__wm_d2(__arg[0], __arg[1]);
 __wm_fail("Match", "pattern match failure in function");
 };
-Object.defineProperty(fields_1494, __wm_tuple_entry_2, { value: fields_1494__wm_d2 });
-const tokens_1499__wm_d2 = (value_1495, delimiter_1496) => {
-return SubsetResult_71.map__wm_d2(fields_1494__wm_d2(value_1495, delimiter_1496), (__arg) => {
+Object.defineProperty(fields_1512, __wm_tuple_entry_2, { value: fields_1512__wm_d2 });
+const tokens_1517__wm_d2 = (value_1513, delimiter_1514) => {
+return SubsetResult_71.map__wm_d2(fields_1512__wm_d2(value_1513, delimiter_1514), (__arg) => {
 if (true) {
-const pieces_1497 = __arg;
-return SubsetList_73.filter__wm_d2(pieces_1497, (__arg) => {
+const pieces_1515 = __arg;
+return SubsetList_73.filter__wm_d2(pieces_1515, (__arg) => {
 if (true) {
-const piece_1498 = __arg;
-return !__wm_eq(piece_1498, "");
+const piece_1516 = __arg;
+return !__wm_eq(piece_1516, "");
 }
 __wm_fail("Match", "pattern match failure in function");
 });
@@ -4130,12 +4220,12 @@ __wm_fail("Match", "pattern match failure in function");
 __wm_fail("Match", "pattern match failure in function");
 });
 };
-const tokens_1499 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 2) return tokens_1499__wm_d2(__arg[0], __arg[1]);
+const tokens_1517 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 2) return tokens_1517__wm_d2(__arg[0], __arg[1]);
 __wm_fail("Match", "pattern match failure in function");
 };
-Object.defineProperty(tokens_1499, __wm_tuple_entry_2, { value: tokens_1499__wm_d2 });
-return { "of": __wm_basis_Text.of, "InvalidIndex": InvalidIndex_ctor_53, "UnicodeError": UnicodeError_ctor_54, "toUtf8": toUtf8_1407, "fromUtf8": fromUtf8_1412, "explode": explode_1414, "implode": implode_1416, "str": str_1418, "size": size_1420, "extract": extract_1431, "extract__wm_d3": extract_1431__wm_d3, "substring": substring_1435, "substring__wm_d3": substring_1435__wm_d3, "map": map_1439, "map__wm_d2": map_1439__wm_d2, "translate": translate_1445, "translate__wm_d2": translate_1445__wm_d2, "trim": trim_1449, "trim__wm_d2": trim_1449__wm_d2, "compare": compare_1464, "compare__wm_d2": compare_1464__wm_d2, "isPrefix": isPrefix_1469, "isPrefix__wm_d2": isPrefix_1469__wm_d2, "isSuffix": isSuffix_1474, "isSuffix__wm_d2": isSuffix_1474__wm_d2, "isSubstring": isSubstring_1479, "isSubstring__wm_d2": isSubstring_1479__wm_d2, "fields": fields_1494, "fields__wm_d2": fields_1494__wm_d2, "tokens": tokens_1499, "tokens__wm_d2": tokens_1499__wm_d2 };
+Object.defineProperty(tokens_1517, __wm_tuple_entry_2, { value: tokens_1517__wm_d2 });
+return { "of": __wm_basis_Text.of, "InvalidIndex": InvalidIndex_ctor_53, "UnicodeError": UnicodeError_ctor_54, "toUtf8": toUtf8_1425, "fromUtf8": fromUtf8_1430, "explode": explode_1432, "implode": implode_1434, "str": str_1436, "size": size_1438, "extract": extract_1449, "extract__wm_d3": extract_1449__wm_d3, "substring": substring_1453, "substring__wm_d3": substring_1453__wm_d3, "map": map_1457, "map__wm_d2": map_1457__wm_d2, "translate": translate_1463, "translate__wm_d2": translate_1463__wm_d2, "trim": trim_1467, "trim__wm_d2": trim_1467__wm_d2, "compare": compare_1482, "compare__wm_d2": compare_1482__wm_d2, "isPrefix": isPrefix_1487, "isPrefix__wm_d2": isPrefix_1487__wm_d2, "isSuffix": isSuffix_1492, "isSuffix__wm_d2": isSuffix_1492__wm_d2, "isSubstring": isSubstring_1497, "isSubstring__wm_d2": isSubstring_1497__wm_d2, "fields": fields_1512, "fields__wm_d2": fields_1512__wm_d2, "tokens": tokens_1517, "tokens__wm_d2": tokens_1517__wm_d2 };
   },
   (value) => { __wm_std_Text = value; },
 );
@@ -4144,9 +4234,9 @@ __wm_define_module(
   "__wm_std_Result",
   ["__wm_lib_host_js_debug", "__wm_lib_subml_basis_subset_result", "__wm_lib_subml_basis_subset_list"],
   async () => {
-const Debug_103 = __wm_lib_host_js_debug;
-const SubsetResult_104 = __wm_lib_subml_basis_subset_result;
-const SubsetList_105 = __wm_lib_subml_basis_subset_list;
+const Debug_104 = __wm_lib_host_js_debug;
+const SubsetResult_105 = __wm_lib_subml_basis_subset_result;
+const SubsetList_106 = __wm_lib_subml_basis_subset_list;
 const map_571 = __wm_lib_subml_basis_subset_result["map"];
 const map_571__wm_d2 = __wm_lib_subml_basis_subset_result["map__wm_d2"];
 const mapErr_576 = __wm_lib_subml_basis_subset_result["mapErr"];
@@ -4164,136 +4254,136 @@ const succeed_608 = __wm_lib_subml_basis_subset_result["succeed"];
 const map2_616 = __wm_lib_subml_basis_subset_result["map2"];
 const map2_616__wm_d3 = __wm_lib_subml_basis_subset_result["map2__wm_d3"];
 const carrier_617 = __wm_lib_subml_basis_subset_result["carrier"];
-const fail_2154 = (__arg) => {
+const fail_2179 = (__arg) => {
 if (true) {
-const error_2153 = __arg;
-return { ctor: -4, name: "Err", a0: error_2153 };
+const error_2178 = __arg;
+return { ctor: -4, name: "Err", a0: error_2178 };
 }
 __wm_fail("Match", "pattern match failure in function");
 };
-const debug_2158 = (__arg) => {
+const debug_2183 = (__arg) => {
 if (true) {
-const result_2155 = __arg;
-const __wm_return_value_24 = result_2155;
+const result_2180 = __arg;
+const __wm_return_value_24 = result_2180;
 if (__wm_return_value_24?.ctor === -3) {
-const value_2156 = __wm_return_value_24.a0;
-return value_2156;
+const value_2181 = __wm_return_value_24.a0;
+return value_2181;
 } else if (__wm_return_value_24?.ctor === -4) {
-const error_2157 = __wm_return_value_24.a0;
-print(Debug_103.errorMessage(error_2157));
+const error_2182 = __wm_return_value_24.a0;
+print(Debug_104.errorMessage(error_2182));
 return __wm_fail("TypedHole", "error[type.typed-hole std/result.wm:18:4]: typed hole; expected type: 'a!\n18|     ?\n        ^");
 }
 __wm_fail("Match", "non-exhaustive match");
 }
 __wm_fail("Match", "pattern match failure in function");
 };
-const map3_2169__wm_d4 = (a_2159, b_2160, c_2161, f_2162) => {
-const __wm_scalar_3_0 = a_2159;
-const __wm_scalar_3_1 = b_2160;
-const __wm_scalar_3_2 = c_2161;
-const __wm_scalar_3_3 = f_2162;
-if (__wm_scalar_3_0?.ctor === -3 && __wm_scalar_3_1?.ctor === -3 && __wm_scalar_3_2?.ctor === -3 && __wm_eq(__wm_scalar_3_3, f_2162)) {
-const av_2163 = __wm_scalar_3_0.a0;
-const bv_2164 = __wm_scalar_3_1.a0;
-const cv_2165 = __wm_scalar_3_2.a0;
-return { ctor: -3, name: "Ok", a0: __wm_tuple_call_3(f_2162, av_2163, bv_2164, cv_2165) };
+const map3_2194__wm_d4 = (a_2184, b_2185, c_2186, f_2187) => {
+const __wm_scalar_3_0 = a_2184;
+const __wm_scalar_3_1 = b_2185;
+const __wm_scalar_3_2 = c_2186;
+const __wm_scalar_3_3 = f_2187;
+if (__wm_scalar_3_0?.ctor === -3 && __wm_scalar_3_1?.ctor === -3 && __wm_scalar_3_2?.ctor === -3 && __wm_eq(__wm_scalar_3_3, f_2187)) {
+const av_2188 = __wm_scalar_3_0.a0;
+const bv_2189 = __wm_scalar_3_1.a0;
+const cv_2190 = __wm_scalar_3_2.a0;
+return { ctor: -3, name: "Ok", a0: __wm_tuple_call_3(f_2187, av_2188, bv_2189, cv_2190) };
 } else if (__wm_scalar_3_0?.ctor === -4) {
-const error_2166 = __wm_scalar_3_0.a0;
-return { ctor: -4, name: "Err", a0: error_2166 };
+const error_2191 = __wm_scalar_3_0.a0;
+return { ctor: -4, name: "Err", a0: error_2191 };
 } else if (__wm_scalar_3_1?.ctor === -4) {
-const error_2167 = __wm_scalar_3_1.a0;
-return { ctor: -4, name: "Err", a0: error_2167 };
+const error_2192 = __wm_scalar_3_1.a0;
+return { ctor: -4, name: "Err", a0: error_2192 };
 } else if (__wm_scalar_3_2?.ctor === -4) {
-const error_2168 = __wm_scalar_3_2.a0;
-return { ctor: -4, name: "Err", a0: error_2168 };
+const error_2193 = __wm_scalar_3_2.a0;
+return { ctor: -4, name: "Err", a0: error_2193 };
 }
 __wm_fail("Match", "non-exhaustive match");
 };
-const map3_2169 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 4) return map3_2169__wm_d4(__arg[0], __arg[1], __arg[2], __arg[3]);
+const map3_2194 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 4) return map3_2194__wm_d4(__arg[0], __arg[1], __arg[2], __arg[3]);
 __wm_fail("Match", "pattern match failure in function");
 };
-Object.defineProperty(map3_2169, __wm_tuple_entry_4, { value: map3_2169__wm_d4 });
-const map4_2183__wm_d5 = (a_2170, b_2171, c_2172, d_2173, f_2174) => {
-const __wm_scalar_4_0 = a_2170;
-const __wm_scalar_4_1 = b_2171;
-const __wm_scalar_4_2 = c_2172;
-const __wm_scalar_4_3 = d_2173;
-const __wm_scalar_4_4 = f_2174;
-if (__wm_scalar_4_0?.ctor === -3 && __wm_scalar_4_1?.ctor === -3 && __wm_scalar_4_2?.ctor === -3 && __wm_scalar_4_3?.ctor === -3 && __wm_eq(__wm_scalar_4_4, f_2174)) {
-const av_2175 = __wm_scalar_4_0.a0;
-const bv_2176 = __wm_scalar_4_1.a0;
-const cv_2177 = __wm_scalar_4_2.a0;
-const dv_2178 = __wm_scalar_4_3.a0;
-return { ctor: -3, name: "Ok", a0: __wm_tuple_call_4(f_2174, av_2175, bv_2176, cv_2177, dv_2178) };
+Object.defineProperty(map3_2194, __wm_tuple_entry_4, { value: map3_2194__wm_d4 });
+const map4_2208__wm_d5 = (a_2195, b_2196, c_2197, d_2198, f_2199) => {
+const __wm_scalar_4_0 = a_2195;
+const __wm_scalar_4_1 = b_2196;
+const __wm_scalar_4_2 = c_2197;
+const __wm_scalar_4_3 = d_2198;
+const __wm_scalar_4_4 = f_2199;
+if (__wm_scalar_4_0?.ctor === -3 && __wm_scalar_4_1?.ctor === -3 && __wm_scalar_4_2?.ctor === -3 && __wm_scalar_4_3?.ctor === -3 && __wm_eq(__wm_scalar_4_4, f_2199)) {
+const av_2200 = __wm_scalar_4_0.a0;
+const bv_2201 = __wm_scalar_4_1.a0;
+const cv_2202 = __wm_scalar_4_2.a0;
+const dv_2203 = __wm_scalar_4_3.a0;
+return { ctor: -3, name: "Ok", a0: __wm_tuple_call_4(f_2199, av_2200, bv_2201, cv_2202, dv_2203) };
 } else if (__wm_scalar_4_0?.ctor === -4) {
-const error_2179 = __wm_scalar_4_0.a0;
-return { ctor: -4, name: "Err", a0: error_2179 };
+const error_2204 = __wm_scalar_4_0.a0;
+return { ctor: -4, name: "Err", a0: error_2204 };
 } else if (__wm_scalar_4_1?.ctor === -4) {
-const error_2180 = __wm_scalar_4_1.a0;
-return { ctor: -4, name: "Err", a0: error_2180 };
+const error_2205 = __wm_scalar_4_1.a0;
+return { ctor: -4, name: "Err", a0: error_2205 };
 } else if (__wm_scalar_4_2?.ctor === -4) {
-const error_2181 = __wm_scalar_4_2.a0;
-return { ctor: -4, name: "Err", a0: error_2181 };
+const error_2206 = __wm_scalar_4_2.a0;
+return { ctor: -4, name: "Err", a0: error_2206 };
 } else if (__wm_scalar_4_3?.ctor === -4) {
-const error_2182 = __wm_scalar_4_3.a0;
-return { ctor: -4, name: "Err", a0: error_2182 };
+const error_2207 = __wm_scalar_4_3.a0;
+return { ctor: -4, name: "Err", a0: error_2207 };
 }
 __wm_fail("Match", "non-exhaustive match");
 };
-const map4_2183 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 5) return map4_2183__wm_d5(__arg[0], __arg[1], __arg[2], __arg[3], __arg[4]);
+const map4_2208 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 5) return map4_2208__wm_d5(__arg[0], __arg[1], __arg[2], __arg[3], __arg[4]);
 __wm_fail("Match", "pattern match failure in function");
 };
-Object.defineProperty(map4_2183, __wm_tuple_entry_5, { value: map4_2183__wm_d5 });
-const traverse_2184 = SubsetList_105.traverse;
-const all_2187 = (__arg) => {
+Object.defineProperty(map4_2208, __wm_tuple_entry_5, { value: map4_2208__wm_d5 });
+const traverse_2209 = SubsetList_106.traverse;
+const all_2212 = (__arg) => {
 if (true) {
-const items_2185 = __arg;
-return SubsetResult_104.map__wm_d2(__wm_tuple_call_2(traverse_2184, Js.Array.toList(items_2185), (__arg) => {
+const items_2210 = __arg;
+return SubsetResult_105.map__wm_d2(__wm_tuple_call_2(traverse_2209, Js.Array.toList(items_2210), (__arg) => {
 if (true) {
-const item_2186 = __arg;
-return item_2186;
+const item_2211 = __arg;
+return item_2211;
 }
 __wm_fail("Match", "pattern match failure in function");
 }), Js.Array.fromList);
 }
 __wm_fail("Match", "pattern match failure in function");
 };
-const collectList_2190 = (__arg) => {
+const collectList_2215 = (__arg) => {
 if (true) {
-const items_2188 = __arg;
-return __wm_tuple_call_2(traverse_2184, items_2188, (__arg) => {
+const items_2213 = __arg;
+return __wm_tuple_call_2(traverse_2209, items_2213, (__arg) => {
 if (true) {
-const item_2189 = __arg;
-return item_2189;
+const item_2214 = __arg;
+return item_2214;
 }
 __wm_fail("Match", "pattern match failure in function");
 });
 }
 __wm_fail("Match", "pattern match failure in function");
 };
-const filter_2195__wm_d3 = (value_2191, predicate_2192, error_2193) => {
-const __wm_return_value_25 = value_2191;
+const filter_2220__wm_d3 = (value_2216, predicate_2217, error_2218) => {
+const __wm_return_value_25 = value_2216;
 if (__wm_return_value_25?.ctor === -3) {
-const x_2194 = __wm_return_value_25.a0;
-if (predicate_2192(x_2194)) {
-return value_2191;
+const x_2219 = __wm_return_value_25.a0;
+if (predicate_2217(x_2219)) {
+return value_2216;
 } else {
-return { ctor: -4, name: "Err", a0: error_2193 };
+return { ctor: -4, name: "Err", a0: error_2218 };
 }
 } else if (__wm_return_value_25?.ctor === -4) {
 
-return value_2191;
+return value_2216;
 }
 __wm_fail("Match", "non-exhaustive match");
 };
-const filter_2195 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 3) return filter_2195__wm_d3(__arg[0], __arg[1], __arg[2]);
+const filter_2220 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 3) return filter_2220__wm_d3(__arg[0], __arg[1], __arg[2]);
 __wm_fail("Match", "pattern match failure in function");
 };
-Object.defineProperty(filter_2195, __wm_tuple_entry_3, { value: filter_2195__wm_d3 });
-return { "map": map_571, "map__wm_d2": map_571__wm_d2, "mapErr": mapErr_576, "mapErr__wm_d2": mapErr_576__wm_d2, "andThen": andThen_581, "andThen__wm_d2": andThen_581__wm_d2, "via": via_584, "viaErr": viaErr_589, "getOr": getOr_594, "getOr__wm_d2": getOr_594__wm_d2, "isOk": isOk_598, "isErr": isErr_602, "toOption": toOption_606, "succeed": succeed_608, "map2": map2_616, "map2__wm_d3": map2_616__wm_d3, "carrier": carrier_617, "fail": fail_2154, "debug": debug_2158, "map3": map3_2169, "map3__wm_d4": map3_2169__wm_d4, "map4": map4_2183, "map4__wm_d5": map4_2183__wm_d5, "traverse": traverse_2184, "all": all_2187, "collectList": collectList_2190, "filter": filter_2195, "filter__wm_d3": filter_2195__wm_d3 };
+Object.defineProperty(filter_2220, __wm_tuple_entry_3, { value: filter_2220__wm_d3 });
+return { "map": map_571, "map__wm_d2": map_571__wm_d2, "mapErr": mapErr_576, "mapErr__wm_d2": mapErr_576__wm_d2, "andThen": andThen_581, "andThen__wm_d2": andThen_581__wm_d2, "via": via_584, "viaErr": viaErr_589, "getOr": getOr_594, "getOr__wm_d2": getOr_594__wm_d2, "isOk": isOk_598, "isErr": isErr_602, "toOption": toOption_606, "succeed": succeed_608, "map2": map2_616, "map2__wm_d3": map2_616__wm_d3, "carrier": carrier_617, "fail": fail_2179, "debug": debug_2183, "map3": map3_2194, "map3__wm_d4": map3_2194__wm_d4, "map4": map4_2208, "map4__wm_d5": map4_2208__wm_d5, "traverse": traverse_2209, "all": all_2212, "collectList": collectList_2215, "filter": filter_2220, "filter__wm_d3": filter_2220__wm_d3 };
   },
   (value) => { __wm_std_Result = value; },
 );
@@ -4321,7 +4411,7 @@ const Bool = __wm_std_Bool;
 const Order = __wm_std_Order;
 const Char = __wm_std_Char;
 const Bytes = __wm_std_Bytes;
-const Int32 = { "div": __wm_basis_Int32["div"], "mod": __wm_basis_Int32["mod"], "checkedAdd": __wm_basis_Int32["checkedAdd"], "checkedSub": __wm_basis_Int32["checkedSub"], "checkedMul": __wm_basis_Int32["checkedMul"], "toReal64": __wm_basis_Int32["toReal64"], "fromReal64": __wm_basis_Int32["fromReal64"], "toString": __wm_basis_Int32["toString"], "minimum": __wm_basis_Int32["minimum"], "maximum": __wm_basis_Int32["maximum"], "InvalidInteger": __wm_std_Int32["InvalidInteger"], "Overflow": __wm_std_Int32["Overflow"], "StringError": __wm_std_Int32["StringError"], "digits": __wm_std_Int32["digits"], "signed": __wm_std_Int32["signed"], "fromString": __wm_std_Int32["fromString"], "complete": __wm_std_Int32["complete"], "parseDecimal": __wm_std_Int32["parseDecimal"], "parseNatural": __wm_std_Int32["parseNatural"] };
+const Int32 = { "div": __wm_basis_Int32["div"], "mod": __wm_basis_Int32["mod"], "checkedAdd": __wm_basis_Int32["checkedAdd"], "checkedSub": __wm_basis_Int32["checkedSub"], "checkedMul": __wm_basis_Int32["checkedMul"], "toReal64": __wm_basis_Int32["toReal64"], "fromReal64": __wm_basis_Int32["fromReal64"], "minimum": __wm_basis_Int32["minimum"], "maximum": __wm_basis_Int32["maximum"], "InvalidInteger": __wm_std_Int32["InvalidInteger"], "Overflow": __wm_std_Int32["Overflow"], "StringError": __wm_std_Int32["StringError"], "digits": __wm_std_Int32["digits"], "signed": __wm_std_Int32["signed"], "fromString": __wm_std_Int32["fromString"], "complete": __wm_std_Int32["complete"], "parseDecimal": __wm_std_Int32["parseDecimal"], "parseNatural": __wm_std_Int32["parseNatural"], "rem": __wm_std_Int32["rem"], "toString": __wm_std_Int32["toString"] };
 const Unicode = __wm_std_Unicode;
 const Utf8 = __wm_std_Utf8;
 const Text = { "of": __wm_basis_Text["of"], "InvalidIndex": __wm_std_Text["InvalidIndex"], "UnicodeError": __wm_std_Text["UnicodeError"], "toUtf8": __wm_std_Text["toUtf8"], "fromUtf8": __wm_std_Text["fromUtf8"], "explode": __wm_std_Text["explode"], "implode": __wm_std_Text["implode"], "str": __wm_std_Text["str"], "size": __wm_std_Text["size"], "extract": __wm_std_Text["extract"], "substring": __wm_std_Text["substring"], "map": __wm_std_Text["map"], "translate": __wm_std_Text["translate"], "trim": __wm_std_Text["trim"], "compare": __wm_std_Text["compare"], "isPrefix": __wm_std_Text["isPrefix"], "isSuffix": __wm_std_Text["isSuffix"], "isSubstring": __wm_std_Text["isSubstring"], "fields": __wm_std_Text["fields"], "tokens": __wm_std_Text["tokens"] };

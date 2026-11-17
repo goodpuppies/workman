@@ -1,0 +1,5 @@
+// Synced from subm/SubsetML by scripts/sync_subml_basis.ts. Do not edit here.
+// Workman/JS implementation of the real primitives. Workman's `%` on a Real64 is JS's
+// remainder, and a template shows a Real64 as JS's Number#toString does.
+let rem = (dividend: Real64.Real, divisor: Real64.Real) => { dividend % divisor };
+let toString = (value: Real64.Real) => { `${value}` };

@@ -775,6 +775,7 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
           "toNative",
           "size",
           "str",
+          "fromChar",
           "isPrefix",
           "isSuffix",
           "isSubstring",
@@ -802,6 +803,8 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
           "complete",
           "parseDecimal",
           "parseNatural",
+          "rem",
+          "toString",
         ],
         types: [
           "Error",
@@ -829,6 +832,7 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
           "complete",
           "parseDecimal",
           "parseNatural",
+          "rem",
         ],
         types: [
           "Int",
@@ -1193,6 +1197,18 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
       {
         alias: "Real64",
         values: [
+          "equal",
+          "rem",
+          "toString",
+        ],
+        types: [],
+      },
+      {
+        alias: "Real64",
+        values: [
+          "equal",
+          "rem",
+          "toString",
           "ManExp",
           "Split",
           "radix",
@@ -1202,7 +1218,6 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
           "minNormalPos",
           "posInf",
           "negInf",
-          "rem",
           "abs",
           "isNan",
           "isFinite",
@@ -1280,6 +1295,7 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
           "toNative",
           "size",
           "str",
+          "fromChar",
           "isPrefix",
           "isSuffix",
           "isSubstring",
@@ -1492,6 +1508,7 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
           "writeFile",
           "writeStdout",
           "writeStderr",
+          "printLine",
           "errorText",
         ],
         types: [

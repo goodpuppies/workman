@@ -78,6 +78,14 @@ let writeStdout = (data) => {
 let writeStderr = (data) => {
   SubsetResult.andThen(native(data), (text) => { host(SubsetHost.writeStderr(text)) })
 };
+/* Workman's `print`: the text and a newline on standard output. Like Workman's, it reports
+   no failure. */
+let printLine = (text) => {
+  match(SubsetHost.writeStdout(text ++ "\n")) {
+    SubsetResult.Ok(_) => { void },
+    SubsetResult.Err(_) => { void }
+  }
+};
 let errorText = match {
   HostError(message) => { message },
   NonByte(offset) => { "non-byte I/O value" },

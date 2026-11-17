@@ -31,9 +31,9 @@ case too because that type variable escapes its scope. Annotating the generic he
 `value: Ast.Items<a>` parameter puts `a` in scope for the helper and its callbacks; the recursive
 projector needs no specialization or duplicate implementation.
 
-This native test uses MLton's target Basis. The generated graph still fails the restricted
-`check-portable` profile on bootstrap `not`; see the
-[remaining pervasive lowering work](../../markdown/issues/wm-native-output-still-uses-bootstrap-pervasives.md).
+The generated graph passes the restricted `check-portable` profile, which the native test now
+checks; the reader spells `!`, `%`, real equality, template text and `print` with SubsetML Basis
+functions ([pervasive lowering](../../markdown/issues/FIXED-wm-native-output-still-uses-bootstrap-pervasives.md)).
 The ordinary WM suite now passes all 61 cases after using the public testman API consistently
 and correcting two list-recovery boundaries. The
 [Test identity issue](../../markdown/issues/wm-test-runner-reports-distinct-test-identities.md)

@@ -25,6 +25,7 @@ try {
       "wm",
       temporary,
       "src/subset_text_host.sml",
+      "src/subset_real_host.sml",
       "src/subset_host.sml",
       ...modules.map(([, m]) => m.source),
     ],
@@ -63,6 +64,10 @@ try {
     "subset_text_host.wm",
     synced(await Deno.readFile(join(subsetml, "lib/subset_text_host.wm"))),
   );
+  files.set(
+    "subset_real_host.wm",
+    synced(await Deno.readFile(join(subsetml, "lib/subset_real_host.wm"))),
+  );
   const host = await Deno.readTextFile(join(subsetml, "lib/subset_host.wm"));
   if (!host.includes('js.module("./subset_host.js")')) {
     throw new Error("lib/subset_host.wm no longer imports ./subset_host.js");
@@ -90,6 +95,7 @@ try {
     "lib/subset_host.js",
     "lib/subset_host.wm",
     "lib/subset_text_host.wm",
+    "lib/subset_real_host.wm",
     ...modules.map(([, m]) => m.source),
   ].sort();
   const commit = await new Deno.Command("git", {

@@ -1,5 +1,10 @@
 from "./basis.wm" import * as Basis;
 from "basis/order.wm" import { Less, Equal, Greater };
+
+// `Real64` is the SubsetML Basis `Real64` (equal, rem, toString) plus the JS-backed math below. A
+// name the Basis exports is never redefined here (markdown/basis-authority-plan.md).
+export from "basis/real64.wm" import *;
+
 from js.global("Math") import unsafe {
   abs as primAbs: Real64.Real -> Real64.Real,
   floor as primFloor: Real64.Real -> Real64.Real,
@@ -46,8 +51,6 @@ let minPos = MIN_VALUE;
 let minNormalPos = primPow(2, -1022);
 let posInf = 1 / 0;
 let negInf = -1 / 0;
-
-let rem = (x: Real64.Real, y: Real64.Real) => { x % y };
 
 let abs = primAbs;
 

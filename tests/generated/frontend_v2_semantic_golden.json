@@ -28,7 +28,7 @@
     "std/pack_word64_big.wm": "10d165fac794c0925a4d14a080328c1a31ce415e5d231f0e1dcbb83d1be7312c",
     "std/pack_word64_little.wm": "446593a2c62b517e437f5561a0a5a025005e0a6114c6393f9e28fe3abe548bb6",
     "std/real32.wm": "f6d4cb4861e275b6cec56316a52afe9fe4ea3318d0559ed3d43593dafff5366d",
-    "std/real64.wm": "e317286a10236371ca13c1c08810665af950dede25d304d34d0aa5685ad57f50",
+    "std/real64.wm": "d8af2047c8c70cc933ee96aa7dc0ea2d60bd8c74d29d21b24ada0dabca3526cd",
     "std/result.wm": "965208c17b768b5c1d15e7fa9eaaa9d9dca4b6fa83992222c0d6bebb723e8980",
     "std/string.wm": "b9e7bca12c435737bd379967b42c76ee47e5c1b45969c51fd9df1a89654e21f1",
     "std/task.wm": "e3c978e6f060c32f86cf004be85f118a25d98c4b33dd5107058a710343f6f19a",

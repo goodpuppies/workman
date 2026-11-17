@@ -89,3 +89,31 @@ let parseNatural = (value) => {
     (bytes) => { complete(digits(bytes, false)) }
   )
 };
+
+/* Workman's `%`: the remainder of division truncated toward zero, with the dividend's sign.
+   Floored `mod` differs from it exactly when the remainder is nonzero and the signs differ. */
+let rem = (dividend: Int32.Int, divisor: Int32.Int) => {
+  let m = Int32.mod(dividend, divisor);
+  if (if (m != 0) { dividend < 0 != divisor < 0 } else { false }) { m - divisor } else { m }
+};
+
+/* Decimal text as Workman writes it, `-12` rather than SML's `~12`. Digits are taken from
+   the nonpositive value, so the minimum integer needs no negation. */
+let toString = (value: Int32.Int) => {
+  let rec digit = (index, entries) => {
+    match(entries) {
+      [] => { "" },
+      [first, ..rest] => { if (index <= 0) { first } else { digit(index - 1, rest) } }
+    }
+  };
+  let rec go = (remaining, acc) => {
+    let residue = Int32.mod(remaining, 10);
+    let text = digit(
+      if (residue == 0) { 0 } else { 10 - residue },
+      ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
+    );
+    let next = if (residue == 0) { Int32.div(remaining, 10) } else { Int32.div(remaining, 10) + 1 };
+    if (next == 0) { [text, ..acc] } else { go(next, [text, ..acc]) }
+  };
+  if (value < 0) { SubsetString.concat(["-", ..go(value, [])]) } else { SubsetString.concat(go(-value, [])) }
+};

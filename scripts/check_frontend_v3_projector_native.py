@@ -16,20 +16,20 @@ with tempfile.TemporaryDirectory(prefix="frontend-v3-projector-") as temporary:
     lowered = output / "sml"
     basis.mkdir()
     lowered.mkdir()
-    modules = json.loads((subsetml / "docs/basis-dependencies.json").read_text())["modules"]
-    files = ["src/subset_text_host.sml"]
-    for name, module in modules.items():
-        files.append(module["source"])
-        if name == "SubsetResult":
-            files.append("src/subset_host.sml")
+    files = subprocess.run(["python3", "scripts/basis-sources.py"], cwd=subsetml, capture_output=True,
+                           text=True, check=True).stdout.split()
     subprocess.run([compiler, "wm", basis, *files], cwd=subsetml, check=True)
     subprocess.run([
         compiler, "sml-entry", lowered, "--basis", basis,
         "--panic-runtime", basis / "subset_process.wm",
         "--native-adapter", basis / "subset_host.wm", subsetml / "lib/subset_host.sml", "SubsetHost",
         "--native-adapter", basis / "subset_text_host.wm",
-        subsetml / "lib/subset_text_host.sml", "SubsetTextHost", entry,
+        subsetml / "lib/subset_text_host.sml", "SubsetTextHost",
+        "--native-adapter", basis / "subset_real_host.wm",
+        subsetml / "lib/subset_real_host.sml", "SubsetRealHost", entry,
     ], check=True)
+    # The translated graph uses only the SubsetML Basis: the restricted profile accepts it.
+    subprocess.run([compiler, "check-portable", lowered / (Path(entry).stem + ".sml")], check=True)
     (lowered / "driver.sml").write_text("val _ = FrontendV3ProjectNative.main ()\n")
     (lowered / "run.mlb").write_text('"project.mlb"\n"driver.sml"\n')
     executable = output / "projector"

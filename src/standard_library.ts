@@ -102,7 +102,7 @@ function isAutoOpened(
 }
 
 /** Basis modules that implement other Basis modules for a host, not a public interface. */
-const INTERNAL_BASIS_MODULES = new Set(["host", "text_host"]);
+const INTERNAL_BASIS_MODULES = new Set(["host", "text_host", "real_host"]);
 
 /** Basis namespaces whose SML name isn't the capitalized file name. */
 const BASIS_NAMESPACE_NAMES: Readonly<Record<string, string>> = { os: "OS" };

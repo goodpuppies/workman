@@ -93,6 +93,8 @@ let toNative = (bytes) => {
 // Checked byte-string helpers share the extraction/reconstruction boundaries.
 let size = (value) => { SubsetResult.map(fromNative(value), SubsetList.length) };
 let str = (c) => { toNative([c]) };
+// A one-character native string. Total: a character is always a host text unit.
+let fromChar = (c) => { SubsetTextHost.fromCodes([SubsetTextHost.charCode(c)]) };
 
 /* SML STRING counterparts, with data-first arguments and typed boundary errors.
    Validate complete operands even when a match could be decided early. */
