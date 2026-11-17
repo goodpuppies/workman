@@ -31,8 +31,11 @@ At the end of each top-level declaration, integer literals without determining c
 `Int32` when all literals sharing their type fit its signed 32-bit range. Larger literals default to
 `Real64`, with JavaScript number rounding. Decimal-point and exponent literals, such as `1.0` and
 `1e3`, are `Real64` or `Real32` by context (`let half: Real32.Real = 0.5;` rounds to single
-precision) and otherwise `Real64`; inside `@gpu` code they are always `Real64`. Unconstrained operators without integer literals retain their `Real64`
-default. Inside `@gpu` code, undecided integer literals also default to `Real64`.
+precision) and otherwise `Real64`; inside `@gpu` code they are always `Real64`. An operator that
+nothing decides takes its class's default, as in Standard ML (Appendix E): `+`, `-`, `*`, `%` and
+the comparisons default to `Int32`, so `(a, b) => a + b` is `(Int32, Int32) -> Int32`, and `/`
+defaults to `Real64`. Inside `@gpu` code, where shader arithmetic is floating point, undecided
+literals and operators default to `Real64`.
 
 A later declaration cannot change an earlier default. This helper takes and returns `Int32`:
 

@@ -317,7 +317,7 @@ let shaderTypeReason = (semanticKind, shaderKind) => {
 let rec offsetTypeIds = match(typeIds, offset, output) => {
   ([], Var(offset), Var(output)) => { reverseInto(output, []) },
   ([Var(typeId), ..rest], Var(offset), Var(output)) => {
-    offsetTypeIds(rest, offset, [offset + typeId, ..output])
+    offsetTypeIds(rest, offset, [(offset + typeId: Real64.Real), ..output])
   }
 };
 

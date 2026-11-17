@@ -113,8 +113,9 @@ entire Standard ML Basis Library unchanged.
 
 Numeric annotations use sized modules: `Int32` means `Int32.Int`, and `Real64` means
 `Real64.Real`, through the ordinary `Self` lookup rule. Integers and reals remain distinct.
-Integer defaults are chosen at top-level declaration boundaries; larger literals and undecided
-GPU literals default to `Real64`, and context can select words or `Int64`. JS number parameters
+Integer defaults are chosen at top-level declaration boundaries, and an undecided operator takes
+its Appendix E class default (`int` for `+`, `real` for `/`) as in SML; larger literals and
+undecided GPU arithmetic default to `Real64`, and context can select words or `Int64`. JS number parameters
 accept existing `Int32` values, but WM functions do not implicitly widen them. See
 [numeric literals](numbers.md) for ranges and operator limits.
 

@@ -62,7 +62,7 @@ Deno.test("shared Core owns pipes and anonymous match functions before backend l
   const source = `
     type Direction = Left | Right;
     let lr = (_uv) => { Left };
-    let add = (value, extra) => { value + extra };
+    let add = (value: Real64, extra) => { value + extra };
     let shade = (uv) => {
       @gpu;
       let uvr = uv :> lr :> match {

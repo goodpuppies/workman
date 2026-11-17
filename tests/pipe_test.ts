@@ -12,7 +12,7 @@ Deno.test("basic pipe to function", async () => {
 Deno.test("chained pipe operators", async () => {
   await checkSource(`
     let double = (x: Real64) => { x * 2 };
-    let add = (x, y) => { x + y };
+    let add = (x: Real64, y) => { x + y };
     let print = (x) => { x };
     let result = 42 :> double :> add(10) :> print;
   `);

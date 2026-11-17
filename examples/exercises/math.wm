@@ -37,7 +37,7 @@ let rec isEvenLenght = match(list) => {
   }
 };
 
-let compareN = (a,b) => {
+let compareN = (a: Real64, b) => {
   if (a>=b) {
     if (a==b){Equal}
     else {Greater}

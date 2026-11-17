@@ -261,12 +261,12 @@ Deno.test("an expression lambda leaves the phrase semicolon outside its body", a
     let answer = square(5);
   `);
   for (const name of ["square", "grouped", "explicitBlock"]) {
-    expectBinding(result.env, name, { type: "Real64.Real -> Real64.Real", vars: 0 });
+    expectBinding(result.env, name, { type: "Int32.Int -> Int32.Int", vars: 0 });
   }
   for (const name of ["explicitVoid", "sequenceVoid"]) {
-    expectBinding(result.env, name, { type: "Real64.Real -> Void", vars: 0 });
+    expectBinding(result.env, name, { type: "Int32.Int -> Void", vars: 0 });
   }
-  expectBinding(result.env, "answer", { type: "Real64.Real", vars: 0 });
+  expectBinding(result.env, "answer", { type: "Int32.Int", vars: 0 });
   assertEquals(
     await formatFrontendV2Source("let square=x=>x*x;", "<test>", true),
     "let square = x => x * x;",

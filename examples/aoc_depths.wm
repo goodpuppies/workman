@@ -2,7 +2,7 @@
 
 type List<T> = Nil | Cons<T, List<T>>;
 type Option<T> = None | Some<T>;
-type CountState = | CountState<Option<Real64>, Real64>;
+type CountState = | CountState<Option<Int32>, Int32>;
 
 let rec map = (f, xs) => {
   match(xs) {
@@ -63,7 +63,7 @@ let countWindowIncreases = (depths) => {
   countIncreases(windowSums(depths))
 };
 
-let sampleDepths: List<Real64> = [199, 200, 208, 210, 200, 207, 240, 269, 260, 263];
+let sampleDepths: List<Int32> = [199, 200, 208, 210, 200, 207, 240, 269, 260, 263];
 
 let adjustedDepths = map((x) => { x + 1 }, sampleDepths);
 let largeDepths = filter((x) => { x > 200 }, adjustedDepths);

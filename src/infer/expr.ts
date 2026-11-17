@@ -17,6 +17,7 @@ import {
   instantiate,
   knownTypeInfos,
   named,
+  withGpuArithmetic,
   prune,
   Real64Ty,
   StringTy,
@@ -77,7 +78,10 @@ const negatedLiterals = new WeakSet<Expr>();
 
 export function inferExpr(expr: Expr, context: InferContext, expected?: Ty): Ty {
   try {
-    return inferExprInner(expr, context, expected);
+    return withGpuArithmetic(
+      context.dialect.domain === "gpu",
+      () => inferExprInner(expr, context, expected),
+    );
   } catch (error) {
     throw diagnosticError(error, expr.node);
   }

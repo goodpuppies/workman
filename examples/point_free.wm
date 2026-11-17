@@ -3,18 +3,18 @@
 // ============================================================
 
 // Curried, data-last
-let add = a => b => a + b;
-let multiply = a => b => a * b;
+let add = (a: Real64) => b => a + b;
+let multiply = (a: Real64) => b => a * b;
 
 // Tupled, data-first
-let clamp = (x, low, high) =>
+let clamp = (x: Real64, low, high) =>
   match {
     =(x < low) => { low },
     =(x > high) => { high },
     _ => { x }
   } true;
 
-let between = (x, low, high) =>
+let between = (x: Real64, low, high) =>
   x > low && x < high;
 
 let prefix = (text, label) => label ++ text;
@@ -68,7 +68,7 @@ let formatted = [10.0, 20, 30, 40]
 // 3. Data-first predicates without forwarding lambdas
 // ------------------------------------------------------------
 
-let filtered = [5, 15, 25, 50, 110]
+let filtered = [5.0, 15, 25, 50, 110]
   :> List.filter(=> :> between(10, 100))
   :> List.map(=> :> multiply 2);
 

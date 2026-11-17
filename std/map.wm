@@ -2,12 +2,12 @@ from "basis/order.wm" import { Order, Less, Equal, Greater };
 
 type MapTree<K, V> =
   | MapEmpty
-  | MapNode<Real64.Real, K, V, MapTree<K, V>, MapTree<K, V>>;
+  | MapNode<Int32.Int, K, V, MapTree<K, V>, MapTree<K, V>>;
 
 type Map<K, V> =
   | MapValue<(K, K) -> Order, MapTree<K, V>>;
 
-let numberCompare = (left, right) => {
+let numberCompare = (left: Real64.Real, right: Real64.Real) => {
   if (left < right) {
     Less
   } else {

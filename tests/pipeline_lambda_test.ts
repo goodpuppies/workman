@@ -8,8 +8,8 @@ import { loadFrontendV2Surface } from "../src/frontend_v2_surface_loader.ts";
 
 Deno.test("pipeline lambdas execute with independent inputs, blocks and carrier continuations", async () => {
   const source = `
-    let add = (value, amount) => value + amount;
-    let times = (value, amount) => value * amount;
+    let add = (value: Real64, amount) => value + amount;
+    let times = (value: Real64, amount) => value * amount;
     let apply = (value, f) => f(value);
     let offset: Real64 = 9;
     let chain = => :> add(2) :> times(3);
@@ -24,7 +24,7 @@ Deno.test("pipeline lambdas execute with independent inputs, blocks and carrier 
     let block = => { :> add(1); let final = 17; final };
     let discarded = => { :> add(1); };
     let unitFn = => { 42 };
-    let safeAdd = (value, amount) => Ok(value + amount);
+    let safeAdd = (value: Real64, amount) => Ok(value + amount);
     let success: Result<Real64.Real, String> = Ok(4)
       :> Monad.via Result => :> safeAdd(2) :> Result.map(times(_, 3));
     let failure: Result<Real64.Real, String> = Err("stop")

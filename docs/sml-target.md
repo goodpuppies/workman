@@ -19,27 +19,27 @@ passes SubsetML's `check-portable`.
 
 ## What carries over
 
-A translated program behaves as it does under `wm run`. In particular `print` takes any
-number of arguments and shows them exactly as WM does: text and characters raw, `-3` (not
-SML's `~3`), reals as JavaScript writes them (`0.30000000000000004`, `1e+21`), `void`,
-tuples, lists, records with sorted labels, `Some`/`None` and `Ok`/`Err`. `!`, `%`, real
-`==`, template strings, carriers (`Result|a, b|`, `via`), records and record updates,
-datatypes and pattern matching translate directly.
+A translated program behaves as it does under `wm run`. `print` takes any number of
+arguments and shows them exactly as WM does: text and characters raw, `-3` (not SML's `~3`),
+reals as JavaScript writes them (`0.30000000000000004`, `1e+21`), `void`, tuples, lists,
+records with sorted labels, `Some`/`None`, `Ok`/`Err`, and your own datatypes (`Link(End)`,
+`Box(1, 2)`). Template strings and `Text.of` show values the same way. `!`, `%`, real `==`,
+carriers (`Result|a, b|`, `via`), records and record updates, `_name` bindings, lambdas in
+every form (`a => b => a + b`, `=> :> f`), pipelines, datatypes and pattern matching translate
+directly. Numeric defaults agree: an operator nothing decides is `Int32` (`Real64` for `/`) in
+WM as in SML.
 
 ## What does not, yet
 
-The reader accepts a profile of WM. These are rejected with an error that names the place:
+The translator accepts a profile of WM. These are rejected with an error that names the place:
 
 - JavaScript imports (`from js.module(...)`, `from js.global(...)`), and so `Task`, the JS
   FFI and the parts of the std library built on them. C FFI is likewise not translated.
-- A function whose numeric type WM leaves generic, such as `(a, b) => { a + b }` used at
-  both `Int32` and `Real64`: SML fixes one type per declaration. Annotate it.
-- Names starting with `_`, which SML reserves.
-- `print` of a value whose type is partly undecided (`[None]`), or of your own datatypes:
-  annotate, or print text you build.
-- A record receiver whose record type no annotation or declaration fixes.
-- Some newer surface forms (for example point-free function sections).
+- The std modules (`Traverse`, `Map`, ...): import the `basis/` modules instead
+  (`basis/string.wm`, `basis/list.wm`, ...).
+- Showing a value through a generic function's own type variable, as in
+  `(x) => { print(x) }`: SML has no generic display. Annotate the parameter.
+- A field selection whose receiver several declared record types could be, with nothing else
+  deciding it: annotate the receiver.
 
-Imports must be relative `.wm` paths or `basis/` modules. Use the `basis/` modules
-(`basis/string.wm`, `basis/list.wm`, ...) for library functions; the std modules that wrap
-JavaScript are not available natively.
+Imports must be relative `.wm` paths or `basis/` modules.

@@ -104,6 +104,7 @@ Deno.test("integer defaults are fixed at declaration boundaries and respect sign
     let realLiteral = 1.0;
     let exponent = 1e3;
     let add = (left, right) => left + right;
+    let half = value => value / 2;
   `);
   for (const name of ["zero", "minimum", "maximum"]) {
     expectBinding(result.env, name, { type: "Int32.Int", vars: 0 });
@@ -113,7 +114,9 @@ Deno.test("integer defaults are fixed at declaration boundaries and respect sign
   }
   expectBinding(result.env, "nonNegative", { type: "Int32.Int -> Int32.Int", vars: 0 });
   expectBinding(result.env, "realNonNegative", { type: "Real64.Real -> Real64.Real", vars: 0 });
-  expectBinding(result.env, "add", { type: "(Real64.Real, Real64.Real) -> Real64.Real", vars: 0 });
+  // An operator nothing decides takes its class default, as in SML: int for `+`, real for `/`.
+  expectBinding(result.env, "add", { type: "(Int32.Int, Int32.Int) -> Int32.Int", vars: 0 });
+  expectBinding(result.env, "half", { type: "Real64.Real -> Real64.Real", vars: 0 });
   for (
     const source of [
       "let n = 1; let real: Real64 = n;",

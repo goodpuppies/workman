@@ -403,6 +403,7 @@ let count = 42;             -- Int32
 let measurement = 42.0;     -- Real64
 let real: Real64 = 42;      -- context makes the literal Real64
 let increment = x => x + 1; -- Int32 -> Int32
+let add = (a, b) => a + b;  -- (Int32, Int32) -> Int32, as in Standard ML
 let scale = (x: Real64) => x * 2;
 ```
 

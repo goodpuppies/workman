@@ -17,7 +17,7 @@ record Rect = {
   height: Real64,
 };
 
-let clamp = (minimum, maximum, value) => {
+let clamp = (minimum: Real64, maximum: Real64, value: Real64) => {
   if (value < minimum) {
     minimum
   } else {

@@ -191,7 +191,7 @@ Deno.test("schema v2 enforces lexical GPU helper ownership", async () => {
   assertEquals(multiple.gpuSlices.length, 2);
 
   const virtualFs = new Map([
-    ["/test/helper.wm", `let shadePart = (x) => { x * x };`],
+    ["/test/helper.wm", `let shadePart = (x: Real64) => { x * x };`],
     [
       "/test/main.wm",
       `

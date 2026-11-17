@@ -88,9 +88,9 @@ Deno.test("ordinary type inlays include local let binders", async () => {
   assertEquals(
     typeHints.map(({ label, data }) => [label, data.category]),
     [
-      [": Real64.Real", "parameter"],
-      [": Real64.Real", "result"],
-      [": Real64.Real", "binding"],
+      [": Int32.Int", "parameter"],
+      [": Int32.Int", "result"],
+      [": Int32.Int", "binding"],
     ],
   );
   assertEquals(hints[2].position.character, source.indexOf("doubled") + "doubled".length);
@@ -349,7 +349,7 @@ Deno.test("a bare lambda parameter shows its result after the parameter's own ty
   ]);
   assertEquals(at(1), [": Int32.Int", "-> Int32.Int"]);
   assertEquals(at(2), [": 'a", "-> 'a"]);
-  assertEquals(at(3).slice(0, 2), [": Real64.Real", "-> Real64.Real -> Rea..."]);
+  assertEquals(at(3).slice(0, 2), [": Int32.Int", "-> Int32.Int -> Int32..."]);
   assertEquals(at(4), [": Int32.Int", ": Int32.Int"]);
   assertEquals(at(6).includes("-> Real64.Real"), false);
 });

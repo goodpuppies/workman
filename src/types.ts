@@ -261,6 +261,8 @@ export type NumericConstraint = Readonly<{
   candidates: readonly NumericType[];
   /** `realDefault`: written in `@gpu` code, where an undecided literal is `Real64`. */
   literals: readonly { text: string; node?: Expr["node"]; realDefault?: boolean }[];
+  /** Arithmetic in `@gpu` code, where an undecided operator is `Real64` too. */
+  realDefault?: boolean;
 }>;
 
 /** Numeric variables belong to one synchronous module-inference scope. */
@@ -287,6 +289,19 @@ export function freshNumeric(name?: string, candidates: readonly NumericType[] =
   return t;
 }
 
+/** Whether inference is inside `@gpu` code, whose undecided arithmetic defaults to `Real64`. */
+let gpuArithmetic = false;
+
+export function withGpuArithmetic<T>(gpu: boolean, action: () => T): T {
+  const previous = gpuArithmetic;
+  gpuArithmetic = gpu;
+  try {
+    return action();
+  } finally {
+    gpuArithmetic = previous;
+  }
+}
+
 export function freshIntegerLiteral(
   literal: { value: number; exact?: string; node?: Expr["node"] },
   negated = false,
@@ -302,14 +317,22 @@ export function freshIntegerLiteral(
   return t;
 }
 
-function markNumeric(t: Extract<Ty, { tag: "var" }>, constraint: NumericConstraint): void {
-  if (t.numeric === constraint) return;
+function markNumeric(t: Extract<Ty, { tag: "var" }>, given: NumericConstraint): void {
+  if (t.numeric === given) {
+    if (gpuArithmetic && !given.realDefault) t.numeric = { ...given, realDefault: true };
+    return;
+  }
+  const constraint = gpuArithmetic && !given.realDefault ? { ...given, realDefault: true } : given;
   if (t.numeric) {
     const candidates = t.numeric.candidates.filter((candidate) =>
       constraint.candidates.includes(candidate)
     );
     if (!candidates.length) throw new Error("incompatible numeric overload constraints");
-    t.numeric = { candidates, literals: [...t.numeric.literals, ...constraint.literals] };
+    t.numeric = {
+      candidates,
+      literals: [...t.numeric.literals, ...constraint.literals],
+      ...(t.numeric.realDefault || constraint.realDefault ? { realDefault: true } : {}),
+    };
   } else {
     t.numeric = constraint;
     pendingNumeric.push(t);
@@ -377,15 +400,16 @@ const INT32_MIN = -(2n ** 31n);
 const INT32_MAX = 2n ** 31n - 1n;
 
 /**
- * The type an undecided numeric variable takes: `Int32` when it holds integer literals that all
- * fit, as SML defaults `int`; `Real64` otherwise, including for operators with no literal
- * (`(a, b) => a + b`), literals outside the `Int32` range and literals in `@gpu` code, where
- * shader arithmetic is floating point.
+ * The type an undecided numeric variable takes, the default of its Appendix E class: `Int32`
+ * when the class has it, as SML defaults `int` (`(a, b) => a + b` is `(Int32, Int32) -> Int32`),
+ * and `Real64` for the reals' class (`/`). Two Workman extensions take `Real64` too: integer
+ * literals outside the `Int32` range, and literals and arithmetic in `@gpu` code, where shader
+ * arithmetic is floating point.
  */
 function numericDefault(constraint: NumericConstraint): Ty {
-  if (constraint.literals.some((literal) => literal.realDefault)) return Real64Ty;
+  if (constraint.realDefault || constraint.literals.some((literal) => literal.realDefault)) return Real64Ty;
   const int32 = constraint.candidates.some((candidate) => candidate.name === "Int32.Int");
-  const fits = constraint.literals.length > 0 && constraint.literals.every((literal) => {
+  const fits = constraint.literals.every((literal) => {
     const value = exactInteger(literal.text);
     return value >= INT32_MIN && value <= INT32_MAX;
   });

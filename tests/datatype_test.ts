@@ -247,7 +247,7 @@ Deno.test("type alias substitution is applied inside datatype constructor payloa
 
   expectBinding(result.env, "Box", { type: "(T, T) -> Box<T>", vars: 1 });
   expectBinding(result.env, "boxed", { type: "Box<Int32.Int>", vars: 0 });
-  expectBinding(result.env, "unbox", { type: "Box<Real64.Real> -> Real64.Real", vars: 0 });
+  expectBinding(result.env, "unbox", { type: "Box<Int32.Int> -> Int32.Int", vars: 0 });
 });
 
 Deno.test("datatype constructors reject payloads mentioning unbound type variables", async () => {
