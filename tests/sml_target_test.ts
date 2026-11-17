@@ -167,7 +167,7 @@ from "./forward.wm" import * as F;
 from "./base.wm" import * as B;
 let shape: F.Figure = F.make(4);
 let values: F.Items<Int32.Int> = [F.id(1), F.id(2)];
-let pair: F.Duo<Int32.Int> = F.Duo(3, 5);
+let pair: F.Duo<Int32.Int> = F.Duo { first = 3, second = 5 };
 let n = match(shape) { B.Circle(n) => { n } };
 let _ = print(n, values, pair.first, pair.second, F.apply("ok"));
 `);
@@ -255,6 +255,66 @@ let wrong: Q.Figure = Other.Circle(1);
     const leak = await wm(["sml", "leak.wm", "leak"], directory);
     assertEquals(leak.code, 1);
     assertStringIncludes(leak.stderr, "unbound");
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
+Deno.test("wm sml forwards named record layouts and ordered updates through facades", async () => {
+  const directory = await Deno.makeTempDir({ prefix: "wm-sml-record-facades-" });
+  try {
+    await Deno.writeTextFile(join(directory, "hidden.wm"),
+      'type Hidden = | Hidden<Int32.Int>;\n');
+    await Deno.writeTextFile(join(directory, "base.wm"), `
+from "./hidden.wm" import * as H;
+record Pair<a> = { left: a, right: a };
+record Box<a> = { value: a, secret: H.Hidden };
+let secret = () => { H.Hidden(7) };
+let read = (box: Box<Int32.Int>) => { match(box.secret) { H.Hidden(n) => { n + box.value } } };
+let _ = print("initialized");
+`);
+    await Deno.writeTextFile(join(directory, "facade.wm"),
+      'export from "./base.wm" import { Pair as Duo, Box as Wrapped, secret, read };\n');
+    await Deno.writeTextFile(join(directory, "forward.wm"),
+      'export from "./facade.wm" import { Duo as Pair, Wrapped as Box, secret, read };\n');
+    await Deno.writeTextFile(join(directory, "outer.wm"),
+      'export from "./forward.wm" import * as Records;\n');
+    const header = `from "./outer.wm" import { Records as R };
+from "./forward.wm" import { Pair as LocalPair };
+`;
+    await Deno.writeTextFile(join(directory, "app.wm"), header + `
+let mark = (tag: String, value) => { print(tag); value };
+let seed = (tag: String) => { print(tag); R.Pair { left = 1, right = 2 } };
+let pair = R.Pair { left = mark("A", 10), ..seed("B"), right = mark("C", 20), ..seed("D") };
+let box = R.Box { value = 5, secret = R.secret() };
+let changed = R.Box { ..box, value = 6 };
+let text = LocalPair { left = "left", right = "right" };
+let first = LocalPair { left = 3, right = 4 };
+record LocalPair = { tag: Bool };
+let own = LocalPair { tag = true };
+let _ = print(pair.left, pair.right, R.read(box), R.read(changed), text.left, first.left, own.tag);
+`);
+    const translated = await wm(["sml", "app.wm", "out"], directory);
+    assertEquals(translated.code, 0, translated.stderr);
+    if (await hasMlton()) {
+      const built = await new Deno.Command("mlton", {
+        args: ["-output", "app", "project.mlb"], cwd: join(directory, "out"), stderr: "piped",
+      }).output();
+      assert(built.success, new TextDecoder().decode(built.stderr));
+      const native = await new Deno.Command(join(directory, "out", "app"), { stdout: "piped" }).output();
+      const run = await wm(["run", "app.wm"], directory);
+      assertEquals(run.code, 0, run.stderr);
+      assertEquals(new TextDecoder().decode(native.stdout), run.stdout);
+    }
+    for (const source of [
+      'let wrong = R.Pair { left = "wrong", ..R.Pair { left = 1, right = 2 } };',
+      'let wrong = R.Box { value = 1, secret = 2 };',
+      'from "./facade.wm" import * as F;\nlet leaked = F.Pair { left = 1, right = 2 };',
+    ]) {
+      await Deno.writeTextFile(join(directory, "bad.wm"), header + source + "\n");
+      const rejected = await wm(["sml", "bad.wm", "bad"], directory);
+      assertEquals(rejected.code, 1, source);
+    }
   } finally {
     await Deno.remove(directory, { recursive: true });
   }
