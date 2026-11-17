@@ -319,3 +319,10 @@ let _ = print(pair.left, pair.right, R.read(box), R.read(changed), text.left, fi
     await Deno.remove(directory, { recursive: true });
   }
 });
+
+Deno.test("the bundled translator imports nothing by an absolute file URL", async () => {
+  // The bundle ships in the published package, where the checkout's paths do not exist.
+  const bundle = await Deno.readTextFile(new URL("../src/generated/subsetml.js", import.meta.url));
+  assertEquals(bundle.includes('import("file://'), false);
+  assertEquals(bundle.includes('import("../../subml-basis/js/subset_host.js")'), true);
+});

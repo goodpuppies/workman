@@ -1,5 +1,5 @@
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 // Regenerate subml-basis/, the library modules WM loads from the SubsetML Basis, from the
 // authoritative SubsetML sources: deno run -A scripts/sync_subml_basis.ts [subm/SubsetML]
@@ -109,6 +109,20 @@ try {
   if (!translator.success) {
     throw new Error(`compiling the SubsetML translator failed: ${decoder.decode(translator.stderr)}`);
   }
+  // The compiler names a JS module import by its absolute file URL, which exists only in this
+  // checkout. The published package carries the host adapter as subml-basis/js/subset_host.js,
+  // so the translator imports it relative to its own location.
+  const bundle = join(repository, "src/generated/subsetml.js");
+  const hostUrl = pathToFileURL(join(subsetml, "src/subset_host.js")).href;
+  const program = await Deno.readTextFile(bundle);
+  if (!program.includes(JSON.stringify(hostUrl))) {
+    throw new Error(`the SubsetML translator no longer imports ${hostUrl}`);
+  }
+  const relocated = program.replaceAll(JSON.stringify(hostUrl), JSON.stringify("../../subml-basis/js/subset_host.js"));
+  if (relocated.includes('import("file://')) {
+    throw new Error("the SubsetML translator imports another module by its absolute file URL");
+  }
+  await Deno.writeTextFile(bundle, relocated);
 
   const hash = async (bytes: Uint8Array) =>
     [...new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(bytes)))]
