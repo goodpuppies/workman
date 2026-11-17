@@ -215,8 +215,11 @@ takes p's inferred record type and expands after elaboration. SubsetML's `--basi
 runtime now applies only to graphs that use Panic, which fixed the MLWorks host test; the
 kernel-portable test lists the new `basis_source.sml`. The full SubsetML suite passes.
 
-Remaining step-8 features: inline record types, carrier groups and portable Monad/Carrier
-support. The restricted-profile bootstrap-pervasive lowering
+Inline record types now hoist to record declarations before their statement (private when
+block-local), and carrier groups desugar to nested `andThen`/`map` through the named namespace,
+both checked with MLton. The full SubsetML suite passes (39 scripts).
+
+Remaining step-8 feature: portable Monad/Carrier support. The restricted-profile bootstrap-pervasive lowering
 work also remains; these native tests use the supported target Basis environment.
 
 ## 9. Chore: `Option` and `Result` are Basis types, defined once

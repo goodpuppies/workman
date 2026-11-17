@@ -30,7 +30,7 @@ Each is a source-level desugaring that needs no type information.
 | lambda result annotation `(n: T): T => …` | `expected ;, found :` | `fn n => (e : t)` |
 | piped conditional `b :> if { … } else { … }` | `expected (, found {` | `if b then … else …` |
 | space application with a grouped argument `add (1: Int32.Int) one` | `expected ), found :` | reader defect: WM accepts it |
-| inline record type `.{ a = 1 }: Point{ a: Int32 }` | `expected ;, found :` | hoist `type point = {a : int}` before the declaration |
+| inline record type `.{ a = 1 }: Point{ a: Int32 }` | `expected ;, found :` | done 2026-11-17: hoist `type point = {a : int}` before the declaration |
 | named import `from "./x.wm" import { a, B };` | `reverse discovery requires header namespace imports` | qualify each imported value, constructor and type (`X.a`, `X.B` in patterns); found later, see below |
 | typed hole `?` | `unexpected character` | could lower to the panic runtime; holes are development-only, so rejection is reasonable |
 
@@ -50,7 +50,7 @@ counterpart; an annotation on the receiver replaces it.
 | template string `` `n is ${n}` `` | rejected | done 2026-11-17: `String`, `Int.toString` or `Real.toString` by inferred type; other types need an explicit conversion |
 | `%` | rejected: "SML `mod` differs" | `Int.rem` or `Real.rem` by inferred type (release step 4) |
 | arithmetic only a default decides, `(a, b) => a + b` | rejected | accepted: WM and SML both default to `int` (release step 5) |
-| carrier group `Result\|a, b\|` | parse error | syntactic: the group names its carrier; lower to `SubsetResult.map2` |
+| carrier group `Result\|a, b\|` | parse error | done 2026-11-17: syntactic, nested `andThen` with a final `map`, as WM desugars it |
 | `Monad.via Result f`, `Monad.map(Result, …)`, a carrier passed as a variable | `unbound identifier Monad.via` | ordinary record code: `Monad` functions are field accesses on a `Carrier` record. Move the `Carrier` record type and a `SubsetResult.carrier` value into the Basis and translate `std/monad.wm` as portable code; a bare `Result` in value position is syntactic shorthand for `SubsetResult.carrier` |
 | real equality `a == b` | translates | unchanged |
 
@@ -162,8 +162,7 @@ This exposed and fixed missing list-closer ownership and declaration-boundary re
 included in the ten native/WM cases. JSON boundary tests and the Result.filter identity test also
 pass after updating their library ABI assumptions.
 
-Remaining feature probes: inline record types, carrier groups and portable Monad/Carrier
-support. The restricted native profile still needs
+Remaining feature probe: portable Monad/Carrier support. The restricted native profile still needs
 bootstrap-pervasive lowerings.
 
 ## Recommendation for 0.8.0
