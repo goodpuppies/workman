@@ -58,7 +58,7 @@ Deno.test("Result and Option combinators infer generically", async () => {
         items :> Js.Array.toList :> Task.traverse((n) => { Task.succeed(n * 2) })
           :> Task.map(Js.Array.fromList)
       });
-    let allResults = Js.Array.fromList([Ok(1), Ok(2)]) :> Result.all;
+    let allResults = Js.Array.fromList([Ok(1), Ok(2)]) :> JsArray.all;
     let debugged: Real64.Real = Err("domain failure") :> Result.debug;
     let genericResults = Traverse.with Result ([1, 2], (n) => { Ok(n * 2) });
     let genericTasks = Traverse.with Task ([1, 2], (n) => { Task.succeed(n * 2) });
@@ -114,8 +114,8 @@ Deno.test("Result and Option combinators infer generically", async () => {
   assertEquals(result.structure.strEnv.get("List")?.valEnv.get("map")?.basis ?? false, false);
   assertEquals(result.structure.strEnv.get("Result")?.valEnv.get("map")?.imported, true);
   assertEquals(result.structure.strEnv.get("Result")?.valEnv.get("map")?.basis ?? false, false);
-  assertEquals(result.structure.strEnv.get("Result")?.valEnv.get("all")?.imported, true);
-  assertEquals(result.structure.strEnv.get("Result")?.valEnv.get("all")?.basis ?? false, false);
+  assertEquals(result.structure.strEnv.get("JsArray")?.valEnv.get("all")?.imported, true);
+  assertEquals(result.structure.strEnv.get("JsArray")?.valEnv.get("all")?.basis ?? false, false);
   assertEquals(result.structure.strEnv.get("Traverse")?.valEnv.get("with")?.imported, true);
 });
 
@@ -130,7 +130,8 @@ Deno.test("Result.debug exposes its intentional typed hole", async () => {
   const result = await runCli(["run", input]);
 
   assertEquals(result.code, 1);
-  assertStringIncludes(result.stderr, "error[type.typed-hole std/result.wm:18:4]");
+  assertStringIncludes(result.stderr, "error[type.typed-hole host/js/debug.wm:");
+  assertStringIncludes(result.stderr, "std/result.wm:");
   assertStringIncludes(result.stderr, "typed hole; expected type: 'a");
   assertEquals(result.stderr.includes("Panic:"), false);
 });

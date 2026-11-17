@@ -144,6 +144,33 @@ let _ = print(ownRank(Less));
   }
 });
 
+Deno.test("wm sml translates Result's std helpers, and Result.debug stops through its MLton adapter", async () => {
+  const directory = await Deno.makeTempDir({ prefix: "wm-sml-result-" });
+  try {
+    await Deno.writeTextFile(join(directory, "app.wm"), `
+let parsed = ["1", "2"] :> Result.traverse(Int32.fromString);
+let first: Int32.Int = Ok(4) :> Result.debug;
+let _ = print(parsed, Result.map3(Ok(1), Ok(2), Ok(3), (a, b, c) => { a + b + c }), first);
+let failed: Int32.Int = Err("boom") :> Result.debug;
+`);
+    const translated = await wm(["sml", "app.wm", "out"], directory);
+    assertEquals(translated.code, 0, translated.stderr);
+    if (!await hasMlton()) return;
+    const built = await new Deno.Command("mlton", {
+      args: ["-output", "app", "project.mlb"],
+      cwd: join(directory, "out"), stderr: "piped",
+    }).output();
+    assert(built.success, new TextDecoder().decode(built.stderr));
+    const native = await new Deno.Command(join(directory, "out", "app"), { stdout: "piped", stderr: "piped" })
+      .output();
+    assertEquals(native.code, 1);
+    assertEquals(new TextDecoder().decode(native.stdout), "(Ok([1, 2]), Ok(6), 4)\n");
+    assertStringIncludes(new TextDecoder().decode(native.stderr), "Result.debug: Err");
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
 Deno.test("wm sml selectively re-exports values and generic types through facades", async () => {
   const directory = await Deno.makeTempDir({ prefix: "wm-sml-exports-" });
   try {

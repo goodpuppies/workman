@@ -5,7 +5,7 @@
 // imports with the SubsetML Basis, writes one `.sml` file per module and a `project.mlb`, and
 // links the host modules to their MLton adapters. Every file it writes stays in the output
 // directory, so the directory builds anywhere: `mlton project.mlb`.
-import { basename, join, posix, resolve } from "node:path";
+import { basename, dirname, join, posix, resolve } from "node:path";
 import { librarySources, nativeBasisSources } from "./generated/assets.ts";
 import { createTemporaryDirectory } from "./temporary_directory.ts";
 import { discoverStandardModules } from "./standard_library.ts";
@@ -15,6 +15,12 @@ const HOST_MODULES = [
   ["subset_host", "SubsetHost"],
   ["subset_text_host", "SubsetTextHost"],
   ["subset_real_host", "SubsetRealHost"],
+] as const;
+
+/** Workman host modules with an MLton adapter: the module's path, its staged checker and adapter
+ * under `host/native/`, and the adapter's structure. */
+const WM_HOST_MODULES = [
+  ["host/js/debug.wm", "debug", "WmDebugHost"],
 ] as const;
 
 export const SML_USAGE = `usage: wm sml <file.wm> <out-dir> [--mlton]
@@ -45,6 +51,16 @@ export async function smlCommand(args: string[]): Promise<number> {
     // Stage source-only std extensions in dependency order. JS-backed extensions retain
     // the reader's source Basis namespace until a native adapter is available for them.
     const portable = new Set(Object.keys(librarySources).filter((path) => path.startsWith("subml-basis/")));
+    const adapters: string[] = [];
+    for (const [path, name, structure] of WM_HOST_MODULES) {
+      const checker = join(basis, path);
+      const native = join(out, `${name}_native.sml`);
+      await Deno.mkdir(dirname(checker), { recursive: true });
+      await Deno.writeTextFile(checker, nativeSource(`host/native/${name}.wm`));
+      await Deno.writeTextFile(native, nativeSource(`host/native/${name}.sml`));
+      adapters.push("--native-adapter-if-used", checker, native, structure);
+      portable.add(path);
+    }
     for (const module of await discoverStandardModules()) {
       if (!module.path.startsWith("std/")) continue;
       if (module.module.decls.some((decl) =>
@@ -58,7 +74,6 @@ export async function smlCommand(args: string[]): Promise<number> {
       await Deno.writeTextFile(join(basis, module.path), module.source);
     }
     await Deno.writeTextFile(join(basis, "module-scope.paths"), [...portable].sort().join("\n") + "\n");
-    const adapters: string[] = [];
     for (const [name, structure] of HOST_MODULES) {
       const checker = join(basis, `${name}.wm`);
       const native = join(out, `${name}_native.sml`);
@@ -109,7 +124,11 @@ export async function smlCommand(args: string[]): Promise<number> {
 }
 
 function nativeBasisSource(name: string): string {
-  const source = nativeBasisSources[`subml-basis/native/${name}`];
-  if (source === undefined) throw new Error(`the packaged SubsetML Basis lacks native/${name}`);
+  return nativeSource(`subml-basis/native/${name}`);
+}
+
+function nativeSource(path: string): string {
+  const source = nativeBasisSources[path];
+  if (source === undefined) throw new Error(`the package lacks ${path}`);
   return source;
 }

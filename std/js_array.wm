@@ -1,0 +1,9 @@
+from "basis/result.wm" import * as SubsetResult;
+from "basis/list.wm" import * as SubsetList;
+
+// Helpers over `Js.Array` that the portable `List` and `Result` leave out.
+
+// Every value of an array of results, or the first error.
+let all = (items) => {
+  items :> Js.Array.toList :> SubsetList.traverse((item) => { item }) :> SubsetResult.map(Js.Array.fromList)
+};

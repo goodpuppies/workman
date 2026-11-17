@@ -62,7 +62,12 @@ const output = [
   "/** Host-module checker declarations and MLton adapters `wm sml` stages, keyed by repository-relative path. */",
   "export const nativeBasisSources: Readonly<Record<string, string>> = {",
   ...await sourceEntries(
-    [...await filePaths("subml-basis/native", ".wm"), ...await filePaths("subml-basis/native", ".sml")].sort(),
+    [
+      ...await filePaths("subml-basis/native", ".wm"),
+      ...await filePaths("subml-basis/native", ".sml"),
+      ...await filePaths("host/native", ".wm"),
+      ...await filePaths("host/native", ".sml"),
+    ].sort(),
   ),
   "};",
   "",

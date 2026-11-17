@@ -12,7 +12,7 @@ let map2 = match(a, b, f) => {
 
 let rec traverse = match(items, f) => {
   ([], _) => { Some([]) },
-  ([item, ..rest], f) => {
+  ([item, ..rest], _) => {
     match(f(item)) {
       None => { None },
       Some(value) => {
@@ -35,7 +35,7 @@ let join = match(option) => {
 };
 
 let forEach = match(option, f) => {
-  (Some(value), f) => { f(value) },
+  (Some(value), _) => { f(value) },
   (None, _) => { void }
 };
 

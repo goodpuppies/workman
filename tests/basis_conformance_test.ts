@@ -294,8 +294,8 @@ Deno.test("library modules name Js.* only in the signatures of their primitive i
   const leaks: string[] = [];
   for (const [path, source] of Object.entries(librarySources)) {
     if (!path.startsWith("subml-basis/") && !path.startsWith("std/")) continue;
-    // Result and Task convert JS arrays for their FFI-facing operations.
-    if (path === "std/result.wm" || path === "std/task.wm") continue;
+    // JsArray and Task convert JS arrays for their FFI-facing operations.
+    if (path === "std/js_array.wm" || path === "std/task.wm") continue;
     const module = await parseCompilerModule(source, {}, path);
     for (const decl of module.decls) {
       if (decl.kind === "JsImportDecl") continue;

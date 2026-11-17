@@ -1,0 +1,10 @@
+// Checker declarations `wm sml` stages in place of `host/js/debug.wm`; `debug.sml` is the MLton
+// adapter. SML has no runtime printer, and these are generic in the error, so the native message
+// cannot show the value.
+let errorMessage = (error) => { "Result.debug: Err (the error has no portable display)" };
+
+// Report and stop; never returns.
+let abort = (error) => {
+  let rec unreachable = () => { unreachable() };
+  unreachable()
+};

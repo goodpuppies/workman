@@ -13,21 +13,18 @@ let fail = (error) => {
 
 let debug = match(result) => {
   Ok(value) => { value },
-  Err(error) => { 
-    print(Debug.errorMessage(error));
-    ?
-  }
+  Err(error) => { Debug.abort(error) }
 };
 
 let map3 = match(a, b, c, f) => {
-  (Ok(av), Ok(bv), Ok(cv), f) => { Ok(f(av, bv, cv)) },
+  (Ok(av), Ok(bv), Ok(cv), _) => { Ok(f(av, bv, cv)) },
   (Err(error), _, _, _) => { Err(error) },
   (_, Err(error), _, _) => { Err(error) },
   (_, _, Err(error), _) => { Err(error) }
 };
 
 let map4 = match(a, b, c, d, f) => {
-  (Ok(av), Ok(bv), Ok(cv), Ok(dv), f) => { Ok(f(av, bv, cv, dv)) },
+  (Ok(av), Ok(bv), Ok(cv), Ok(dv), _) => { Ok(f(av, bv, cv, dv)) },
   (Err(error), _, _, _, _) => { Err(error) },
   (_, Err(error), _, _, _) => { Err(error) },
   (_, _, Err(error), _, _) => { Err(error) },
@@ -35,10 +32,6 @@ let map4 = match(a, b, c, d, f) => {
 };
 
 let traverse = SubsetList.traverse;
-
-let all = (items) => {
-  items :> Js.Array.toList :> traverse((item) => { item }) :> SubsetResult.map(Js.Array.fromList)
-};
 
 let collectList = (items) => {
   traverse(items, (item) => { item })

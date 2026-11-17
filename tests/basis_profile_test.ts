@@ -306,6 +306,7 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
         alias: "Debug",
         values: [
           "errorMessage",
+          "abort",
         ],
         types: [],
       },
@@ -863,6 +864,13 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
         ],
       },
       {
+        alias: "JsArray",
+        values: [
+          "all",
+        ],
+        types: [],
+      },
+      {
         alias: "JsonValue",
         values: [
           "Null",
@@ -1281,7 +1289,6 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
           "map3",
           "map4",
           "traverse",
-          "all",
           "collectList",
           "filter",
         ],
