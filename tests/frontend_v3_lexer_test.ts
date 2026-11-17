@@ -40,7 +40,7 @@ Deno.test("frontend v3 lexer retains damaged lexemes and localized recovery mark
     const { lex, sourceUnits, lexUnits } = await import(`file://${path}`) as {
       lex: (source: string) => { tokens: Variant; marks: Variant };
       sourceUnits: (source: unknown) => Variant;
-      lexUnits: (units: Variant) => Variant;
+      lexUnits: (units: Variant) => { ok: boolean; value?: unknown; error?: unknown };
     };
     const read = (source: string) => {
       const document = lex(source);
@@ -635,14 +635,15 @@ Deno.test("frontend v3 lexer retains damaged lexemes and localized recovery mark
     ) {
       const units = Array.from({ length: source.length }, (_, index) => source.charCodeAt(index));
       const result = lexUnits(runtimeList(units));
-      assertEquals(result.name, "Ok");
-      assertEquals(result.a0, lex(source), source);
+      // Exported functions return Result at the TypeScript boundary as `{ ok, value | error }`.
+      assertEquals(result.ok, true);
+      assertEquals(result.value, lex(source), source);
       read(source);
     }
     const invalid = lexUnits(runtimeList([65, 65536]));
-    assertEquals(invalid.name, "Err");
-    assertEquals((invalid.a0 as Variant).name, "InvalidUnit");
-    assertEquals((invalid.a0 as Variant).a0, 1);
+    assertEquals(invalid.ok, false);
+    assertEquals((invalid.error as Variant).name, "InvalidUnit");
+    assertEquals((invalid.error as Variant).a0, 1);
 
     // Every prefix is a realistic intermediate editor buffer, including a dangling escape.
     const source = 'let x = "a\\q"; & [42] // comment\n"unfinished\\';

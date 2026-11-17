@@ -56,8 +56,8 @@ Deno.test("JS imports use direct tuple entries across modules and retain higher-
     4,
     13,
   ]);
-  assertEquals(module.variadic.name, "Ok");
-  assertEquals(module.variadic.a0, 9);
+  // Exported values cross into TypeScript with Result as `{ ok, value | error }`.
+  assertEquals(module.variadic, { ok: true, value: 9 });
 });
 
 Deno.test("direct JS calls preserve optional values, callbacks, receivers, constructors and failures", async () => {
@@ -123,24 +123,24 @@ Deno.test("direct JS calls preserve optional values, callbacks, receivers, const
       },
     );
     assertEquals(module.order, 12);
-    assertEquals(module.some.name, "Ok");
-    assertEquals(module.some.a0.name, "Some");
-    assertEquals(module.some.a0.a0, 7);
-    assertEquals(module.none.a0.name, "None");
-    assertEquals(module.fromValue.a0.a0, 7);
+    // Exported values cross into TypeScript with Result as `{ ok, value | error }`.
+    assertEquals(module.some.ok, true);
+    assertEquals(module.some.value.name, "Some");
+    assertEquals(module.some.value.a0, 7);
+    assertEquals(module.none.value.name, "None");
+    assertEquals(module.fromValue.value.a0, 7);
     for (
       const [name, value] of [["calledBack", 7], ["success", 7], ["receiver", 15], [
         "constructed",
         14,
       ]] as const
     ) {
-      assertEquals(module[name].name, "Ok", name);
-      assertEquals(module[name].a0, value, name);
+      assertEquals(module[name], { ok: true, value }, name);
     }
-    assertEquals(module.failure.name, "Err");
-    assertEquals((await module.promised).a0, 7);
-    assertEquals((await module.rejected).name, "Err");
-    assertEquals((await module.syncRejected).name, "Err");
+    assertEquals(module.failure.ok, false);
+    assertEquals(await module.promised, { ok: true, value: 7 });
+    assertEquals((await module.rejected).ok, false);
+    assertEquals((await module.syncRejected).ok, false);
   } finally {
     await Deno.remove(directory, { recursive: true });
   }

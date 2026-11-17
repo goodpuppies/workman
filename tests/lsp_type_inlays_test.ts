@@ -223,7 +223,7 @@ Deno.test("parameter-name inlays use record field names", async () => {
   );
 });
 
-Deno.test("parameter-name inlays omit aliases without reliable authored parameters", async () => {
+Deno.test("parameter-name inlays follow an alias to its target's authored parameters", async () => {
   const path = "/test/main.wm";
   const source = "let original = (left, right) => { left + right }; " +
     "let alias = original; let result = alias(1, 2);";
@@ -233,7 +233,14 @@ Deno.test("parameter-name inlays omit aliases without reliable authored paramete
     new Map([[path, source]]),
   );
 
-  assertEquals(hints.filter((hint) => hint.kind === 2), []);
+  // `alias` resolves to `original`'s binding, so its call names `original`'s parameters.
+  assertEquals(
+    hints.filter((hint) => hint.kind === 2).map(({ label, position }) => ({ label, position })),
+    [
+      { label: "left:", position: { line: 0, character: 91 } },
+      { label: "right:", position: { line: 0, character: 94 } },
+    ],
+  );
 });
 
 Deno.test("record literal inlays name the type after the closing brace", async () => {

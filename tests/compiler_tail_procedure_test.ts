@@ -90,11 +90,11 @@ Deno.test("procedure specialization preserves callback captures and argument eva
     const mod = await import(`data:text/javascript;base64,${btoa(js)}`);
     assertStringIncludes(js, "continue __wm_tail_");
     assertEquals(mod.answer, 6);
-    assertEquals(mod.log.name, "Ok");
-    assertEquals(
-      mod.log.a0,
-      "capture,argument,capture,argument,capture,argument,capture,argument",
-    );
+    // Exported values cross into TypeScript with Result as `{ ok, value | error }`.
+    assertEquals(mod.log, {
+      ok: true,
+      value: "capture,argument,capture,argument,capture,argument,capture,argument",
+    });
   } finally {
     await Deno.remove(dir, { recursive: true });
   }

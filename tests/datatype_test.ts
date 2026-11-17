@@ -15,10 +15,10 @@ Deno.test("basis exposes Option and Result constructors", async () => {
     let unwrapped = get(maybe);
   `);
 
-  expectBinding(result.env, "Some", { type: "T -> Option<T>", vars: 1 });
-  expectBinding(result.env, "None", { type: "Option<T>", vars: 1 });
-  expectBinding(result.env, "Ok", { type: "T -> Result<T, E>", vars: 2 });
-  expectBinding(result.env, "Err", { type: "E -> Result<T, E>", vars: 2 });
+  expectBinding(result.env, "Some", { type: "a -> Option<a>", vars: 1 });
+  expectBinding(result.env, "None", { type: "Option<a>", vars: 1 });
+  expectBinding(result.env, "Ok", { type: "a -> Result<a, e>", vars: 2 });
+  expectBinding(result.env, "Err", { type: "e -> Result<a, e>", vars: 2 });
   expectBinding(result.env, "maybe", { type: "Option<Int32.Int>", vars: 0 });
   expectBinding(result.env, "missing", { type: "Option<Real64.Real>", vars: 0 });
   expectBinding(result.env, "ok", { type: "Result<String, 'a>", vars: 1 });
