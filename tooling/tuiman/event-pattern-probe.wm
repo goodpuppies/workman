@@ -32,7 +32,7 @@ let expected = match(events) => {
     Event.Home,
     Event.End,
     Event.End,
-    Event.CellSize(10, 20),
+    Event.CellSize(=(10), =(20)),
     Event.WheelUp,
     Event.WheelDown,
     Event.Character("x"),

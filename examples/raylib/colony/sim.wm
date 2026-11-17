@@ -236,11 +236,11 @@ let rec buildTiles = (i: Real64, total: Real64, r: Rng) => {
   }
 };
 
-let rec initialAgents = (n: Real64) => {
+let rec initialAgents = (n: Int32) => {
   match(n) {
     0 => { [] },
     _ => {
-      let ag = .{ pos = .{ x = 7 + (n % 3), y = 7 + (n % 2) }, job = Idle, carry = 0 };
+      let ag = .{ pos = .{ x = 7 + Int32.toReal64(n % 3), y = 7 + Int32.toReal64(n % 2) }, job = Idle, carry = 0 };
       [ag, ..initialAgents(n - 1)]
     }
   }

@@ -51,10 +51,10 @@ let navRows = (selected: Real64) => {
 
 let contentRows = (selected: Real64) => {
   match(selected) {
-    0 => { ["Timeline", "", "The AppView feed will live here."] },
-    1 => { ["Profile", "", "Authenticated account summary."] },
-    2 => { ["Search", "", "Direct app.bsky.feed.searchPosts results."] },
-    3 => { ["Thread", "", "Recursive thread view and reply navigation."] },
+    =(0) => { ["Timeline", "", "The AppView feed will live here."] },
+    =(1) => { ["Profile", "", "Authenticated account summary."] },
+    =(2) => { ["Search", "", "Direct app.bsky.feed.searchPosts results."] },
+    =(3) => { ["Thread", "", "Recursive thread view and reply navigation."] },
     _ => { ["Notifications", "", "A later authenticated XRPC slice."] },
   }
 };

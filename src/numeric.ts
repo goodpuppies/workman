@@ -43,6 +43,14 @@ export const INTEGER_LITERAL_TYPES: readonly NumericType[] = [
  * (`realint`), so it never applies to a word.
  */
 export const NUMERIC_TYPES = INTEGER_LITERAL_TYPES;
+/**
+ * The types an integer literal pattern may match: the integers and words. As in Standard ML, a
+ * real constant is no pattern, since real equality is not structural; compare with `==`, or use
+ * a computed pattern `=(0.0)`.
+ */
+export const PATTERN_LITERAL_TYPES: readonly NumericType[] = INTEGER_LITERAL_TYPES.filter((type) =>
+  type.bits !== undefined
+);
 export const REAL_TYPES: readonly NumericType[] = [OPERATOR_NUMERIC_TYPES[0], REAL32_TYPE];
 export const SIGNED_TYPES: readonly NumericType[] = INTEGER_LITERAL_TYPES.filter((type) =>
   type.bits === undefined || type.signed

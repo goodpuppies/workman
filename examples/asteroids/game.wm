@@ -20,10 +20,10 @@ let fireCooldown = 0.25;
 
 let asteroidSpeedMin: Real64 = 40;
 let asteroidSpeedMax: Real64 = 110;
-let splitCount: Real64 = 2;
+let splitCount: Int32 = 2;
 
 let startingLives: Real64 = 3;
-let startingAsteroids: Real64 = 4;
+let startingAsteroids: Int32 = 4;
 let invulnerabilityTime: Real64 = 2;
 let respawnDelay = 1.5;
 
@@ -41,7 +41,7 @@ record Game = {
   asteroids: List<Asteroid>,
   score: Real64,
   lives: Real64,
-  wave: Real64,
+  wave: Int32,
   cooldown: Real64,
   respawn: Real64,
   status: Status,
@@ -107,7 +107,7 @@ let spawnAsteroid = (pos: Vec2, size: AsteroidSize, r: Rng.Seed) => {
   (rock, Rng.next(rd))
 };
 
-let rec spawnFragments = (n: Real64, pos: Vec2, size: AsteroidSize, r: Rng.Seed) => {
+let rec spawnFragments = (n: Int32, pos: Vec2, size: AsteroidSize, r: Rng.Seed) => {
   match(n) {
     0 => { ([], r) },
     _ => {
@@ -139,7 +139,7 @@ let edgePosition = (r: Rng.Seed) => {
   (pos, Rng.next(rc))
 };
 
-let rec spawnWave = (n: Real64, r: Rng.Seed) => {
+let rec spawnWave = (n: Int32, r: Rng.Seed) => {
   match(n) {
     0 => { ([], r) },
     _ => {

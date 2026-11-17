@@ -1,3 +1,4 @@
+import { PATTERN_LITERAL_TYPES } from "../numeric.ts";
 import { sequenceType } from "../taint.ts";
 import type { Expr, LongId, Pattern } from "../ast.ts";
 import { parseLongId } from "../ast.ts";
@@ -146,7 +147,7 @@ export function inferPattern(
     case "PInt":
       constrainPattern(
         expected,
-        freshIntegerLiteral(p),
+        freshIntegerLiteral(p, false, false, PATTERN_LITERAL_TYPES),
         p,
         "InferPattern.Int",
         "integer pattern matches its selected numeric type",
@@ -375,7 +376,7 @@ export function inferBindingPattern(
     case "PInt":
       constrainPattern(
         expected,
-        freshIntegerLiteral(pattern),
+        freshIntegerLiteral(pattern, false, false, PATTERN_LITERAL_TYPES),
         pattern,
         "InferBindingPattern.Int",
         "integer let pattern matches its selected numeric type",

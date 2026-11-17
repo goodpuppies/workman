@@ -155,7 +155,7 @@ let stepGame = (g: Game, input: Input, dt: Real64) => {
 
 -- ---- spawning a fresh run -------------------------------------------------
 
-let rec spawnOrbs = (n: Real64, r: Rng) => {
+let rec spawnOrbs = (n: Int32, r: Rng) => {
   match(n) {
     0 => { ([], r) },
     _ => {
@@ -174,7 +174,7 @@ let rec spawnOrbs = (n: Real64, r: Rng) => {
   }
 };
 
-let rec spawnSparks = (n: Real64, r: Rng) => {
+let rec spawnSparks = (n: Int32, r: Rng) => {
   match(n) {
     0 => { ([], r) },
     _ => {

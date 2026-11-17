@@ -31,7 +31,7 @@ let lengthSq = (v: Vec2) => {
 -- Square root via Newton's method. We have no math FFI in the pure core, so we
 -- grow our own: x_{n+1} = (x_n + value / x_n) / 2. Twenty iterations is plenty
 -- for the magnitudes we deal with here.
-let rec sqrtIter = (value: Real64, guess: Real64, steps: Real64) => {
+let rec sqrtIter = (value: Real64, guess: Real64, steps: Int32) => {
   match(steps) {
     0 => { guess },
     _ => { sqrtIter(value, (guess + value / guess) / 2, steps - 1) }

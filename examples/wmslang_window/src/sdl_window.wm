@@ -113,8 +113,8 @@ let linuxSurface = (system, width, height, view) => {
 let createSurface = (sdl, window, width, height) => {
   let select = via Result (view, subsystem) => {
     match(subsystem) {
-      2 => { linuxSurface("x11", width, height, view) },
-      6 => { linuxSurface("wayland", width, height, view) },
+      =(2) => { linuxSurface("x11", width, height, view) },
+      =(6) => { linuxSurface("wayland", width, height, view) },
       _ => { Err(NativeMessage("the SDL window is neither X11 nor Wayland")) }
     }
   };

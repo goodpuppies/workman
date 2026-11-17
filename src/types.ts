@@ -306,12 +306,13 @@ export function freshIntegerLiteral(
   literal: { value: number; exact?: string; node?: Expr["node"] },
   negated = false,
   realDefault = false,
+  candidates: readonly NumericType[] = INTEGER_LITERAL_TYPES,
 ): Ty {
   const text = literal.exact ?? String(literal.value);
   const signed = negated ? (text.startsWith("-") ? text.slice(1) : "-" + text) : text;
   const t = fresh() as Extract<Ty, { tag: "var" }>;
   markNumeric(t, {
-    candidates: INTEGER_LITERAL_TYPES,
+    candidates,
     literals: [{ text: signed, node: literal.node, ...(realDefault ? { realDefault } : {}) }],
   });
   return t;
@@ -359,6 +360,11 @@ function checkNumeric(constraint: NumericConstraint, type: Ty): boolean {
     }
   }
   return true;
+}
+
+function numericWitness(other: Ty): Ty {
+  const selected = numericType(other);
+  return selected && selected.bits === undefined ? Int32Ty : Real64Ty;
 }
 
 // Keeps the bound-variable evidence of the original operands, so a mismatch is attributed
@@ -578,19 +584,21 @@ export function unify(
     }
     return;
   }
-  // A non-numeric type meeting a numeric variable fails exactly as it would against Real64.Real,
-  // which keeps existing diagnostics; check before binding so the variable stays intact.
+  // A type outside a numeric variable's class fails as it would against a type of the class,
+  // which keeps existing diagnostics; check before binding so the variable stays intact. The
+  // witness is Real64.Real, unless the other side is a real that the class excludes, as an
+  // integer literal pattern does.
   if (
     a.tag === "var" && a.numeric && b.tag !== "var" && b.tag !== "ffi" &&
     !checkNumeric(a.numeric, b)
   ) {
-    unifyAgainstNumber(Real64Ty, b, originalA, originalB, onBind, path, onDeferFfi);
+    unifyAgainstNumber(numericWitness(b), b, originalA, originalB, onBind, path, onDeferFfi);
   }
   if (
     b.tag === "var" && b.numeric && a.tag !== "var" && a.tag !== "ffi" &&
     !checkNumeric(b.numeric, a)
   ) {
-    unifyAgainstNumber(a, Real64Ty, originalA, originalB, onBind, path, onDeferFfi);
+    unifyAgainstNumber(a, numericWitness(a), originalA, originalB, onBind, path, onDeferFfi);
   }
   if (a.tag === "var") {
     if (occurs(a.id, b)) throw new Error(`recursive type ${show(a)} ~ ${show(b)}`);

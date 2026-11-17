@@ -349,3 +349,26 @@ Deno.test("integer % and overflow fail instead of producing NaN or wrapping", as
     await assertRejects(() => run(source), Error, message);
   }
 });
+
+Deno.test("integer literal patterns match integers and words, never reals, as in SML", async () => {
+  assertEquals(
+    await run(`
+    let name = (n) => match(n) { 0 => { "zero" }, _ => { "more" } };
+    let small = (w: Word8.Word) => match(w) { 255 => { "top" }, _ => { "below" } };
+    let real = (x: Real64) => match(x) { =(0) => { "real zero" }, _ => { "real other" } };
+    print(name(0));
+    print(small(255));
+    print(real(0));
+  `),
+    ["zero", "top", "real zero"],
+  );
+  await assertRejects(
+    () => checkSource(`let f = (x: Real64) => match(x) { 0 => { 1 }, _ => { 2 } };`),
+    Error,
+    "type mismatch",
+  );
+  await assertRejects(
+    () => checkSource(`let f = (x: Real64) => match(x) { 0 => { 1 }, _ => { 2 } }; let g = (y: Real64) => { let 1 = y; y };`),
+    Error,
+  );
+});

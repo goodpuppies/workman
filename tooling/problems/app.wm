@@ -157,7 +157,7 @@ let summary = (problem) => {
 };
 
 let rec visibleRows: (List<Problem>, Real64, Real64, Real64, Real64) -> List<String> = match(problems, skip, remaining, selected, index) => {
-  (_, _, 0, _, _) => { [] },
+  (_, _, =(0), _, _) => { [] },
   ([], _, _, _, _) => { [] },
   ([_head, ..tail], skip, remaining, selected, index) => {
     if (skip > 0) {
