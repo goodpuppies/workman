@@ -28,7 +28,7 @@ Deno.test("rejects unguarded recursive value bindings", async () => {
     "recursive references must be guarded by a function",
   );
   await assertRejects(
-    () => checkSource("type List<T> = Nil | Cons<T, List<T>>; let rec xs = Cons(1, xs);"),
+    () => checkSource("let rec xs = Cons(1, xs);"),
     Error,
     "recursive references must be guarded by a function",
   );
