@@ -3456,7 +3456,7 @@ const latent16_1673 = __wm_return_value_84.a2;
 const best17_1674 = (diagnose_1654 ? bestFailure_78__wm_d2(best10_1669, latent16_1673) : __wm_basis_None);
 const __wm_return_value_85 = (() => {
 const offset_1675 = next14_1671;
-return enter_Identifier_845__wm_d5(parser_1655, source_1651, offset_1675, diagnose_1654, false);
+return enter_Name_849__wm_d5(parser_1655, source_1651, offset_1675, diagnose_1654, false);
 })();
 if (__wm_return_value_85?.ctor === 123) {
 const next21_1676 = __wm_return_value_85.a0;
@@ -53657,7 +53657,7 @@ const __wm_scalar_42_1 = f_20918;
 if (__wm_scalar_42_0 === __wm_basis_Nil) {
 
 return __wm_basis_None;
-} else if (__wm_scalar_42_0?.ctor === -6 && __wm_eq(__wm_scalar_42_1, f_20918)) {
+} else if (__wm_scalar_42_0?.ctor === -6) {
 const head_20919 = __wm_scalar_42_0.a0;
 const rest_20920 = __wm_scalar_42_0.a1;
 {
@@ -53702,7 +53702,7 @@ return Less_ctor_149;
 } else if (__wm_scalar_43_1 === __wm_basis_Nil) {
 
 return Greater_ctor_151;
-} else if (__wm_scalar_43_0?.ctor === -6 && __wm_scalar_43_1?.ctor === -6 && __wm_eq(__wm_scalar_43_2, compare_20925)) {
+} else if (__wm_scalar_43_0?.ctor === -6 && __wm_scalar_43_1?.ctor === -6) {
 const a_20926 = __wm_scalar_43_0.a0;
 const restA_20927 = __wm_scalar_43_0.a1;
 const b_20928 = __wm_scalar_43_1.a0;

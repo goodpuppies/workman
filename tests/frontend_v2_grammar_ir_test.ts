@@ -70,7 +70,7 @@ Deno.test("frontend-v2 grammar IR and action identities are deterministic", () =
 Deno.test("frontend-v2 grammar IR has a reproducible structural golden", async () => {
   assertEquals(
     await hashGrammarIr(grammar),
-    "8916c2fbe570648148aa9897e206501e694fbf807945bbe22fac4bc350a853dc",
+    "f3563b7c89be0d891a7d5ecdf7d39045e0437d5271a4905d08f39458e67f1540",
   );
 });
 

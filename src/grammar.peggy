@@ -268,7 +268,7 @@ ImportClause
   / "{" _ specs:ImportSpecList? _ "}" { return at({ kind: "Named", specs: specs ?? [] }, location()); }
 
 ImportSpecList = first:ImportSpec rest:(_ "," _ s:ImportSpec { return s; })* _ ","? { return [first, ...rest]; }
-ImportSpec = name:Name alias:(_ "as" _ a:Identifier { return a; })? { return at({ name, alias }, location()); }
+ImportSpec = name:Name alias:(_ "as" _ a:Name { return a; })? { return at({ name, alias }, location()); }
 
 JsImportDecl
   = "from" __ target:JsTarget __ "import" __ typeOnly:("type" __)? clause:JsImportClause

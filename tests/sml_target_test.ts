@@ -143,3 +143,119 @@ let _ = print(ownRank(Less));
     await Deno.remove(directory, { recursive: true });
   }
 });
+
+Deno.test("wm sml selectively re-exports values and generic types through facades", async () => {
+  const directory = await Deno.makeTempDir({ prefix: "wm-sml-exports-" });
+  try {
+    await Deno.writeTextFile(join(directory, "base.wm"), `
+type Shape = | Circle<Int32.Int>;
+type Items<a> = List<a>;
+record Pair<a> = { first: a, second: a };
+let identity = (x) => { x };
+let make = (n: Int32.Int) => { Circle(n) };
+let hidden = 99;
+let _ = print("loaded");
+`);
+    await Deno.writeTextFile(join(directory, "facade.wm"), `
+export from "./base.wm" import { Shape as Figure, Items, Pair as Duo, identity as id, identity as Some, make };
+`);
+    await Deno.writeTextFile(join(directory, "forward.wm"), `
+export from "./facade.wm" import { Figure, Items, Duo, id, Some as apply, make };
+`);
+    await Deno.writeTextFile(join(directory, "app.wm"), `
+from "./forward.wm" import * as F;
+from "./base.wm" import * as B;
+let shape: F.Figure = F.make(4);
+let values: F.Items<Int32.Int> = [F.id(1), F.id(2)];
+let pair: F.Duo<Int32.Int> = F.Duo(3, 5);
+let n = match(shape) { B.Circle(n) => { n } };
+let _ = print(n, values, pair.first, pair.second, F.apply("ok"));
+`);
+    const translated = await wm(["sml", "app.wm", "out"], directory);
+    assertEquals(translated.code, 0, translated.stderr);
+    if (await hasMlton()) {
+      const built = await new Deno.Command("mlton", {
+        args: ["-output", "app", "project.mlb"], cwd: join(directory, "out"), stderr: "piped",
+      }).output();
+      assert(built.success, new TextDecoder().decode(built.stderr));
+      const native = await new Deno.Command(join(directory, "out", "app"), { stdout: "piped" }).output();
+      const run = await wm(["run", "app.wm"], directory);
+      assertEquals(run.code, 0, run.stderr);
+      assertEquals(new TextDecoder().decode(native.stdout), run.stdout);
+    }
+    await Deno.writeTextFile(join(directory, "leak.wm"),
+      'from "./facade.wm" import * as F;\nlet leaked = F.hidden;\n');
+    const leak = await wm(["sml", "leak.wm", "leak"], directory);
+    assertEquals(leak.code, 1);
+    assertStringIncludes(leak.stderr, "unbound");
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
+Deno.test("wm sml preserves selective constructor aliases in patterns and lexical scopes", async () => {
+  const directory = await Deno.makeTempDir({ prefix: "wm-sml-constructors-" });
+  try {
+    await Deno.writeTextFile(join(directory, "base.wm"), `
+type Shape = | Circle<Int32.Int> | Empty;
+type Maybe<a> = | Missing | Present<a>;
+type Token = | Token<Int32.Int>;
+let make = () => { Circle(7) };
+let _ = print("initialized");
+`);
+    await Deno.writeTextFile(join(directory, "facade.wm"), `
+export from "./base.wm" import { Shape as Figure, Circle as Ring, Empty as Blank, Maybe, Missing as Nothing, Present as Some, Token as Ticket, make };
+`);
+    await Deno.writeTextFile(join(directory, "forward.wm"), `
+export from "./facade.wm" import { Figure, Ring as Loop, Blank, Maybe, Nothing, Some, Ticket, make };
+`);
+    await Deno.writeTextFile(join(directory, "outer.wm"),
+      'export from "./forward.wm" import * as API;\n');
+    await Deno.writeTextFile(join(directory, "selected.wm"),
+      'export from "./outer.wm" import { API as Shapes };\n');
+    await Deno.writeTextFile(join(directory, "app.wm"), `
+from "./selected.wm" import { Shapes as Q };
+from "./forward.wm" import { Loop as Selected };
+let read = (value: Q.Figure) => { match(value) { Q.Loop(n) => { n }, Q.Blank => { 0 } } };
+let original = match(Selected(3)) { Selected(n) => { n }, _ => { 0 } };
+let build = Q.Loop;
+let present: Q.Maybe<Int32.Int> = Q.Some(8);
+let missing: Q.Maybe<Int32.Int> = Q.Nothing;
+let ticket: Q.Ticket = Q.Ticket(9);
+let payload = match(present) { Q.Some(n) => { n }, Q.Nothing => { 0 } };
+let absent = match(missing) { Q.Nothing => { true }, _ => { false } };
+let stamped = match(ticket) { Q.Ticket(n) => { n } };
+type Local = | Selected<String>;
+let local = match(Selected("own")) { Selected(s) => { s } };
+let _ = print(read(Q.make()), read(build(11)), read(Q.Blank), original, payload, absent, stamped, local);
+`);
+    const translated = await wm(["sml", "app.wm", "out"], directory);
+    assertEquals(translated.code, 0, translated.stderr);
+    if (await hasMlton()) {
+      const built = await new Deno.Command("mlton", {
+        args: ["-output", "app", "project.mlb"], cwd: join(directory, "out"), stderr: "piped",
+      }).output();
+      assert(built.success, new TextDecoder().decode(built.stderr));
+      const native = await new Deno.Command(join(directory, "out", "app"), { stdout: "piped" }).output();
+      const run = await wm(["run", "app.wm"], directory);
+      assertEquals(run.code, 0, run.stderr);
+      assertEquals(new TextDecoder().decode(native.stdout), run.stdout);
+    }
+    await Deno.writeTextFile(join(directory, "other.wm"), 'type Shape = | Circle<Int32.Int>;\n');
+    await Deno.writeTextFile(join(directory, "wrong.wm"), `
+from "./selected.wm" import { Shapes as Q };
+from "./other.wm" import * as Other;
+let wrong: Q.Figure = Other.Circle(1);
+`);
+    const wrong = await wm(["sml", "wrong.wm", "wrong"], directory);
+    assertEquals(wrong.code, 1);
+    assertStringIncludes(wrong.stderr, "expected");
+    await Deno.writeTextFile(join(directory, "leak.wm"),
+      'from "./forward.wm" import * as F;\nlet leaked = F.Circle(1);\n');
+    const leak = await wm(["sml", "leak.wm", "leak"], directory);
+    assertEquals(leak.code, 1);
+    assertStringIncludes(leak.stderr, "unbound");
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
+});
