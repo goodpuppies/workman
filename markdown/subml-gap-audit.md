@@ -46,8 +46,8 @@ counterpart; an annotation on the receiver replaces it.
 |---|---|---|
 | record projection `r.x` | the receiver's type must be fixed inside the declaration ([lowering plan](../tooling/frontend-v3/subsetml-lowering-plan.md#record-projection-receivers-must-have-a-known-complete-type)) | unchanged rule: annotate the receiver; the existing error says where |
 | record member pipe `p :> .x`, `p :> .f(a)` | rejected as a receiver pipe | rewrite to `p.x` / `p.f(a)`; projection's rule applies. A non-record receiver is an error |
-| record update `.{ ..p, x = 1 }` | must name the layout: `P { ..p, x = 1 }` | expand after inference once `p`'s record type is known |
-| template string `` `n is ${n}` `` | rejected | `String`, `Int.toString` or `Real.toString` by inferred type; other types need an explicit conversion |
+| record update `.{ ..p, x = 1 }` | must name the layout: `P { ..p, x = 1 }` | done 2026-11-17: expands after inference once `p`'s record type is known |
+| template string `` `n is ${n}` `` | rejected | done 2026-11-17: `String`, `Int.toString` or `Real.toString` by inferred type; other types need an explicit conversion |
 | `%` | rejected: "SML `mod` differs" | `Int.rem` or `Real.rem` by inferred type (release step 4) |
 | arithmetic only a default decides, `(a, b) => a + b` | rejected | accepted: WM and SML both default to `int` (release step 5) |
 | carrier group `Result\|a, b\|` | parse error | syntactic: the group names its carrier; lower to `SubsetResult.map2` |
@@ -162,8 +162,8 @@ This exposed and fixed missing list-closer ownership and declaration-boundary re
 included in the ten native/WM cases. JSON boundary tests and the Result.filter identity test also
 pass after updating their library ABI assumptions.
 
-Remaining feature probes: inline record types, unnamed record updates, template strings,
-carrier groups and portable Monad/Carrier support. The restricted native profile still needs
+Remaining feature probes: inline record types, carrier groups and portable Monad/Carrier
+support. The restricted native profile still needs
 bootstrap-pervasive lowerings.
 
 ## Recommendation for 0.8.0

@@ -208,8 +208,15 @@ cases. Pakman passes all 92 WM tests with a writable temporary cache and host ac
 bubblewrap-isolated build fixtures; the restricted execution sandbox blocks their namespace
 socket setup before the callbacks run.
 
-Remaining step-8 features: inline record types, unnamed record updates, template strings, carrier
-groups and portable Monad/Carrier support. The restricted-profile bootstrap-pervasive lowering
+Progress 2026-11-17 (later): template strings and unnamed record updates translate. A
+`${ e }` becomes the text of e by its inferred type (string, char, int, Int64, real or bool;
+SML's number text differs from WM's display for negatives and some reals). `.{ ..p, x = e }`
+takes p's inferred record type and expands after elaboration. SubsetML's `--basis` default Panic
+runtime now applies only to graphs that use Panic, which fixed the MLWorks host test; the
+kernel-portable test lists the new `basis_source.sml`. The full SubsetML suite passes.
+
+Remaining step-8 features: inline record types, carrier groups and portable Monad/Carrier
+support. The restricted-profile bootstrap-pervasive lowering
 work also remains; these native tests use the supported target Basis environment.
 
 ## 9. Chore: `Option` and `Result` are Basis types, defined once
