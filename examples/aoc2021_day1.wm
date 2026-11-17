@@ -1,4 +1,3 @@
-type List<T> = Nil | Cons<T, List<T>>;
 
 let sample: List<Int32> =
   Cons(199,

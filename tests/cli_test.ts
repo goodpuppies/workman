@@ -459,9 +459,9 @@ Deno.test("repl shows lists in list syntax, at any depth", async () => {
   assertEquals(result.stdout.includes("Cons"), false);
 });
 
-Deno.test("repl keeps user Cons constructors and print uses list syntax", async () => {
-  const own = await runCliWithStdin(["repl"], "type Mine = Cons<Real64.Real, Mine> | Nil;\nCons(1, Nil);\n");
-  assertStringIncludes(own.stdout, "it = Cons(1, Nil) : Mine");
+Deno.test("repl rejects redeclaring the list constructors and print uses list syntax", async () => {
+  const own = await runCliWithStdin(["repl"], "type Mine = Cons<Real64.Real, Mine> | Nil;\n");
+  assertStringIncludes(own.stdout + own.stderr, "Cons is a list constructor and cannot be declared again");
   const printed = await runCliWithStdin(["repl"], "print([1, 2]);\n");
   assertStringIncludes(printed.stdout, "[1, 2]");
 });
@@ -1130,11 +1130,11 @@ Deno.test("cli run supports star import without alias", async () => {
   const main = `${dir}/main.wm`;
   await Deno.writeTextFile(
     lib,
-    "type Int_list = Empty | Cons<Real64.Real, Int_list>; let rec sumList = (list) => { let rec inner = (list, acc) => { match(list) { Empty => {acc}, Cons(i, rest) => {inner(rest, acc+i)} } }; inner(list, 0) };",
+    "type Int_list = Empty | Link<Real64.Real, Int_list>; let rec sumList = (list) => { let rec inner = (list, acc) => { match(list) { Empty => {acc}, Link(i, rest) => {inner(rest, acc+i)} } }; inner(list, 0) };",
   );
   await Deno.writeTextFile(
     main,
-    'from "./lib.wm" import *; let main = () => { print(sumList(Cons(1, Cons(2, Empty)))) };',
+    'from "./lib.wm" import *; let main = () => { print(sumList(Link(1, Link(2, Empty)))) };',
   );
 
   const output = await runCli(["run", main]);
@@ -1148,11 +1148,11 @@ Deno.test("cli run prints nested ADT values by constructor shape", async () => {
   await Deno.writeTextFile(
     input,
     `
-      type Int_list = Empty | Cons<Real64.Real, Int_list>;
+      type Int_list = Empty | Link<Real64.Real, Int_list>;
       type Box<T> = | Box<T>;
       let main = () => {
-        print(Cons(1, Cons(2, Empty)));
-        print(Box(Cons(3, Empty)));
+        print(Link(1, Link(2, Empty)));
+        print(Box(Link(3, Empty)));
         void
       };
     `,
@@ -1161,7 +1161,7 @@ Deno.test("cli run prints nested ADT values by constructor shape", async () => {
   const result = await runCli(["run", input]);
 
   assertEquals(result.code, 0);
-  assertEquals(result.stdout, "Cons(1, Cons(2, Empty))\nBox(Cons(3, Empty))\n");
+  assertEquals(result.stdout, "Link(1, Link(2, Empty))\nBox(Link(3, Empty))\n");
   assertEquals(result.stderr, "");
 });
 

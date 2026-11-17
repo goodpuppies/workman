@@ -1,6 +1,5 @@
 -- AoC-style program: recursive ADTs plus polymorphic list helpers.
 
-type List<T> = Nil | Cons<T, List<T>>;
 type Option<T> = None | Some<T>;
 type CountState = | CountState<Option<Int32>, Int32>;
 

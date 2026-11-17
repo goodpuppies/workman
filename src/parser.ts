@@ -68,7 +68,7 @@ export async function parseWmsml(
   source: string,
   filePath?: string,
 ): Promise<Module> {
-  return await parseGeneratedModule(source, await loadWmsmlParser(), filePath);
+  return { ...await parseGeneratedModule(source, await loadWmsmlParser(), filePath), standardMl: true };
 }
 
 export async function parseGeneratedModule(

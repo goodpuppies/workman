@@ -790,8 +790,8 @@ Deno.test("JSON literals reject ordinary ML values at the JS boundary", async ()
   await assertRejects(
     () =>
       checkSource(`
-        type Int_list = Empty | Cons<Real64.Real, Int_list>;
-        let bad = JSON{ xs: Cons(1, Empty) };
+        type Int_list = Empty | Link<Real64.Real, Int_list>;
+        let bad = JSON{ xs: Link(1, Empty) };
       `),
     Error,
     'type mismatch "Int_list" vs "Js.Value"',

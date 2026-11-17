@@ -2,11 +2,8 @@ import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { checkSource, compileLibraryVirtual, compileVirtual } from "../src/compiler.ts";
 import { expectBinding } from "./type_helpers.ts";
 
-const listPrelude = "type List<T> = Nil | Cons<T, List<T>>;";
-
 Deno.test("list literals lower to the algebraic list model", async () => {
   const result = await checkSource(`
-    ${listPrelude}
     let empty = [];
     let nums = [1, 2, 3];
     let more = [0, ..nums];
@@ -19,7 +16,6 @@ Deno.test("list literals lower to the algebraic list model", async () => {
 
 Deno.test("list patterns lower to constructor patterns", async () => {
   const result = await checkSource(`
-    ${listPrelude}
     let rec sum = match(xs) => {
       [] => { 0 },
       [head, ..tail] => { head + sum(tail) },
@@ -41,7 +37,6 @@ Deno.test("list pattern binder duplicates are rejected", async () => {
   await assertRejects(
     () =>
       checkSource(`
-        ${listPrelude}
         let bad = match(xs) => {
           [x, x] => { x },
           _ => { 0 },

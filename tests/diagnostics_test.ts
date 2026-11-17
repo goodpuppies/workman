@@ -518,7 +518,7 @@ Deno.test("multi-argument call mismatch points at offending argument", async () 
 
 Deno.test("basic diagnostic summary displays generic variables TypeScript style", async () => {
   const source = `
-type List<T> = Nil | Cons<T, List<T>>;
+
 
 let rec filterList = (fn, list) => {
   match(list) => {
@@ -656,7 +656,7 @@ let bad = input
 
 Deno.test("recursive result mismatch explains accidental match function", async () => {
   const source = `
-type List<T> = Nil | Cons<T, List<T>>;
+
 
 let rec filterList = (fn, list) => {
   match(list) => {

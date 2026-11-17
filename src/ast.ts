@@ -84,6 +84,8 @@ export type Module = Located<{
   prelude?: "none";
   /** Built-in types this module declares in source (`// @basis-type Result`). */
   basisTypes?: string[];
+  /** Written in the Standard ML surface, where `Nil` and `Cons` are ordinary names. */
+  standardMl?: boolean;
   wonLiterals?: readonly import("./won_literal_info.ts").WonLiteralInfo[];
 }>;
 

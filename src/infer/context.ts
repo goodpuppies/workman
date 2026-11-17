@@ -46,6 +46,8 @@ export type InferContext = {
   legacyGpuVectorTuples: boolean;
   /** Types the module declares as built-ins (`// @basis-type`). */
   basisTypes: ReadonlySet<string>;
+  /** The module is Standard ML source, where `Nil` and `Cons` are ordinary constructor names. */
+  standardMl?: boolean;
 };
 
 export function deriveInferContext(

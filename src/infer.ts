@@ -218,6 +218,7 @@ function inferModuleCoreInner(
     recover,
     legacyGpuVectorTuples: options.legacyGpuVectorTuples === true,
     basisTypes: new Set(module.basisTypes ?? []),
+    standardMl: module.standardMl,
   };
   warnWideTuples(module, warnings, diagnostics);
 

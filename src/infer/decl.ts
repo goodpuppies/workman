@@ -120,6 +120,18 @@ export function inferDecl(
     return;
   }
   if (decl.kind === "TypeDecl") {
+    // `Nil` and `Cons` are Workman's spellings of the list constructors, which list syntax
+    // (`[a, ..rest]`) always builds, as Standard ML forbids rebinding `nil` and `::` (Definition
+    // §2.9). In Standard ML source they are ordinary names.
+    const listConstructor = context.standardMl
+      ? undefined
+      : decl.ctors.find((c) => c.name === "Nil" || c.name === "Cons");
+    if (listConstructor) {
+      throw new Error(
+        `${listConstructor.name} is a list constructor and cannot be declared again; ` +
+          "list syntax always builds the built-in List",
+      );
+    }
     inferTypeDecl(
       decl,
       env,

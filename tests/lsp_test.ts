@@ -239,12 +239,12 @@ Deno.test("lsp validation localizes recursive binding return mismatches", async 
   const dir = await Deno.makeTempDir();
   const main = `${dir}/main.wm`;
   const source = `
-type Int_list = Empty | Cons<Real64.Real, Int_list>;
+type Int_list = Empty | Link<Real64.Real, Int_list>;
 
 let rec sumList = (list, val) => {
   match(list) => {
     Empty => {val},
-    Cons(i, rest) => {sumList(rest, val+i)}
+    Link(i, rest) => {sumList(rest, val+i)}
   }
 };
 `;
@@ -309,19 +309,19 @@ Deno.test("lsp validation relates call argument provenance through published bin
   const dir = await Deno.makeTempDir();
   const main = `${dir}/main.wm`;
   const source = `
-type Int_list = Empty | Cons<Real64.Real, Int_list>;
+type Int_list = Empty | Link<Real64.Real, Int_list>;
 
 let rec sumList = (list) => {
   let rec inner = (list, acc) => {
     match(list) {
       Empty => {acc},
-      Cons(i, rest) => {inner(rest, acc+i)}
+      Link(i, rest) => {inner(rest, acc+i)}
     }
   };
   inner(list)
 };
 
-let bad = sumList(Cons(1, Empty));
+let bad = sumList(Link(1, Empty));
 `;
   await Deno.writeTextFile(main, source);
 
@@ -338,7 +338,7 @@ let bad = sumList(Cons(1, Empty));
     "Int_list",
     "-- Origins ",
     "call argument: (Int_list, Real64.Real)",
-    "Cons: Int_list",
+    "Link: Int_list",
     "main.wm:11:3",
     "main.wm:14:19",
   ]);
@@ -352,7 +352,7 @@ Deno.test("lsp validation localizes recursive mismatches at first tuple-shape di
   const dir = await Deno.makeTempDir();
   const main = `${dir}/main.wm`;
   const source = `
-type List<T> = Nil | Cons<T, List<T>>;
+
 
 let rec foldLeft = (fn, num, list) => {
   let rec inner = (fn, acc, list) => {
@@ -397,7 +397,7 @@ Deno.test("lsp validation localizes missing recursive tuple args at inner callsi
   const dir = await Deno.makeTempDir();
   const main = `${dir}/main.wm`;
   const source = `
-type List<T> = Nil | Cons<T, List<T>>;
+
 
 let rec foldLeft = (fn, list) => {
   let rec inner = (fn, acc, list) => {
