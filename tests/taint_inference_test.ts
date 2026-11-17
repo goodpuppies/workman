@@ -689,7 +689,9 @@ Deno.test("a concrete data field marks the value, and a generic one keeps the ma
   assertEquals(types.spread, "P!");
   assertEquals(types.functionField, "C!");
   assertEquals(types.cleanFunctionField, "C");
-  assertEquals(types.genericFunctionField, "D<Real64.Real>!");
+  // D's field is generic, so the mark stays inside, as for `genericLiteral`; the annotation
+  // changes nothing.
+  assertEquals(types.genericFunctionField, "D<Real64.Real!>");
   assertEquals(types.extracted, "Void -> Real64.Real!");
   assertEquals(types.sibling, "Void -> String!");
   assertEquals(types.tainted, "Box!");

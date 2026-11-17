@@ -3,6 +3,7 @@ import type { AstNode } from "../source.ts";
 import { diagnosticError } from "../diagnostic_model.ts";
 import {
   type Env,
+  fresh,
   generalize,
   prune,
   type Scheme,
@@ -197,12 +198,19 @@ export function inferBinding(
       return inferExpr(value, context);
     };
     if (annotated) recordExpectedExprType(facts, b.value, annotated);
-    const t = annotated && b.value.kind === "Record"
+    // The annotation names the record a literal builds, but its type arguments come from the
+    // fields, as without an annotation: an annotation changes nothing (a field's function keeps
+    // its taint dependencies). The arguments are checked against the annotation below.
+    const annotatedRecord = annotated && prune(annotated);
+    const recordShape = annotatedRecord?.tag === "named" && annotatedRecord.args.length
+      ? { ...annotatedRecord, args: annotatedRecord.args.map(() => fresh()) }
+      : annotated;
+    const t = recordShape && b.value.kind === "Record"
       ? inferRecordExpr(
         b.value,
         typeEnv,
         inferRecordValue,
-        annotated,
+        recordShape,
         warnings,
         diagnostics,
         facts,
