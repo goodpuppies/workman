@@ -112,7 +112,7 @@ Deno.test("host patterns over compiler standard-library records retain field evi
   assertEquals(record.context, "parameter");
   assertEquals(record.fieldIndices, [0]);
   const carrier = analysis.nominalFacts.records.find((fact) =>
-    fact.modulePath === "std/monad.wm" && fact.name === "Carrier"
+    fact.modulePath === "subml-basis/subset_monad.wm" && fact.name === "Carrier"
   )!;
   assertEquals(record.recordId, carrier.id);
   assertEquals(typeof record.recordInferenceTypeId, "number");

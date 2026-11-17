@@ -3,6 +3,7 @@
 /* @subsetml
 from "./subset_option_value.sml" import * as SubsetOptionValue;
 from "./subset_result_value.sml" import * as SubsetResultValue;
+from "./subset_monad.sml" import * as SubsetMonad;
 */
 
 /* Custom Basis Result. Core operations take data first; procedure adapters are curried.
@@ -10,6 +11,7 @@ from "./subset_result_value.sml" import * as SubsetResultValue;
 
 from "./subset_result_value.wm" import * as SubsetResultValue;
 from "./subset_option_value.wm" import * as SubsetOptionValue;
+from "./subset_monad.wm" import * as SubsetMonad;
 
 export from "./subset_result_value.wm" import *;
 from "./subset_option_value.wm" import *;
@@ -62,3 +64,25 @@ let toOption = match {
   Ok(x) => { Some(x) },
   Err(error) => { None }
 };
+
+let succeed = (value) => { Ok(value) };
+
+let map2 = (left, right, f) => {
+  match(left, right) {
+    (Ok(l), Ok(r)) => { Ok(f(l, r)) },
+    (Err(error), _) => { Err(error) },
+    (_, Err(error)) => { Err(error) }
+  }
+};
+
+/* Result's carrier record, the value a bare `Result` stands for in Workman value position, a
+   `SubsetMonad.carrier`. */
+let carrier: SubsetMonad.Carrier<a -> Result<b, e>, Result<a, e> -> Result<b, e>, f -> g, (c -> Result<d, f>) -> Result<c, g> -> Result<d, g>, h, Result<h, i>, Result<j, k>, j -> l, Result<l, k>, Result<m, n>, Result<o, n>, (m, o) -> p, Result<p, n>, Result<q, r>, q -> Result<s, r>, Result<s, r>, Result<t, u>, u -> v, Result<t, v>> = .{ 
+  via = via,
+  viaErr = viaErr,
+  succeed = succeed,
+  map = map,
+  map2 = map2,
+  andThen = andThen,
+  mapErr = mapErr
+ };

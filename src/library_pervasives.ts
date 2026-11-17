@@ -68,8 +68,8 @@ export function hideLibraryPervasives(env: Map<string, { standardLibrary?: boole
  */
 export const LIBRARY_PERVASIVE_TYPES = Object.freeze([
   Object.freeze({ modulePath: "subml-basis/subset_order.wm", name: "Order" }),
-  Object.freeze({ modulePath: "std/monad.wm", name: "Carrier" }),
-  Object.freeze({ modulePath: "std/monad.wm", name: "Applicative" }),
+  Object.freeze({ modulePath: "subml-basis/subset_monad.wm", name: "Carrier" }),
+  Object.freeze({ modulePath: "subml-basis/subset_monad.wm", name: "Applicative" }),
 ]);
 
 export function pervasiveSourceName(binding: (typeof LIBRARY_PERVASIVES)[number]): string {

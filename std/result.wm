@@ -1,35 +1,14 @@
-from "./monad.wm" import { Carrier };
 from "../host/js/debug.wm" import * as Debug;
 from "basis/result.wm" import * as SubsetResult;
 from "basis/list.wm" import * as SubsetList;
 
-// `Result` is the SubsetML Basis `Result` plus WM's carrier record, the multi-argument maps and
-// the list helpers. A name the Basis exports is never redefined here
+// `Result` is the SubsetML Basis `Result`, which includes its carrier record, plus the
+// multi-argument maps and the list helpers. A name the Basis exports is never redefined here
 // (markdown/basis-authority-plan.md).
 export from "basis/result.wm" import *;
 
-let succeed = (value) => {
-  Ok(value)
-};
-
 let fail = (error) => {
   Err(error)
-};
-
-let map2 = match(a, b, f) => {
-  (Ok(left), Ok(right), f) => { Ok(f(left, right)) },
-  (Err(error), _, _) => { Err(error) },
-  (_, Err(error), _) => { Err(error) }
-};
-
-let carrier = .{
-  via = SubsetResult.via,
-  viaErr = SubsetResult.viaErr,
-  succeed = succeed,
-  map = SubsetResult.map,
-  mapErr = SubsetResult.mapErr,
-  map2 = map2,
-  andThen = SubsetResult.andThen,
 };
 
 let debug = match(result) => {

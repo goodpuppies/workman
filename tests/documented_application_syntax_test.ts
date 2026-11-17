@@ -66,7 +66,7 @@ Deno.test("documented via and pipe forms preserve their runtime behavior", async
       :> via Task (value) => { Task.succeed(value + 1) };
     let unwrap = (result: Result<Real64, String>) => { match(result) { Ok(value) => { value }, Err(_) => { -1 } } };
     let results = (unwrap(direct), unwrap(placeholder), unwrap(computed),
-      Result.getOr(traversed == Ok([2, 4]), false));
+      traversed == Ok([2, 4]));
 
     let add = (left, right) => { left + right };
     let adapt = (transform) => { (value) => { transform(value) } };

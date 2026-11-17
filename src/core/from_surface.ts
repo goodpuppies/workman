@@ -562,7 +562,9 @@ function coreExprFromSurface(expr: Expr, context?: CoreLoweringContext): CoreExp
       return coreExprFromSurface(expr.value, context);
     case "Binary":
       {
+        // Equality is never lifted (inferBinary).
         const binaryCarrier = context && context.target !== "shared" &&
+          expr.op !== "==" && expr.op !== "!=" &&
           (loweringCarrier(context.types.get(expr.left), context) ??
             loweringCarrier(context.types.get(expr.right), context));
         if (binaryCarrier) return carrierLiftedBinary(expr, binaryCarrier, context!);

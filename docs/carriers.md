@@ -551,6 +551,11 @@ The rule is intentionally mechanical:
 3. The result is wrapped back into `Result<OperatorResult, E>`.
 4. If both operands are `Result`, their error types must match.
 
+Equality is the exception: `==` and `!=` are never lifted. Comparing two carriers is ordinary
+structural equality, so `Ok(1) == Ok(1)` is `true`, as in SML, and `Ok(2) == 2` is a type error.
+Lifting is for operations that would otherwise be rejected, not a new meaning for ones that
+already have one.
+
 So this:
 
 ```wm

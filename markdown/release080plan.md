@@ -219,8 +219,15 @@ Inline record types now hoist to record declarations before their statement (pri
 block-local), and carrier groups desugar to nested `andThen`/`map` through the named namespace,
 both checked with MLton. The full SubsetML suite passes (39 scripts).
 
-Remaining step-8 feature: portable Monad/Carrier support. The restricted-profile bootstrap-pervasive lowering
-work also remains; these native tests use the supported target Basis environment.
+Monad is portable: the `Carrier` and `Applicative` record types and the `Monad` functions are the
+SubsetML Basis module `SubsetMonad` (`basis/monad.wm`), `SubsetResult` gained `succeed`, `map2`
+and `carrier`, and `std/monad.wm` and `std/result.wm` re-export them. A bare namespace in value
+position reads as its carrier (`Monad.map(x, Result, f)`), checked with MLton. A `Carrier`
+requires all seven fields; a custom carrier stubs the ones it doesn't support, and `Monad`
+functions no longer accept other record types with matching fields. Equality is no longer lifted
+over carriers: `Ok(1) == Ok(1)` is `true`, as in SML, and `Ok(2) == 2` is a type error
+(upgrade note for the release; `markdown/issues/lifted-equality-operator.md`). Step 8's
+features are complete. The restricted-profile bootstrap-pervasive lowering work remains; these native tests use the supported target Basis environment.
 
 ## 9. Chore: `Option` and `Result` are Basis types, defined once
 

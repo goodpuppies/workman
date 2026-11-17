@@ -130,7 +130,7 @@ Deno.test("Result.debug exposes its intentional typed hole", async () => {
   const result = await runCli(["run", input]);
 
   assertEquals(result.code, 1);
-  assertStringIncludes(result.stderr, "error[type.typed-hole std/result.wm:39:4]");
+  assertStringIncludes(result.stderr, "error[type.typed-hole std/result.wm:18:4]");
   assertStringIncludes(result.stderr, "typed hole; expected type: 'a");
   assertEquals(result.stderr.includes("Panic:"), false);
 });
@@ -214,13 +214,28 @@ Deno.test("type-growing carrier recursion has no finite rank-1 HM shape", async 
   );
 });
 
-Deno.test("Monad.via accepts a nominal record satisfying its via requirement", async () => {
+// Monad's functions are the Basis's, which read their carrier as a `Carrier` record, as SML
+// must: a custom carrier writes every field, stubbing the ones it doesn't support.
+Deno.test("Monad.via requires a Carrier record", async () => {
   const result = await checkSource(`
+        let stub = (_) => { ? };
+        let task = .{
+          via = (f) => { f() }, viaErr = stub, succeed = stub, map = stub,
+          map2 = stub, andThen = stub, mapErr = stub,
+        };
+        let value = Monad.via task () => { 42 };
+      `);
+  expectBinding(result.env, "value", { type: "Int32.Int", vars: 0 });
+  await assertRejects(
+    () =>
+      checkSource(`
         record TaskLike = { via: (Void -> Real64.Real) -> Real64.Real };
         let task: TaskLike = .{ via = (f) => { f() } };
         let value = Monad.via task () => { 42 };
-      `);
-  expectBinding(result.env, "value", { type: "Real64.Real", vars: 0 });
+      `),
+    Error,
+    "Carrier",
+  );
 });
 
 Deno.test("Monad.via composes over Task.via", async () => {

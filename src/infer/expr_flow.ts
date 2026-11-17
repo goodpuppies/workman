@@ -389,8 +389,12 @@ export function inferBinary(
   });
   rejectEscapedUnresolvedFfi(expr.left, left, typeEnv);
   rejectEscapedUnresolvedFfi(expr.right, right, typeEnv);
-  const leftCarrier = peelCarrier(left, typeEnv);
-  const rightCarrier = peelCarrier(right, typeEnv);
+  // Lifting gives meaning to an operation SML would reject, such as `Ok(2) + 3`. Equality is
+  // never lifted: `Ok(1) == Ok(1)` is ordinary equality, `true`, as in SML, and `Ok(2) == 2` is
+  // a type error rather than a Result.
+  const equality = expr.op === "==" || expr.op === "!=";
+  const leftCarrier = equality ? undefined : peelCarrier(left, typeEnv);
+  const rightCarrier = equality ? undefined : peelCarrier(right, typeEnv);
   const leftOperand = leftCarrier?.payload ?? left;
   const rightOperand = rightCarrier?.payload ?? right;
   const dialectResult = context.dialect.inferBinary?.(

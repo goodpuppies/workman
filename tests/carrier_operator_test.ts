@@ -151,7 +151,24 @@ Deno.test("a carrier without andThen still lifts operators", async () => {
       print(Monad.via carrier ((v) => { v }))
     };
   `);
-  assertStringIncludes(message, "Applicative has no field via");
+  assertStringIncludes(message, "Carrier<");
+  assertStringIncludes(message, "Applicative<");
+});
+
+Deno.test("equality is never lifted: comparing carriers is ordinary equality, as in SML", async () => {
+  const output = await runProgram(`
+    let main = () => {
+      let same: Bool = Ok(1) == Ok(1);
+      print(same);
+      print(Ok(1) != Err("x"));
+      print(Ok(2) + 3)
+    };
+  `);
+  assertEquals(output, "true\ntrue\nOk(5)");
+  const message = await checkError(`
+    let main = () => { print(Ok(2) == 2) };
+  `);
+  assertStringIncludes(message, "operator ==");
 });
 
 Deno.test("Result keeps its own lowering when other carriers are registered", async () => {

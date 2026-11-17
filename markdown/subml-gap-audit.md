@@ -51,7 +51,7 @@ counterpart; an annotation on the receiver replaces it.
 | `%` | rejected: "SML `mod` differs" | `Int.rem` or `Real.rem` by inferred type (release step 4) |
 | arithmetic only a default decides, `(a, b) => a + b` | rejected | accepted: WM and SML both default to `int` (release step 5) |
 | carrier group `Result\|a, b\|` | parse error | done 2026-11-17: syntactic, nested `andThen` with a final `map`, as WM desugars it |
-| `Monad.via Result f`, `Monad.map(Result, …)`, a carrier passed as a variable | `unbound identifier Monad.via` | ordinary record code: `Monad` functions are field accesses on a `Carrier` record. Move the `Carrier` record type and a `SubsetResult.carrier` value into the Basis and translate `std/monad.wm` as portable code; a bare `Result` in value position is syntactic shorthand for `SubsetResult.carrier` |
+| `Monad.via Result f`, `Monad.map(Result, …)`, a carrier passed as a variable | `unbound identifier Monad.via` | done 2026-11-17: ordinary record code: `Monad` functions are field accesses on a `Carrier` record. Move the `Carrier` record type and a `SubsetResult.carrier` value into the Basis and translate `std/monad.wm` as portable code; a bare `Result` in value position is syntactic shorthand for `SubsetResult.carrier` |
 | real equality `a == b` | translates | unchanged |
 
 What remains a rule rather than a translation:
@@ -162,7 +162,7 @@ This exposed and fixed missing list-closer ownership and declaration-boundary re
 included in the ten native/WM cases. JSON boundary tests and the Result.filter identity test also
 pass after updating their library ABI assumptions.
 
-Remaining feature probe: portable Monad/Carrier support. The restricted native profile still needs
+Portable Monad/Carrier support is done (2026-11-17). The restricted native profile still needs
 bootstrap-pervasive lowerings.
 
 ## Recommendation for 0.8.0

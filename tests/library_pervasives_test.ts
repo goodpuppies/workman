@@ -130,8 +130,8 @@ Deno.test("bare library pervasives retain Basis behavior through code generation
       values == [2, 4, 6], selected == [4, 6], flattened == [1, 2, 3],
       reverse(flattened) == [3, 2, 1], isEmpty([]), !isEmpty(values),
       length(values) == (3: Int32.Int),
-      Result.getOr(head(values) == Ok(2), false),
-      Result.getOr(tail(values) == Ok([4, 6]), false),
+      head(values) == Ok(2),
+      tail(values) == Ok([4, 6]),
       match(head([])) { Err(_) => { true }, Ok(_) => { false } },
       match(tail([])) { Err(_) => { true }, Ok(_) => { false } },
       foldLeft([1, 2, 3], "", (item, acc) => { acc ++ Text.of(item) }) == "123",
@@ -141,10 +141,10 @@ Deno.test("bare library pervasives retain Basis behavior through code generation
       before(42, ignore("discard")) == 42,
       o((n) => { n * 2 }, (n) => { n + 1 })(3) == 8,
       Vector.length(vector([1, 2])) == 2,
-      Result.getOr(ceil(1.2) == Ok(2), false),
-      Result.getOr(floor(1.8) == Ok(1), false),
-      Result.getOr(round(2.5) == Ok(2), false),
-      Result.getOr(trunc(0 - 1.8) == Ok(0 - 1), false)
+      ceil(1.2) == Ok(2),
+      floor(1.8) == Ok(1),
+      round(2.5) == Ok(2),
+      trunc(0 - 1.8) == Ok(0 - 1)
     );
     let exerciseEach = () => { forEach([1, 2, 3], (n) => { print(n) }) };
   `;
