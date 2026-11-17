@@ -1,6 +1,6 @@
 {
   "source": "SubsetML",
-  "commit": "45a0e8ddedfe1d54888fc0218299985ec587f0a5",
+  "commit": "872a594f5ed18aeb5de06aa8c420b1dc297b2101",
   "modules": [
     "SubsetBool",
     "SubsetBytes",
@@ -42,7 +42,7 @@
     "lib/subset_real_host.wm": "a4b5bcc3b7b2b9450c94175ef7f989c3df9f9f1ece28981700579d28045dfad3",
     "lib/subset_text_host.sml": "79d4c5c774d3ab5d6b0709938a593344b36a7bded98e40ffe90d1c87a22bf05f",
     "lib/subset_text_host.wm": "35ce852eb1707f6072f211e23d5d906602be32a1ec0c71bd52068004290e02f0",
-    "src/main.wm": "1f2c97460e919eebb67d213f3f58c5f10aa52ea38ebae09d2ff4855e4ccb114c",
+    "src/main.wm": "db0009d7112c4ad328a5678bce735438d5146bcd3debbcd9db16dc48436642af",
     "src/subset_bool.sml": "a0d8b6d580d52caf53a86c561451b7b044a9ae4ac35bd17ceb85af1a69ac4f43",
     "src/subset_bytes.sml": "838ee97abeef4ca13487aa567ad8df3f15de1c98a85403e320a13b7a0c3a0b63",
     "src/subset_char.sml": "8d0d88a70231ace8bd1f0865cd2cef41c4fce503613ce2d80ec4c72939045769",

@@ -36,9 +36,10 @@ let Var(Result) = .{
 };
 
 // Create/call a function via a carrier's `via` function.
-// arg1 a Carrier structure that has a `via` function
+// arg1 a Result carrier structure, whose `via` function adapts
 // arg2 a lambda function to adapt
-let via = (x) => {
+// The annotation names the record, so `x.via` has one meaning (and an SML translation).
+let via = (x: ResultCarrier<a, b, e>) => {
   (f) => {
     x.via(f)
   }
