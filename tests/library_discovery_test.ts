@@ -10,6 +10,8 @@ import {
 } from "../src/standard_library.ts";
 import { librarySources } from "../src/generated/assets.ts";
 import { libraryModuleUrl } from "../src/js_module_specifier.ts";
+import { BASIS_TYPES } from "../src/basis_manifest.ts";
+import { primitiveTypeNames } from "../src/module_scope.wm";
 import { analyzeFile, analyzeRecoveredFile } from "../src/compiler.ts";
 
 Deno.test("library module aliases come from snake_case file names", () => {
@@ -35,6 +37,13 @@ Deno.test("shared library scope preserves host names and explicit relative impor
   }
   assertEquals(libraryModuleAlias("subml-basis/subset_os.wm"), "OS");
   assertEquals(libraryModuleAlias("subml-basis/subset_list_pair.wm"), "ListPair");
+});
+
+Deno.test("the shared scope knows the compiler's own unqualified types", () => {
+  assertEquals(
+    [...primitiveTypeNames].sort(),
+    BASIS_TYPES.map((type) => type.name).filter((name) => !name.includes(".")).sort(),
+  );
 });
 
 Deno.test("every generated library source is discovered and imports precede importers", async () => {

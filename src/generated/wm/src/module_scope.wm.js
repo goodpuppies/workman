@@ -3606,9 +3606,10 @@ __wm_fail("Match", "pattern match failure in function");
 Object.defineProperty(renamed_695, __wm_tuple_entry_3, { value: renamed_695__wm_d3 });
 const builtinValues_696 = SubsetList_24.concat({ ctor: -6, name: "Cons", a0: namesOf_691__wm_d2("subml-basis/subset_option_value.wm", { ctor: -6, name: "Cons", a0: "Some", a1: { ctor: -6, name: "Cons", a0: "None", a1: __wm_basis_Nil } }), a1: { ctor: -6, name: "Cons", a0: namesOf_691__wm_d2("subml-basis/subset_result_value.wm", { ctor: -6, name: "Cons", a0: "Ok", a1: { ctor: -6, name: "Cons", a0: "Err", a1: __wm_basis_Nil } }), a1: __wm_basis_Nil } });
 const builtinTypes_697 = SubsetList_24.concat({ ctor: -6, name: "Cons", a0: namesOf_691__wm_d2("subml-basis/subset_option_value.wm", { ctor: -6, name: "Cons", a0: "Option", a1: __wm_basis_Nil }), a1: { ctor: -6, name: "Cons", a0: namesOf_691__wm_d2("subml-basis/subset_result_value.wm", { ctor: -6, name: "Cons", a0: "Result", a1: __wm_basis_Nil }), a1: __wm_basis_Nil } });
-const pervasives_698 = SubsetList_24.concat({ ctor: -6, name: "Cons", a0: namesOf_691__wm_d2("subml-basis/subset_list.wm", { ctor: -6, name: "Cons", a0: "map", a1: { ctor: -6, name: "Cons", a0: "filter", a1: { ctor: -6, name: "Cons", a0: "forEach", a1: { ctor: -6, name: "Cons", a0: "foldLeft", a1: { ctor: -6, name: "Cons", a0: "foldRight", a1: { ctor: -6, name: "Cons", a0: "head", a1: { ctor: -6, name: "Cons", a0: "tail", a1: { ctor: -6, name: "Cons", a0: "length", a1: { ctor: -6, name: "Cons", a0: "isEmpty", a1: { ctor: -6, name: "Cons", a0: "reverse", a1: { ctor: -6, name: "Cons", a0: "concat", a1: __wm_basis_Nil } } } } } } } } } } }), a1: { ctor: -6, name: "Cons", a0: namesOf_691__wm_d2("subml-basis/subset_option.wm", { ctor: -6, name: "Cons", a0: "getOr", a1: { ctor: -6, name: "Cons", a0: "isSome", a1: { ctor: -6, name: "Cons", a0: "toResult", a1: __wm_basis_Nil } } }), a1: { ctor: -6, name: "Cons", a0: namesOf_691__wm_d2("subml-basis/subset_bool.wm", { ctor: -6, name: "Cons", a0: "not", a1: __wm_basis_Nil }), a1: { ctor: -6, name: "Cons", a0: namesOf_691__wm_d2("subml-basis/subset_order.wm", { ctor: -6, name: "Cons", a0: "Less", a1: { ctor: -6, name: "Cons", a0: "Equal", a1: { ctor: -6, name: "Cons", a0: "Greater", a1: __wm_basis_Nil } } }), a1: { ctor: -6, name: "Cons", a0: { ctor: -6, name: "Cons", a0: renamed_695__wm_d3("subml-basis/subset_char.wm", "chr", "fromCode"), a1: { ctor: -6, name: "Cons", a0: renamed_695__wm_d3("subml-basis/subset_char.wm", "ord", "toCode"), a1: { ctor: -6, name: "Cons", a0: renamed_695__wm_d3("subml-basis/subset_string.wm", "explode", "fromNative"), a1: { ctor: -6, name: "Cons", a0: renamed_695__wm_d3("subml-basis/subset_string.wm", "implode", "toNative"), a1: __wm_basis_Nil } } } }, a1: { ctor: -6, name: "Cons", a0: namesOf_691__wm_d2("subml-basis/subset_string.wm", { ctor: -6, name: "Cons", a0: "size", a1: { ctor: -6, name: "Cons", a0: "str", a1: __wm_basis_Nil } }), a1: { ctor: -6, name: "Cons", a0: namesOf_691__wm_d2("std/general.wm", { ctor: -6, name: "Cons", a0: "before", a1: { ctor: -6, name: "Cons", a0: "ignore", a1: { ctor: -6, name: "Cons", a0: "o", a1: __wm_basis_Nil } } }), a1: { ctor: -6, name: "Cons", a0: namesOf_691__wm_d2("std/real64.wm", { ctor: -6, name: "Cons", a0: "ceil", a1: { ctor: -6, name: "Cons", a0: "floor", a1: { ctor: -6, name: "Cons", a0: "round", a1: { ctor: -6, name: "Cons", a0: "trunc", a1: __wm_basis_Nil } } } }), a1: { ctor: -6, name: "Cons", a0: { ctor: -6, name: "Cons", a0: renamed_695__wm_d3("std/vector.wm", "vector", "fromList"), a1: __wm_basis_Nil }, a1: { ctor: -6, name: "Cons", a0: namesOf_691__wm_d2("std/string.wm", { ctor: -6, name: "Cons", a0: "toList", a1: __wm_basis_Nil }), a1: __wm_basis_Nil } } } } } } } } } });
-const pervasiveTypes_699 = SubsetList_24.concat({ ctor: -6, name: "Cons", a0: namesOf_691__wm_d2("subml-basis/subset_order.wm", { ctor: -6, name: "Cons", a0: "Order", a1: __wm_basis_Nil }), a1: { ctor: -6, name: "Cons", a0: namesOf_691__wm_d2("subml-basis/subset_monad.wm", { ctor: -6, name: "Cons", a0: "Carrier", a1: { ctor: -6, name: "Cons", a0: "Applicative", a1: __wm_basis_Nil } }), a1: __wm_basis_Nil } });
-return { "None": None_ctor_0, "Some": Some_ctor_1, "LibraryImport": LibraryImport_577, "Pervasive": Pervasive_578, "bytes": bytes_581, "text": text_584, "stripPrefix": stripPrefix_585, "stripPrefix__wm_d2": stripPrefix_585__wm_d2, "stripSuffix": stripSuffix_596, "stripSuffix__wm_d2": stripSuffix_596__wm_d2, "chars": chars_599, "moduleFile": moduleFile_606, "moduleFile__wm_d2": moduleFile_606__wm_d2, "quoted": quoted_610, "jsHostImportPrefix": jsHostImportPrefix_611, "jsHostModulePath": jsHostModulePath_613, "libraryImport": libraryImport_631, "internalBasisModules": internalBasisModules_632, "basisModuleName": basisModuleName_639, "publicBasisModuleName": publicBasisModuleName_643, "baseName": baseName_650, "pascal": pascal_659, "moduleAlias": moduleAlias_663, "isAutoOpened": isAutoOpened_669, "isAutoOpened__wm_d2": isAutoOpened_669__wm_d2, "namespaceModule": namespaceModule_673, "namespaceModule__wm_d2": namespaceModule_673__wm_d2, "basisNamespaceCandidate": basisNamespaceCandidate_683, "isLoadedOnDemand": isLoadedOnDemand_687, "namesOf": namesOf_691, "namesOf__wm_d2": namesOf_691__wm_d2, "renamed": renamed_695, "renamed__wm_d3": renamed_695__wm_d3, "builtinValues": builtinValues_696, "builtinTypes": builtinTypes_697, "pervasives": pervasives_698, "pervasiveTypes": pervasiveTypes_699 };
+const primitiveTypeNames_698 = { ctor: -6, name: "Cons", a0: "Bool", a1: { ctor: -6, name: "Cons", a0: "CStorage", a1: { ctor: -6, name: "Cons", a0: "Char", a1: { ctor: -6, name: "Cons", a0: "List", a1: { ctor: -6, name: "Cons", a0: "Opaque", a1: { ctor: -6, name: "Cons", a0: "Option", a1: { ctor: -6, name: "Cons", a0: "Ptr", a1: { ctor: -6, name: "Cons", a0: "Result", a1: { ctor: -6, name: "Cons", a0: "String", a1: { ctor: -6, name: "Cons", a0: "Task", a1: { ctor: -6, name: "Cons", a0: "Void", a1: __wm_basis_Nil } } } } } } } } } } };
+const pervasives_699 = SubsetList_24.concat({ ctor: -6, name: "Cons", a0: namesOf_691__wm_d2("subml-basis/subset_list.wm", { ctor: -6, name: "Cons", a0: "map", a1: { ctor: -6, name: "Cons", a0: "filter", a1: { ctor: -6, name: "Cons", a0: "forEach", a1: { ctor: -6, name: "Cons", a0: "foldLeft", a1: { ctor: -6, name: "Cons", a0: "foldRight", a1: { ctor: -6, name: "Cons", a0: "head", a1: { ctor: -6, name: "Cons", a0: "tail", a1: { ctor: -6, name: "Cons", a0: "length", a1: { ctor: -6, name: "Cons", a0: "isEmpty", a1: { ctor: -6, name: "Cons", a0: "reverse", a1: { ctor: -6, name: "Cons", a0: "concat", a1: __wm_basis_Nil } } } } } } } } } } }), a1: { ctor: -6, name: "Cons", a0: namesOf_691__wm_d2("subml-basis/subset_option.wm", { ctor: -6, name: "Cons", a0: "getOr", a1: { ctor: -6, name: "Cons", a0: "isSome", a1: { ctor: -6, name: "Cons", a0: "toResult", a1: __wm_basis_Nil } } }), a1: { ctor: -6, name: "Cons", a0: namesOf_691__wm_d2("subml-basis/subset_bool.wm", { ctor: -6, name: "Cons", a0: "not", a1: __wm_basis_Nil }), a1: { ctor: -6, name: "Cons", a0: namesOf_691__wm_d2("subml-basis/subset_order.wm", { ctor: -6, name: "Cons", a0: "Less", a1: { ctor: -6, name: "Cons", a0: "Equal", a1: { ctor: -6, name: "Cons", a0: "Greater", a1: __wm_basis_Nil } } }), a1: { ctor: -6, name: "Cons", a0: { ctor: -6, name: "Cons", a0: renamed_695__wm_d3("subml-basis/subset_char.wm", "chr", "fromCode"), a1: { ctor: -6, name: "Cons", a0: renamed_695__wm_d3("subml-basis/subset_char.wm", "ord", "toCode"), a1: { ctor: -6, name: "Cons", a0: renamed_695__wm_d3("subml-basis/subset_string.wm", "explode", "fromNative"), a1: { ctor: -6, name: "Cons", a0: renamed_695__wm_d3("subml-basis/subset_string.wm", "implode", "toNative"), a1: __wm_basis_Nil } } } }, a1: { ctor: -6, name: "Cons", a0: namesOf_691__wm_d2("subml-basis/subset_string.wm", { ctor: -6, name: "Cons", a0: "size", a1: { ctor: -6, name: "Cons", a0: "str", a1: __wm_basis_Nil } }), a1: { ctor: -6, name: "Cons", a0: namesOf_691__wm_d2("std/general.wm", { ctor: -6, name: "Cons", a0: "before", a1: { ctor: -6, name: "Cons", a0: "ignore", a1: { ctor: -6, name: "Cons", a0: "o", a1: __wm_basis_Nil } } }), a1: { ctor: -6, name: "Cons", a0: namesOf_691__wm_d2("std/real64.wm", { ctor: -6, name: "Cons", a0: "ceil", a1: { ctor: -6, name: "Cons", a0: "floor", a1: { ctor: -6, name: "Cons", a0: "round", a1: { ctor: -6, name: "Cons", a0: "trunc", a1: __wm_basis_Nil } } } }), a1: { ctor: -6, name: "Cons", a0: { ctor: -6, name: "Cons", a0: renamed_695__wm_d3("std/vector.wm", "vector", "fromList"), a1: __wm_basis_Nil }, a1: { ctor: -6, name: "Cons", a0: namesOf_691__wm_d2("std/string.wm", { ctor: -6, name: "Cons", a0: "toList", a1: __wm_basis_Nil }), a1: __wm_basis_Nil } } } } } } } } } });
+const pervasiveTypes_700 = SubsetList_24.concat({ ctor: -6, name: "Cons", a0: namesOf_691__wm_d2("subml-basis/subset_order.wm", { ctor: -6, name: "Cons", a0: "Order", a1: __wm_basis_Nil }), a1: { ctor: -6, name: "Cons", a0: namesOf_691__wm_d2("subml-basis/subset_monad.wm", { ctor: -6, name: "Cons", a0: "Carrier", a1: { ctor: -6, name: "Cons", a0: "Applicative", a1: __wm_basis_Nil } }), a1: __wm_basis_Nil } });
+return { "None": None_ctor_0, "Some": Some_ctor_1, "LibraryImport": LibraryImport_577, "Pervasive": Pervasive_578, "bytes": bytes_581, "text": text_584, "stripPrefix": stripPrefix_585, "stripPrefix__wm_d2": stripPrefix_585__wm_d2, "stripSuffix": stripSuffix_596, "stripSuffix__wm_d2": stripSuffix_596__wm_d2, "chars": chars_599, "moduleFile": moduleFile_606, "moduleFile__wm_d2": moduleFile_606__wm_d2, "quoted": quoted_610, "jsHostImportPrefix": jsHostImportPrefix_611, "jsHostModulePath": jsHostModulePath_613, "libraryImport": libraryImport_631, "internalBasisModules": internalBasisModules_632, "basisModuleName": basisModuleName_639, "publicBasisModuleName": publicBasisModuleName_643, "baseName": baseName_650, "pascal": pascal_659, "moduleAlias": moduleAlias_663, "isAutoOpened": isAutoOpened_669, "isAutoOpened__wm_d2": isAutoOpened_669__wm_d2, "namespaceModule": namespaceModule_673, "namespaceModule__wm_d2": namespaceModule_673__wm_d2, "basisNamespaceCandidate": basisNamespaceCandidate_683, "isLoadedOnDemand": isLoadedOnDemand_687, "namesOf": namesOf_691, "namesOf__wm_d2": namesOf_691__wm_d2, "renamed": renamed_695, "renamed__wm_d3": renamed_695__wm_d3, "builtinValues": builtinValues_696, "builtinTypes": builtinTypes_697, "primitiveTypeNames": primitiveTypeNames_698, "pervasives": pervasives_699, "pervasiveTypes": pervasiveTypes_700 };
   },
   (value) => { __wm_module_11 = value; },
 );
@@ -3618,13 +3619,13 @@ __wm_define_module(
   ["__wm_module_11"],
   async () => {
 const Scope_27 = __wm_module_11;
-const libraryImport_702 = (__arg) => {
+const libraryImport_703 = (__arg) => {
 if (true) {
-const specifier_700 = __arg;
-const __wm_return_value_39 = Scope_27.libraryImport(specifier_700);
+const specifier_701 = __arg;
+const __wm_return_value_39 = Scope_27.libraryImport(specifier_701);
 if (__wm_return_value_39?.ctor === 1) {
-const found_701 = __wm_return_value_39.a0;
-return { ctor: -2, name: "Some", a0: found_701 };
+const found_702 = __wm_return_value_39.a0;
+return { ctor: -2, name: "Some", a0: found_702 };
 } else if (__wm_return_value_39?.ctor === 0) {
 
 return __wm_basis_None;
@@ -3633,39 +3634,40 @@ __wm_fail("Match", "non-exhaustive match");
 }
 __wm_fail("Match", "pattern match failure in function");
 };
-const moduleAlias_704 = (__arg) => {
+const moduleAlias_705 = (__arg) => {
 if (true) {
-const path_703 = __arg;
-return Scope_27.moduleAlias(path_703);
+const path_704 = __arg;
+return Scope_27.moduleAlias(path_704);
 }
 __wm_fail("Match", "pattern match failure in function");
 };
-const isAutoOpened_707__wm_d2 = (path_705, libraryPaths_706) => {
-return Scope_27.isAutoOpened__wm_d2(path_705, Js.Array.toList(libraryPaths_706));
+const isAutoOpened_708__wm_d2 = (path_706, libraryPaths_707) => {
+return Scope_27.isAutoOpened__wm_d2(path_706, Js.Array.toList(libraryPaths_707));
 };
-const isAutoOpened_707 = (__arg) => {
-if (__wm_is_tuple(__arg) && __arg.length === 2) return isAutoOpened_707__wm_d2(__arg[0], __arg[1]);
+const isAutoOpened_708 = (__arg) => {
+if (__wm_is_tuple(__arg) && __arg.length === 2) return isAutoOpened_708__wm_d2(__arg[0], __arg[1]);
 __wm_fail("Match", "pattern match failure in function");
 };
-Object.defineProperty(isAutoOpened_707, __wm_tuple_entry_2, { value: isAutoOpened_707__wm_d2 });
-const isLoadedOnDemand_709 = (__arg) => {
+Object.defineProperty(isAutoOpened_708, __wm_tuple_entry_2, { value: isAutoOpened_708__wm_d2 });
+const isLoadedOnDemand_710 = (__arg) => {
 if (true) {
-const path_708 = __arg;
-return Scope_27.isLoadedOnDemand(path_708);
+const path_709 = __arg;
+return Scope_27.isLoadedOnDemand(path_709);
 }
 __wm_fail("Match", "pattern match failure in function");
 };
-const jsHostImportPrefix_710 = Scope_27.jsHostImportPrefix;
-const jsHostModulePath_712 = (__arg) => {
+const jsHostImportPrefix_711 = Scope_27.jsHostImportPrefix;
+const jsHostModulePath_713 = (__arg) => {
 if (true) {
-const name_711 = __arg;
-return Scope_27.jsHostModulePath(name_711);
+const name_712 = __arg;
+return Scope_27.jsHostModulePath(name_712);
 }
 __wm_fail("Match", "pattern match failure in function");
 };
-const pervasives_713 = Js.Array.fromList(Scope_27.pervasives);
-const pervasiveTypes_714 = Js.Array.fromList(Scope_27.pervasiveTypes);
-return { "libraryImport": libraryImport_702, "moduleAlias": moduleAlias_704, "isAutoOpened": isAutoOpened_707, "isAutoOpened__wm_d2": isAutoOpened_707__wm_d2, "isLoadedOnDemand": isLoadedOnDemand_709, "jsHostImportPrefix": jsHostImportPrefix_710, "jsHostModulePath": jsHostModulePath_712, "pervasives": pervasives_713, "pervasiveTypes": pervasiveTypes_714 };
+const pervasives_714 = Js.Array.fromList(Scope_27.pervasives);
+const pervasiveTypes_715 = Js.Array.fromList(Scope_27.pervasiveTypes);
+const primitiveTypeNames_716 = Js.Array.fromList(Scope_27.primitiveTypeNames);
+return { "libraryImport": libraryImport_703, "moduleAlias": moduleAlias_705, "isAutoOpened": isAutoOpened_708, "isAutoOpened__wm_d2": isAutoOpened_708__wm_d2, "isLoadedOnDemand": isLoadedOnDemand_710, "jsHostImportPrefix": jsHostImportPrefix_711, "jsHostModulePath": jsHostModulePath_713, "pervasives": pervasives_714, "pervasiveTypes": pervasiveTypes_715, "primitiveTypeNames": primitiveTypeNames_716 };
   },
   (value) => { __wm_module_12 = value; },
 );
@@ -3678,6 +3680,7 @@ const __wm_library_export_4 = __wm_module_12["jsHostImportPrefix"];
 const __wm_library_export_5 = __wm_module_12["jsHostModulePath"];
 const __wm_library_export_6 = __wm_module_12["pervasives"];
 const __wm_library_export_7 = __wm_module_12["pervasiveTypes"];
+const __wm_library_export_8 = __wm_module_12["primitiveTypeNames"];
 export {
   __wm_library_export_0 as libraryImport,
   __wm_library_export_1 as moduleAlias,
@@ -3686,5 +3689,6 @@ export {
   __wm_library_export_4 as jsHostImportPrefix,
   __wm_library_export_5 as jsHostModulePath,
   __wm_library_export_6 as pervasives,
-  __wm_library_export_7 as pervasiveTypes
+  __wm_library_export_7 as pervasiveTypes,
+  __wm_library_export_8 as primitiveTypeNames
 };

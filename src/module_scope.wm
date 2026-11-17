@@ -37,3 +37,7 @@ let jsHostModulePath = (name: String) => { Scope.jsHostModulePath(name) };
 -- The unqualified library values and types in every module, as `{ modulePath, name, sourceName }`.
 let pervasives = Js.Array.fromList(Scope.pervasives);
 let pervasiveTypes = Js.Array.fromList(Scope.pervasiveTypes);
+
+-- The compiler's own unqualified type names, which a bare name in type position means before any
+-- namespace's `Self`. tests/library_discovery_test.ts keeps this equal to BASIS_TYPES.
+let primitiveTypeNames = Js.Array.fromList(Scope.primitiveTypeNames);
