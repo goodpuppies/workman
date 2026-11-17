@@ -23,6 +23,9 @@
       "tooling/testman/test.wm",
       "tooling/tuiman/document.ts",
       "tooling/wmslang/*.wm"
+    ],
+    "exclude": [
+      "subml-basis/translator/"
     ]
   },
   "tasks": {
