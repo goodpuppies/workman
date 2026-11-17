@@ -13,9 +13,12 @@ The output directory is self-contained: it holds the translated program, the par
 SubsetML Basis the program uses, and the host adapters that give printing, files and number
 text their native implementation. It can be moved, checked in, or built on another machine.
 
-The translator is SubsetML's own WM reader, packaged with `wm` as JavaScript. Its output is
-portable SubsetML: it names only the SubsetML Basis, never the SML Basis Library directly, and
-passes SubsetML's `check-portable`.
+The translator is SubsetML's own WM reader. Its output is portable SubsetML: it names only the
+SubsetML Basis, never the SML Basis Library directly, and passes SubsetML's `check-portable`.
+`wm` carries it both as JavaScript and as SML. With `mlton` on PATH, the first `wm sml` builds the
+SML one into the Workman cache (`~/.cache/workman/subsetml/`), which takes about 15 seconds, and
+later runs use that native build, which translates several times faster. Without MLton, or with
+`WM_SML_TRANSLATOR=js`, the JavaScript translator runs. Both write the same files.
 
 ## What carries over
 

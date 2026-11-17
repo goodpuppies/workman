@@ -71,6 +71,16 @@ const output = [
   ),
   "};",
   "",
+  "/** SubsetML's translator as SML, which `wm sml` builds with MLton, keyed by file name. */",
+  "export const translatorSmlSources: Readonly<Record<string, string>> = {",
+  ...await sourceEntries(
+    [
+      ...await filePaths("subml-basis/translator", ".sml"),
+      ...await filePaths("subml-basis/translator", ".mlb"),
+    ].sort(),
+  ),
+  "};",
+  "",
   "/** Zig template used for C header reflection, embedded for packaged compilers. */",
   `export const cHeaderExtractorSource = ${
     JSON.stringify(

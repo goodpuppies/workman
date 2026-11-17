@@ -5,8 +5,12 @@
 // imports with the SubsetML Basis, writes one `.sml` file per module and a `project.mlb`, and
 // links the host modules to their MLton adapters. Every file it writes stays in the output
 // directory, so the directory builds anywhere: `mlton project.mlb`.
+//
+// With MLton on PATH, the translator runs natively: the package carries its SML, which is built
+// once into the Workman cache. Without MLton, or with WM_SML_TRANSLATOR=js, it runs as JavaScript.
 import { basename, dirname, join, posix, resolve } from "node:path";
-import { librarySources, nativeBasisSources } from "./generated/assets.ts";
+import { librarySources, nativeBasisSources, translatorSmlSources } from "./generated/assets.ts";
+import { workmanCache } from "./user_paths.ts";
 import { createTemporaryDirectory } from "./temporary_directory.ts";
 import { discoverStandardModules } from "./standard_library.ts";
 import { libraryImport } from "./host_modules.ts";
@@ -82,12 +86,15 @@ export async function smlCommand(args: string[]): Promise<number> {
       adapters.push("--native-adapter-if-used", checker, native, structure);
     }
 
-    const translator = new URL("./generated/subsetml.js", import.meta.url).href;
-    const translated = await new Deno.Command(Deno.env.get("WORKMAN_DENO_PATH") || Deno.execPath(), {
-      args: ["run", "-A", translator, "sml-entry", out, "--basis", basis, ...adapters, entry],
-      stdout: "inherit",
-      stderr: "inherit",
-    }).output();
+    const translatorArgs = ["sml-entry", out, "--basis", basis, ...adapters, entry];
+    const nativeBinary = Deno.env.get("WM_SML_TRANSLATOR") === "js" ? undefined : await nativeTranslator();
+    const translated = nativeBinary
+      ? await new Deno.Command(nativeBinary, { args: translatorArgs, stdout: "inherit", stderr: "inherit" }).output()
+      : await new Deno.Command(Deno.env.get("WORKMAN_DENO_PATH") || Deno.execPath(), {
+        args: ["run", "-A", new URL("./generated/subsetml.js", import.meta.url).href, ...translatorArgs],
+        stdout: "inherit",
+        stderr: "inherit",
+      }).output();
     if (!translated.success) return 1;
 
     // The project names the adapters by the absolute paths given above; make them relative so the
@@ -120,6 +127,59 @@ export async function smlCommand(args: string[]): Promise<number> {
     return 0;
   } finally {
     await temporary.cleanup();
+  }
+}
+
+/** The native translator, built from the packaged SML on first use; undefined without MLton or
+ * when the build fails, so the caller falls back to the JavaScript translator. */
+async function nativeTranslator(): Promise<string | undefined> {
+  const files = Object.entries(translatorSmlSources)
+    .map(([path, source]) => [basename(path), source] as const)
+    .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0);
+  if (files.length === 0) return undefined;
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(JSON.stringify(files)),
+  );
+  const key = [...new Uint8Array(digest)].slice(0, 12).map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+  const cache = join(workmanCache(), "subsetml");
+  const binary = join(cache, `subsetml-${key}${Deno.build.os === "windows" ? ".exe" : ""}`);
+  try {
+    if ((await Deno.stat(binary)).isFile) return binary;
+  } catch (error) {
+    if (!(error instanceof Deno.errors.NotFound)) throw error;
+  }
+
+  await Deno.mkdir(cache, { recursive: true });
+  // Built beside its final name and renamed into place, so a concurrent run never sees half a
+  // binary and two builds racing both succeed.
+  const build = await Deno.makeTempDir({ dir: cache, prefix: "build-" });
+  try {
+    for (const [name, source] of files) await Deno.writeTextFile(join(build, name), source);
+    console.error("building the native SubsetML translator for wm sml; this happens once");
+    let built;
+    try {
+      built = await new Deno.Command("mlton", {
+        args: ["-output", join(build, "subsetml"), join(build, "subsetml.mlb")],
+        stdout: "piped",
+        stderr: "piped",
+      }).output();
+    } catch (error) {
+      if (error instanceof Deno.errors.NotFound) return undefined;
+      throw error;
+    }
+    if (!built.success) {
+      console.error(
+        "building the native translator failed; translating with the JavaScript one\n" +
+          new TextDecoder().decode(built.stderr).split("\n").slice(-20).join("\n"),
+      );
+      return undefined;
+    }
+    await Deno.rename(join(build, "subsetml"), binary);
+    return binary;
+  } finally {
+    await Deno.remove(build, { recursive: true }).catch(() => {});
   }
 }
 

@@ -100,6 +100,25 @@ try {
     await Deno.copyFile(join(subsetml, "lib", `${name}.sml`), join(native, `${name}.sml`));
   }
 
+  // The translator's SML, which `wm sml` builds once with MLton when it is available: the files
+  // src/subsetml.mlb names, flattened into one directory, and the .mlb naming them there.
+  const translatorSources = join(output, "translator");
+  await Deno.remove(translatorSources, { recursive: true }).catch(() => {});
+  await Deno.mkdir(translatorSources, { recursive: true });
+  const mlb: string[] = [];
+  for (const line of (await Deno.readTextFile(join(subsetml, "src/subsetml.mlb"))).split("\n")) {
+    const entry = line.trim();
+    if (entry === "" || entry.startsWith("$(SML_LIB)")) {
+      mlb.push(line);
+      continue;
+    }
+    const name = entry.split("/").pop()!;
+    if (!name.endsWith(".sml") || mlb.includes(name)) throw new Error(`unexpected subsetml.mlb entry ${entry}`);
+    await Deno.copyFile(join(subsetml, "src", entry), join(translatorSources, name));
+    mlb.push(name);
+  }
+  await Deno.writeTextFile(join(translatorSources, "subsetml.mlb"), mlb.join("\n"));
+
   // The translator itself, SubsetML's own source in Workman, compiled to one JavaScript program.
   const translator = await new Deno.Command(Deno.execPath(), {
     args: ["run", "-A", "src/main.ts", "compile", join(subsetml, "src/main.wm"), "src/generated/subsetml.js"],

@@ -347,6 +347,44 @@ let _ = print(pair.left, pair.right, R.read(box), R.read(changed), text.left, fi
   }
 });
 
+Deno.test("wm sml's native translator, built once into the cache, writes what the JavaScript one does", async () => {
+  if (!await hasMlton()) return;
+  const directory = await Deno.makeTempDir({ prefix: "wm-sml-native-" });
+  try {
+    await Deno.writeTextFile(join(directory, "app.wm"), program);
+    const run = async (args: string[], env: Record<string, string>) => {
+      const output = await new Deno.Command(Deno.execPath(), {
+        args: ["run", "-A", cli, "sml", "app.wm", ...args],
+        cwd: directory,
+        env: { XDG_CACHE_HOME: join(directory, "cache"), ...env },
+        stdout: "piped",
+        stderr: "piped",
+      }).output();
+      return { code: output.code, stderr: new TextDecoder().decode(output.stderr) };
+    };
+    const first = await run(["native"], {});
+    assertEquals(first.code, 0, first.stderr);
+    assertStringIncludes(first.stderr, "building the native SubsetML translator");
+    const cached = [...Deno.readDirSync(join(directory, "cache", "workman", "subsetml"))].map((entry) => entry.name);
+    assertEquals(cached.length, 1);
+    assert(cached[0].startsWith("subsetml-"), cached[0]);
+    const second = await run(["again"], {});
+    assertEquals(second.code, 0, second.stderr);
+    assertEquals(second.stderr.includes("building"), false);
+    const js = await run(["js"], { WM_SML_TRANSLATOR: "js" });
+    assertEquals(js.code, 0, js.stderr);
+    for (const entry of Deno.readDirSync(join(directory, "js"))) {
+      assertEquals(
+        await Deno.readTextFile(join(directory, "native", entry.name)),
+        await Deno.readTextFile(join(directory, "js", entry.name)),
+        entry.name,
+      );
+    }
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
 Deno.test("the bundled translator imports nothing by an absolute file URL", async () => {
   // The bundle ships in the published package, where the checkout's paths do not exist.
   const bundle = await Deno.readTextFile(new URL("../src/generated/subsetml.js", import.meta.url));
