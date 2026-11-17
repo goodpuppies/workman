@@ -95,7 +95,8 @@ export type TypeSnapshot = {
 
 export type TypeSnapshotShape =
   | { kind: "named-var"; id: number; name: string }
-  | { kind: "anonymous-var"; id: number }
+  /** `numeric`: the types an undecided literal or operand can still become. */
+  | { kind: "anonymous-var"; id: number; numeric?: readonly string[] }
   | { kind: "ffi"; id: number; path: string }
   | { kind: "primitive"; name: string }
   | { kind: "function"; params: TypeSnapshotId[]; result: TypeSnapshotId }
@@ -291,6 +292,8 @@ function snapshotShape(type: Ty, writer: DiagnosticWriter): TypeSnapshotShape {
     case "var":
       return resolved.name
         ? { kind: "named-var", id: resolved.id, name: resolved.name }
+        : resolved.numeric
+        ? { kind: "anonymous-var", id: resolved.id, numeric: resolved.numeric.candidates.map((type) => type.name) }
         : { kind: "anonymous-var", id: resolved.id };
     case "ffi":
       return { kind: "ffi", id: resolved.id, path: resolved.path.join(".") };
@@ -334,7 +337,9 @@ function renderShape(shape: TypeSnapshotShape, renderedTypes: Map<TypeSnapshotId
     case "named-var":
       return shape.name;
     case "anonymous-var":
-      return `'${shape.id}`;
+      // A literal's few possible types say more than a variable (`1.5` is
+      // `Real64.Real or Real32.Real`); a whole operator class stays a variable.
+      return shape.numeric && shape.numeric.length <= 3 ? shape.numeric.join(" or ") : `'${shape.id}`;
     case "ffi":
       return `?ffi#${shape.id}:${shape.path}`;
     case "primitive":
