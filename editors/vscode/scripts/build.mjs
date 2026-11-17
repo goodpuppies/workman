@@ -10,10 +10,27 @@ const nodePaths = [path.join(extensionRoot, "node_modules")];
 const denoConfig = JSON.parse(await fs.readFile(path.join(repositoryRoot, "deno.json"), "utf8"));
 const localImports = Object.fromEntries(
   Object.entries(denoConfig.imports).flatMap(([name, target]) =>
+    name.startsWith("./") ? [] :
     target.startsWith("file:") ? [[name, fileURLToPath(target)]] :
     target.startsWith("./") ? [[name, path.resolve(repositoryRoot, target)]] : []
   ),
 );
+// deno.json maps some repository paths, such as `./src/module_scope.wm`, to their compiled
+// artifacts. esbuild aliases take only package names, so a plugin redirects those paths.
+const mappedPaths = new Map(
+  Object.entries(denoConfig.imports).flatMap(([name, target]) =>
+    name.startsWith("./") ? [[path.resolve(repositoryRoot, name), path.resolve(repositoryRoot, target)]] : []
+  ),
+);
+const mappedPathsPlugin = {
+  name: "deno-mapped-paths",
+  setup(build) {
+    build.onResolve({ filter: /\.wm$/ }, (args) => {
+      const target = mappedPaths.get(path.resolve(args.resolveDir, args.path));
+      return target ? { path: target } : undefined;
+    });
+  },
+};
 
 await Promise.all([
   fs.rm(path.join(extensionRoot, "out"), { recursive: true, force: true }),
@@ -48,7 +65,7 @@ await Promise.all([
     sourcemap: false,
     nodePaths,
     alias: localImports,
-    plugins: [{
+    plugins: [mappedPathsPlugin, {
       name: "native-extractor-assets",
       setup(build) {
         build.onResolve({filter: /generated\/c_header_extractor\/.*[.]js$/}, (args) => ({
