@@ -1,6 +1,6 @@
-// The 32-bit integer, `Int32.Int`. The parsers come from the SubsetML Basis; `div`, `mod`, the
-// checked operations, `toString`, `toReal64`, `fromReal64`, `minimum` and `maximum` are the
-// compiler's own and join this namespace from the initial basis.
+// The 32-bit integer, `Int32.Int`. Its operations come from the SubsetML Basis (parsers, checked
+// arithmetic, `toString`, `toReal64`, `fromReal64`, `minimum` and `maximum`); `div` and `mod`, SML's
+// integer operators, are the compiler's own and join this namespace from the initial basis.
 export from "basis/int32.wm" import *;
 
 /** The type a bare `Int32` names in annotations (docs/modules.md). */

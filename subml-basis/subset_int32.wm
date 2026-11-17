@@ -5,6 +5,8 @@ from "./subset_result.sml" import * as SubsetResult;
 from "./subset_string.sml" import * as SubsetString;
 from "./subset_list.sml" import * as SubsetList;
 from "./subset_char.sml" import * as SubsetChar;
+from "./subset_option_value.sml" import * as SubsetOptionValue;
+from "./subset_real_host.sml" import * as SubsetRealHost;
 */
 
 // Checked decimal parsing over the portable signed 32-bit integer domain.
@@ -13,6 +15,8 @@ from "./subset_string.wm" import * as SubsetString;
 from "./subset_result.wm" import * as SubsetResult;
 from "./subset_char.wm" import * as SubsetChar;
 from "./subset_list.wm" import * as SubsetList;
+from "./subset_option_value.wm" import * as SubsetOptionValue;
+from "./subset_real_host.wm" import * as SubsetRealHost;
 
 type Error = InvalidInteger | Overflow | StringError<SubsetString.Error>;
 
@@ -116,4 +120,51 @@ let toString = (value: Int32.Int) => {
     if (next == 0) { [text, ..acc] } else { go(next, [text, ..acc]) }
   };
   if (value < 0) { SubsetString.concat(["-", ..go(value, [])]) } else { SubsetString.concat(go(-value, [])) }
+};
+
+let minimum = -2147483648;
+let maximum = 2147483647;
+
+/* Checked arithmetic: NONE where `+`, `-` or `*` would overflow. Each test runs before the
+   operation and never overflows itself. */
+let checkedAdd = (a: Int32.Int, b: Int32.Int) => {
+  if (if (if (b > 0) { a > maximum - b } else { false }) { true } else { if (b < 0) { a < minimum - b } else { false } }) { SubsetOptionValue.None } else { SubsetOptionValue.Some(a + b) }
+};
+let checkedSub = (a: Int32.Int, b: Int32.Int) => {
+  if (if (if (b < 0) { a > maximum + b } else { false }) { true } else { if (b > 0) { a < minimum + b } else { false } }) { SubsetOptionValue.None } else { SubsetOptionValue.Some(a - b) }
+};
+/* Magnitudes x and y are safe once neither operand is the minimum. A negative product may
+   reach magnitude maximum + 1: with q = maximum div y, x = q + 1 fits exactly when
+   maximum mod y = y - 1. */
+let checkedMul = (a: Int32.Int, b: Int32.Int) => {
+  if (if (a == 0) { true } else { b == 0 }) { SubsetOptionValue.Some(0) } else {
+    if (a == minimum) {
+      if (b == 1) { SubsetOptionValue.Some(a) } else { SubsetOptionValue.None }
+    } else {
+      if (b == minimum) {
+        if (a == 1) { SubsetOptionValue.Some(b) } else { SubsetOptionValue.None }
+      } else {
+        let x = if (a < 0) { -a } else { a };
+        let y = if (b < 0) { -b } else { b };
+        let q = Int32.div(maximum, y);
+        if (a < 0 == b < 0) {
+          if (x <= q) { SubsetOptionValue.Some(x * y) } else { SubsetOptionValue.None }
+        } else {
+          if (if (x <= q) { true } else {
+            if (x == q + 1) { Int32.mod(maximum, y) == y - 1 } else { false }
+          }) { SubsetOptionValue.Some(-x * y) } else { SubsetOptionValue.None }
+        }
+      }
+    }
+  }
+};
+
+// The real of an int, which is exact.
+let toReal64 = (value: Int32.Int) => { SubsetRealHost.fromInt(value) };
+
+/* The int a real is, when it is integral and in range: NONE for fractions, NaN, infinities
+   and reals outside the int range. */
+let fromReal64 = (value: Real64.Real) => {
+  let fraction = SubsetRealHost.rem(value, 1.0);
+  if (if (if (if (value >= -2147483648.0) { value <= 2147483647.0 } else { false }) { fraction >= 0.0 } else { false }) { fraction <= 0.0 } else { false }) { SubsetOptionValue.Some(SubsetRealHost.toInt(value)) } else { SubsetOptionValue.None }
 };

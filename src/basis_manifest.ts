@@ -206,17 +206,10 @@ export function basisUnaryOperatorDescriptor(
 export const BASIS_VALUES: readonly BasisValueDescriptor[] = Object.freeze([
   { exportName: "print", profiles, runtimeName: "print" },
   { exportName: "Text.of", profiles, runtimeName: "__wm_basis_Text.of" },
+  // The rest of `Int32` is the SubsetML Basis's SubsetInt32 (std/int32.wm).
   ...[
     "div",
     "mod",
-    "checkedAdd",
-    "checkedSub",
-    "checkedMul",
-    "toReal64",
-    "fromReal64",
-    "toString",
-    "minimum",
-    "maximum",
   ].map((name) => ({
     exportName: `Int32.${name}`,
     profiles: defaultOnly,

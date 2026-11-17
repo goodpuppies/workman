@@ -500,23 +500,14 @@ function addBasisValues(env: Env, typeEnv: TypeEnv) {
   addInt32Values(env, typeEnv);
 }
 
-function addInt32Values(env: Env, typeEnv: TypeEnv) {
-  const option = typeInfoByName(typeEnv, "Option");
-  if (!option) return;
+/** `Int32.div` and `Int32.mod`, SML's integer operators. The rest of `Int32` is the SubsetML
+ * Basis's SubsetInt32, which std/int32.wm re-exports. */
+function addInt32Values(env: Env, _typeEnv: TypeEnv) {
   const value = (name: string, type: Ty) => {
     env.set(`Int32.${name}`, { vars: [], type, status: "value", basis: true });
   };
-  const optionInt32 = named(option, [Int32Ty]);
   value("div", fn([tuple([Int32Ty, Int32Ty])], Int32Ty));
   value("mod", fn([tuple([Int32Ty, Int32Ty])], Int32Ty));
-  value("checkedAdd", fn([tuple([Int32Ty, Int32Ty])], optionInt32));
-  value("checkedSub", fn([tuple([Int32Ty, Int32Ty])], optionInt32));
-  value("checkedMul", fn([tuple([Int32Ty, Int32Ty])], optionInt32));
-  value("toReal64", fn([Int32Ty], Real64Ty));
-  value("fromReal64", fn([Real64Ty], optionInt32));
-  value("toString", fn([Int32Ty], StringTy));
-  value("minimum", Int32Ty);
-  value("maximum", Int32Ty);
 }
 
 function addJsArrayValues(env: Env, typeEnv: TypeEnv) {

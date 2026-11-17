@@ -1,5 +1,10 @@
 // Synced from subm/SubsetML by scripts/sync_subml_basis.ts. Do not edit here.
 // Workman/JS implementation of the real primitives. Workman's `%` on a Real64 is JS's
-// remainder, and a template shows a Real64 as JS's Number#toString does.
+// remainder, and a template shows a Real64 as JS's Number#toString does. Both numeric types are
+// JS numbers, so an Int32 is already its real, and an integral real in range is already its int.
+from js.global import unsafe { Number as numberOf: Int32.Int -> Real64.Real };
+from js.global("Math") import unsafe { trunc as truncate: Real64.Real -> Int32.Int };
 let rem = (dividend: Real64.Real, divisor: Real64.Real) => { dividend % divisor };
 let toString = (value: Real64.Real) => { `${value}` };
+let fromInt = (value: Int32.Int) => { numberOf(value) };
+let toInt = (value: Real64.Real) => { truncate(value) };

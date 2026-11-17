@@ -116,7 +116,7 @@ Deno.test("constrained dynamic receiver calls materialize with inferred result t
 
     let pollOnce = (sdl, eventPtr) => {
       match(sdl :> .symbols.SDL_PollEvent(eventPtr)) {
-        Ok(1) => { true },
+        Ok(=(1)) => { true },
         Ok(_) => { false },
         Err(_) => { false }
       }

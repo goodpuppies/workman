@@ -455,13 +455,9 @@ const __wm_c_struct_to_buffer = (name, value) => {
     "const __wm_f32_div = ([a, b]) => Math.fround(a / b);",
     "const __wm_f32_rem = ([a, b]) => Math.fround(a % b);",
     "const __wm_f32_neg = (a) => Math.fround(-a);",
-    `const __wm_i32_in_range = (value) => value >= -2147483648 && value <= 2147483647;`,
-    `const __wm_i32_option = (value) => __wm_i32_in_range(value)
-  ? __wm_basis_Some(value | 0)
-  : __wm_basis_None;`,
+    // The rest of `Int32` (checked arithmetic, conversions, bounds, `toString`) is the SubsetML
+    // Basis's SubsetInt32, which std/int32.wm re-exports.
     `const __wm_basis_Int32 = {
-  minimum: -2147483648,
-  maximum: 2147483647,
   // SML semantics: div rounds toward negative infinity and a nonzero mod has the divisor's sign.
   div: ([a, b]) => b === 0
     ? __wm_fail("Panic", "Int32 division by zero")
@@ -471,12 +467,6 @@ const __wm_c_struct_to_buffer = (name, value) => {
     const r = a % b;
     return (r !== 0 && (r < 0) !== (b < 0) ? r + b : r) | 0;
   },
-  checkedAdd: ([a, b]) => __wm_i32_option(a + b),
-  checkedSub: ([a, b]) => __wm_i32_option(a - b),
-  checkedMul: ([a, b]) => __wm_i32_option(a * b),
-  toReal64: (a) => a,
-  fromReal64: (x) => Number.isInteger(x) ? __wm_i32_option(x) : __wm_basis_None,
-  toString: (a) => String(a),
 };`,
     // Keep the host assertion runtime separate from the source std Json namespace.
     `const __wm_basis_Json = {

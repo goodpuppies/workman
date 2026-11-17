@@ -1,6 +1,9 @@
 (* Shared SML Basis adapter for the real primitives; full SML, not Basis source. *)
 structure SubsetRealHost = struct
   val rem = Real.rem
+  val fromInt = Real.fromInt
+  (* The caller has checked that the value is integral and within the int range. *)
+  val toInt = Real.trunc
 
   (* JavaScript's Number#toString over the shortest round-trip digits: value = 0.d1...dk * 10^n. *)
   fun toString value =

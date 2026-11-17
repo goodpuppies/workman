@@ -132,8 +132,8 @@ the shared SubsetML Basis, plus selected WM extras. In particular, bare `length`
 both bare folds use element-first callbacks, and bare `concat` flattens lists.
 
 Explicit imports expose the same complete namespace as implicit lookup, including compiler-owned
-members. For example, `from "std/int32.wm" import * as I;` provides both `I.parseDecimal` from the
-portable Basis and `I.toReal64` from the compiler. Named imports and re-exports preserve those
+members. For example, `from "std/int32.wm" import * as I;` provides both `I.toReal64` from the
+portable Basis and `I.div` from the compiler. Named imports and re-exports preserve those
 members too. `-- @no-prelude` omits implicit library bindings but still permits explicit imports.
 
 ## Interface artifact

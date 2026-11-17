@@ -138,7 +138,7 @@ Deno.test("computed patterns work in lists records constrained patterns and matc
     let expected: Real64 = 2;
     let label = match { =(expected + 1) => { "function" }, _ => { "miss" } };
     let main = () => {
-      print(match([1, 2]) { [1, =(expected)] => { "list" }, _ => { "miss" } });
+      print(match([1, 2]) { [=(1), =(expected)] => { "list" }, _ => { "miss" } });
       print(match(.{ left = 1, right = 2 }) {
         .{ left = =(1), right = =(expected) } => { "record" }, _ => { "miss" }
       });
