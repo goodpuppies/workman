@@ -26,7 +26,7 @@ import {
 } from "../basis_manifest.ts";
 import type { CompilerSemanticId } from "../compiler_semantics.ts";
 import { emitRuntimePrelude } from "./emit_prelude.ts";
-import { specializeTailCalls } from "./tail_specialize.ts";
+import { mapChildren, specializeTailCalls } from "./tail_specialize.ts";
 import {
   emitJsImportDecl,
   emitLibraryJsSources,
@@ -1478,7 +1478,8 @@ function emitImportedValueAlias(
  * module's binding id, so a call site in any module resolves to the same entry.
  * That matters because the hot calls in the generated parser are cross-module.
  */
-type DirectFn = { name: string; arity: number; owner: string; exportKey: string };
+/** `local`: a block-local function only ever called directly, which needs no tupled entry. */
+type DirectFn = { name: string; arity: number; owner: string; exportKey: string; local?: boolean };
 
 let directFns = new Map<BindingId | StructureId, DirectFn>();
 
@@ -1494,14 +1495,14 @@ function arityRaiseCandidate(
 ): { bindingId: BindingId; direct: DirectFn } | undefined {
   const pattern = binding.pattern;
   if (pattern.kind !== "CorePVar" || pattern.bindingId === undefined) return undefined;
-  const items = tupleFunctionParameters(binding.value);
-  if (!items) return undefined;
-  const suffix = `__wm_d${items.length}`;
+  const arity = tupleFunctionArity(binding.value);
+  if (arity === undefined) return undefined;
+  const suffix = `__wm_d${arity}`;
   return {
     bindingId: pattern.bindingId,
     direct: {
       name: `${bindingName(pattern.name, pattern.bindingId)}${suffix}`,
-      arity: items.length,
+      arity,
       owner,
       exportKey: suffix,
     },
@@ -1517,6 +1518,62 @@ function tupleFunctionParameters(expr: CoreExpr): CorePattern[] | undefined {
     return;
   }
   return pattern.items;
+}
+
+/** A function's arms as they match its argument. `match { ... }` binds its argument to a
+ * synthetic name only to match on it, so its arms are the match's. */
+function argumentArms(fn: Extract<CoreExpr, { kind: "CoreFn" }>): CoreMatchArm[] {
+  const [only] = fn.arms;
+  if (
+    fn.arms.length === 1 && only.pattern.kind === "CorePVar" &&
+    only.pattern.name.startsWith("$wm_match_") && only.body.kind === "CoreMatch" &&
+    only.body.value.kind === "CoreVar" && only.body.value.bindingId === only.pattern.bindingId
+  ) {
+    return only.body.arms;
+  }
+  return fn.arms;
+}
+
+/** The arity of a function whose every arm takes one fixed-arity tuple (at least a pair). */
+function tupleFunctionArity(expr: CoreExpr): number | undefined {
+  if (expr.kind !== "CoreFn" || expr.arms.length === 0) return;
+  const arms = argumentArms(expr);
+  const first = arms[0]?.pattern;
+  if (first?.kind !== "CorePTuple" || first.items.length < 2) return;
+  const arity = first.items.length;
+  return arms.every((arm) => arm.pattern.kind === "CorePTuple" && arm.pattern.items.length === arity)
+    ? arity
+    : undefined;
+}
+
+/** A direct entry's parameters and body. A single arm of plain names binds them as the
+ * parameters; otherwise the arms match the parameters as a scalarized tuple, so neither a call
+ * nor a self tail call allocates the tuple. */
+function directEntry(
+  fn: Extract<CoreExpr, { kind: "CoreFn" }>,
+  arity: number,
+  bindingId?: BindingId,
+): { params: string[]; body: string } {
+  const items = tupleFunctionParameters(fn);
+  const message = "pattern match failure in function";
+  const params = items
+    ? items.map((item, index) => item.kind === "CorePVar" ? patternBindingName(item) : `__wm_unused_${index}`)
+    : scalarTupleValueNames(arity);
+  const arms = argumentArms(fn);
+  const tail = bindingId !== undefined && arms.some((arm) => hasSelfTailCall(arm.body, bindingId));
+  if (!tail) {
+    return {
+      params,
+      body: items
+        ? emitReturnExpr(fn.arms[0].body)
+        : emitScalarTupleArmBody(arms, params, message, emitReturnExpr),
+    };
+  }
+  const label = `__wm_tail_${tailLoopTemp++}`;
+  const loop = items
+    ? emitTailExpr(fn.arms[0].body, bindingId, label, params)
+    : emitScalarTupleTailArmBody(arms, params, message, bindingId, label, params);
+  return { params, body: `${label}: while (true) {\n${loop}\n}` };
 }
 
 // Metadata is attached once to the WM function value, so aliases, closures, records, and
@@ -1618,9 +1675,41 @@ function collectDirectFnsInExpr(
       else collectDirectFnsInExpr(item, owner, found);
     }
     collectDirectFnsInExpr(expr.result, owner, found);
+    // A block's own bindings are visible only in the block.
+    for (const item of expr.items) {
+      if (item.kind !== "CoreLet") continue;
+      for (const binding of item.bindings) {
+        const id = binding.pattern.kind === "CorePVar" ? binding.pattern.bindingId : undefined;
+        const direct = id === undefined ? undefined : found.get(id);
+        if (direct && id !== undefined && onlyCalledDirectly(id, direct.arity, expr)) {
+          found.set(id, { ...direct, local: true });
+        }
+      }
+    }
   } else if (expr.kind === "CoreShaderRef" && expr.environment) {
     collectDirectFnsInExpr(expr.environment, owner, found);
   }
+}
+
+/** Whether every reference to a binding in scope calls it with a tuple literal of its arity. */
+function onlyCalledDirectly(id: BindingId, arity: number, scope: CoreExpr): boolean {
+  let escaped = false;
+  const visit = (expr: CoreExpr): CoreExpr => {
+    if (escaped) return expr;
+    if (
+      expr.kind === "CoreApp" && expr.callee.kind === "CoreVar" && expr.callee.bindingId === id &&
+      expr.arg.kind === "CoreTuple" && expr.arg.items.length === arity
+    ) {
+      expr.arg.items.forEach(visit);
+    } else if (expr.kind === "CoreVar" && expr.bindingId === id) {
+      escaped = true;
+    } else {
+      mapChildren(expr, visit);
+    }
+    return expr;
+  };
+  visit(scope);
+  return !escaped;
 }
 
 function emitArityRaisedBinding(
@@ -1628,14 +1717,11 @@ function emitArityRaisedBinding(
   direct: DirectFn,
 ): string[] {
   const fn = binding.value as Extract<CoreExpr, { kind: "CoreFn" }>;
-  const arm = fn.arms[0];
-  const items = (arm.pattern as Extract<CorePattern, { kind: "CorePTuple" }>).items;
-  const params = items.map((item, index) =>
-    item.kind === "CorePVar" ? patternBindingName(item) : `__wm_unused_${index}`
-  );
+  const { params, body } = directEntry(fn, direct.arity);
   const forwarded = params.map((_, index) => `__arg[${index}]`).join(", ");
+  if (direct.local) return [`const ${direct.name} = (${params.join(", ")}) => {\n${body}\n};`];
   return [
-    `const ${direct.name} = (${params.join(", ")}) => {\n${emitReturnExpr(arm.body)}\n};`,
+    `const ${direct.name} = (${params.join(", ")}) => {\n${body}\n};`,
     `const ${patternBindingName(binding.pattern)} = (__arg) => {\n` +
     `if (__wm_is_tuple(__arg) && __arg.length === ${direct.arity}) return ${direct.name}(${forwarded});\n` +
     `__wm_fail("Match", "pattern match failure in function");\n};`,
@@ -1776,15 +1862,11 @@ function emitExpr(expr: CoreExpr): string {
     case "CoreJsonArray":
       return `[${expr.items.map(emitExpr).join(", ")}]`;
     case "CoreFn": {
-      const items = tupleFunctionParameters(expr);
-      if (items) {
-        tupleEntryKey(items.length);
-        const params = items.map((item, i) =>
-          item.kind === "CorePVar" ? patternBindingName(item) : `__wm_unused_${i}`
-        );
-        return `__wm_tuple_function_${items.length}((${params.join(", ")}) => {\n${
-          emitReturnExpr(expr.arms[0].body)
-        }\n})`;
+      const arity = tupleFunctionParameters(expr) ? tupleFunctionArity(expr) : undefined;
+      if (arity !== undefined) {
+        tupleEntryKey(arity);
+        const { params, body } = directEntry(expr, arity);
+        return `__wm_tuple_function_${arity}((${params.join(", ")}) => {\n${body}\n})`;
       }
       return `(__arg) => {\n${
         emitArmBody(expr.arms, "__arg", "pattern match failure in function")
@@ -1977,22 +2059,9 @@ function emitArityRaisedRecursiveBinding(
   direct: DirectFn,
 ): string[] {
   const fn = binding.value as Extract<CoreExpr, { kind: "CoreFn" }>;
-  const arm = fn.arms[0];
-  const items = (arm.pattern as Extract<CorePattern, { kind: "CorePTuple" }>).items;
-  // The parameters are the bound names themselves, so no destructuring is
-  // needed at the top of the specialized entry point.
-  const params = items.map((item, index) =>
-    item.kind === "CorePVar" ? patternBindingName(item) : `__wm_unused_${index}`
-  );
-  const body = hasSelfTailCall(arm.body, binding.bindingId)
-    ? (() => {
-      const label = `__wm_tail_${tailLoopTemp++}`;
-      return `${label}: while (true) {\n${
-        emitTailExpr(arm.body, binding.bindingId, label, params)
-      }\n}`;
-    })()
-    : emitReturnExpr(arm.body);
+  const { params, body } = directEntry(fn, direct.arity, binding.bindingId);
   const forwarded = params.map((_, index) => `__arg[${index}]`).join(", ");
+  if (direct.local) return [`const ${direct.name} = (${params.join(", ")}) => {\n${body}\n};`];
   return [
     `const ${direct.name} = (${params.join(", ")}) => {\n${body}\n};`,
     `const ${patternBindingName(binding.pattern)} = (__arg) => {\n` +

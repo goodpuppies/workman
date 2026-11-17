@@ -341,7 +341,7 @@ function mapExpr(expr: CoreExpr, transform: (expr: CoreExpr) => CoreExpr): CoreE
   return transform(mapChildren(expr, (child) => mapExpr(child, transform)));
 }
 
-function mapChildren(expr: CoreExpr, map: (expr: CoreExpr) => CoreExpr): CoreExpr {
+export function mapChildren(expr: CoreExpr, map: (expr: CoreExpr) => CoreExpr): CoreExpr {
   switch (expr.kind) {
     case "CoreFn":
       return { ...expr, arms: expr.arms.map((arm) => ({ ...arm, body: map(arm.body) })) };

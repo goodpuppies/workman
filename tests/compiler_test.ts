@@ -98,6 +98,32 @@ Deno.test("arity raises local recursive tuple functions", async () => {
   assertEquals(js.includes("__arg = __wm_tuple"), false);
 });
 
+Deno.test("arity raises match functions over tuples, and drops a local's tupled entry", async () => {
+  const js = await compile(`
+    type Tree = | Leaf<Int32.Int> | Node<Tree, Tree>;
+    let leftmost = (tree, depth) => {
+      let rec go = match {
+        (Leaf(value), Var(depth)) => { value + depth },
+        (Node(left, _), Var(depth)) => { go(left, depth + 1) }
+      };
+      go(tree, depth)
+    };
+    let rec size = match {
+      (Leaf(_), Var(acc)) => { acc + 1 },
+      (Node(left, right), Var(acc)) => { size(right, size(left, acc)) }
+    };
+    let main = () => { print(leftmost(Node(Leaf(4), Leaf(5)), 0), size(Node(Leaf(4), Leaf(5)), 0)) };
+  `);
+
+  // Both get a direct entry; the self tail call is a loop over the scalarized pair.
+  const go = js.match(/const (go_\d+__wm_d2) = \(__wm_scalar_\d+_0, __wm_scalar_\d+_1\) => \{\n__wm_tail_\d+: while \(true\)/);
+  assertEquals(go !== null, true, js);
+  assertEquals(/size_\d+__wm_d2 = \(__wm_scalar_/.test(js), true);
+  // Only called directly, the local needs no tupled entry; the top-level function keeps its own.
+  assertEquals(new RegExp(`const go_\\d+ = \\(__arg\\)`).test(js), false);
+  assertEquals(/Object\.defineProperty\(size_\d+, __wm_tuple_entry_2/.test(js), true);
+});
+
 Deno.test("tail-compiles recursion forwarded through a local helper", async () => {
   const js = await compile(`
     let rec loop = (remaining, acc) => {
