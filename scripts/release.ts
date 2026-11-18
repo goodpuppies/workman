@@ -1,4 +1,4 @@
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const releaseTargets = [
@@ -37,7 +37,9 @@ export async function stageRelease(output: string, targets: readonly string[], b
     await Deno.copyFile(join(root, "tooling/release/bin", name), join(main, "bin", name));
   }
   if (Deno.build.os !== "windows") await Deno.chmod(join(main, "bin/wm.cjs"), 0o755);
-  for (const name of ["vite.mjs", "vite.d.mts", "bun.mjs", "bun.d.mts", "interop.mjs", "interop.d.mts"]) {
+  for (
+    const name of ["vite.mjs", "vite.d.mts", "bun.mjs", "bun.d.mts", "interop.mjs", "interop.d.mts"]
+  ) {
     await Deno.copyFile(join(root, "src/integrations", name), join(main, "src/integrations", name));
     if (name.endsWith(".d.mts")) {
       const path = join(main, "src/integrations", name);
@@ -54,7 +56,7 @@ export async function stageRelease(output: string, targets: readonly string[], b
   await Deno.copyFile(join(root, "LICENSE"), join(main, "LICENSE"));
   await Deno.writeTextFile(
     join(main, "README.md"),
-    `# Workman\n\nExperimental Workman ${version}. Includes the compiler, TypeScript 7.1 content mapper, and Vite/Bun integrations.\n\nInstall optional dependencies to obtain the platform binary. Node is required for the CLI and mapper launcher; Bun can use the integration directly.\n\nJS/TS reflection may still require a separate Deno installation. Runtime commands (run/watch/repl/pakman/problems/test and executable generation) are not enabled in this experimental standalone build; use the source-based Deno/JSR installation for those.\n`,
+    `# Workman\n\nWorkman ${version}: the compiler, language server, REPL, test runner, TypeScript 7.1 content mapper and Vite/Bun integrations.\n\nInstall optional dependencies to obtain the platform binary, which embeds the Deno runtime; no separate Deno installation is needed. Node is required for the CLI and mapper launcher; Bun can use the integration directly.\n\nThis build does not yet support programs that import packages (bare, npm:, jsr: or remote specifiers), or building executables with --executable; use the Deno/JSR installation for those.\n`,
   );
   await writeJson(join(main, "package.json"), {
     name: config.name,
@@ -101,7 +103,16 @@ export async function stageRelease(output: string, targets: readonly string[], b
     const binary = join(out, "binaries", target.name, file);
     await Deno.mkdir(dirname(binary), { recursive: true });
     if (build) {
-      const include = ["src/generated/frontend_v2_parser.js"];
+      // Modules reached only through URL strings: the problems viewer's language server, which the
+      // binary runs as a script, and the JavaScript SubsetML reader for wm sml.
+      const include = [
+        "src/generated/frontend_v2_parser.js",
+        "src/lsp/node_entry.ts",
+        "src/generated/subsetml.js",
+        // Node's declarations for reflecting node: modules, with undici-types beside them in
+        // Deno's node_modules layout; nothing imports these types-only packages.
+        relative(root, dirname(dirname(Deno.realPathSync(join(root, "node_modules/@types/node"))))),
+      ];
       const assets = [
         "std",
         "subml-basis",
@@ -117,6 +128,8 @@ export async function stageRelease(output: string, targets: readonly string[], b
         args: [
           "compile",
           "-A",
+          // Every unstable API a program run by the binary may need (runtime_flags.ts).
+          "--unstable-webgpu",
           "--no-check",
           // Embed only the npm packages the CLI reaches. With the repository's node_modules
           // (manual mode), deno compile would embed all of it, dev tools and the package's

@@ -1,4 +1,5 @@
 import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const configNames = ["deno.json", "deno.jsonc"];
 
@@ -50,6 +51,75 @@ function nearest(directory: string, name: string, kind: "file" | "directory"): s
     }
     if (dirname(current) === current) return undefined;
   }
+}
+
+/**
+ * The environment variable that turns a compiled `wm` binary into a script runner. A compiled
+ * binary embeds the Deno runtime but not the Deno CLI, so `Deno.execPath()` cannot `run` a script;
+ * instead the binary restarts itself with this variable naming the script, and its entry imports
+ * that script rather than starting the CLI (see `runScriptIfRequested`).
+ */
+const SCRIPT_VARIABLE = "WM_RUN_SCRIPT";
+
+/** True in a `deno compile`d binary, where `Deno.execPath()` is that binary, not the Deno CLI. */
+export const isStandaloneBinary: boolean =
+  (Deno.build as { standalone?: boolean }).standalone === true;
+
+/**
+ * The command that runs `script` with `scriptArgs` in a child process.
+ *
+ * Under the Deno CLI this is `deno run -A <denoFlags> <script> <scriptArgs>`. In a compiled binary
+ * it restarts the binary as a script runner. That binary has full permissions and every unstable
+ * API wm uses, so `denoFlags` don't apply, and neither does a project's Deno configuration.
+ */
+export function scriptCommand(
+  script: string,
+  scriptArgs: readonly string[] = [],
+  denoFlags: readonly string[] = ["-A"],
+): { command: string; args: string[]; env: Record<string, string> } {
+  if (isStandaloneBinary) {
+    return { command: Deno.execPath(), args: [...scriptArgs], env: { [SCRIPT_VARIABLE]: script } };
+  }
+  return { command: Deno.execPath(), args: ["run", ...denoFlags, script, ...scriptArgs], env: {} };
+}
+
+/**
+ * The command that runs the wm CLI with `args` in a child process: the binary itself when compiled,
+ * otherwise `deno run` of this checkout's or package's `cli.ts`.
+ */
+export function wmCommand(args: readonly string[]): { command: string; args: string[] } {
+  if (isStandaloneBinary) return { command: Deno.execPath(), args: [...args] };
+  const cli = new URL("./cli.ts", import.meta.url);
+  const configuration = cli.protocol === "file:"
+    ? ["--config", fileURLToPath(new URL("../deno.json", import.meta.url))]
+    : ["--no-config"];
+  return {
+    command: Deno.execPath(),
+    args: [
+      "run",
+      "-A",
+      ...configuration,
+      cli.protocol === "file:" ? fileURLToPath(cli) : cli.href,
+      ...args,
+    ],
+  };
+}
+
+/**
+ * In a compiled binary started by `scriptCommand`, imports the requested script and returns true;
+ * the caller must then not start the CLI. The variable is removed first, so processes the script
+ * starts are ordinary `wm` invocations.
+ */
+export async function runScriptIfRequested(): Promise<boolean> {
+  const script = Deno.env.get(SCRIPT_VARIABLE);
+  if (script === undefined) return false;
+  Deno.env.delete(SCRIPT_VARIABLE);
+  await import(
+    /^[a-z][a-z0-9+.-]*:/i.test(script) && !/^[a-z]:[\\/]/i.test(script)
+      ? script
+      : pathToFileURL(script).href
+  );
+  return true;
 }
 
 type TerminationSignal = "SIGINT" | "SIGTERM" | "SIGHUP";

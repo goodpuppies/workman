@@ -1,6 +1,15 @@
 import { strict as assert } from "node:assert";
 import { spawn, spawnSync } from "node:child_process";
-import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -58,14 +67,47 @@ try {
   const env = { ...process.env, PATH: bin, WORKMAN_DENO_PATH: join(bin, "missing-deno") };
   const launcher = join(directory, "node_modules", ...metadata.name.split("/"), "bin/wm.cjs");
   assert(run(process.execPath, [launcher, "--version"], { env }).includes(metadata.version));
-  await writeFile(join(directory, "math.wm"), "let add = (a: Real64.Real, b: Real64.Real) => a + b;");
-  const unsupported = spawnSync(process.execPath, [launcher, "run", join(directory, "math.wm")], {
-    cwd: directory,
-    encoding: "utf8",
-    env,
-  });
-  assert.equal(unsupported.status, 2);
-  assert(unsupported.stderr.includes("standalone release"));
+  await writeFile(
+    join(directory, "math.wm"),
+    "let add = (a: Real64.Real, b: Real64.Real) => a + b;",
+  );
+  // The binary runs programs itself: no Deno on PATH, and WORKMAN_DENO_PATH names a missing file.
+  const wm = (args) => run(process.execPath, [launcher, ...args], { env });
+  await writeFile(
+    join(directory, "hello.wm"),
+    'from js.module("node:path") import { basename };\n' +
+      'from js.module("./util.ts") import { double };\n' +
+      "let main = () => {\n" +
+      '  print(basename("/a/b/c.txt") :> Result.debug);\n' +
+      "  print(double(21) :> Result.debug)\n" +
+      "};\n",
+  );
+  await writeFile(
+    join(directory, "util.ts"),
+    "export function double(n: number): number { return n * 2; }\n",
+  );
+  assert.equal(wm(["run", "hello.wm"]), "c.txt\n42\n");
+  assert(wm(["repl", "40 + 2;"]).includes("it = 42"));
+  await writeFile(
+    join(directory, "math.test.wm"),
+    'from "testman/test.wm" import *;\nlet tests = [ test("adds", () => assertEqual(1 + 1, 2)) ];\n',
+  );
+  assert(wm(["test", "math.test.wm"]).includes("1 passed"));
+  const rejected = (args, message) => {
+    const child = spawnSync(process.execPath, [launcher, ...args], {
+      cwd: directory,
+      encoding: "utf8",
+      env,
+    });
+    assert.notEqual(child.status, 0);
+    assert(child.stderr.includes(message), child.stderr);
+  };
+  await writeFile(
+    join(directory, "package.wm"),
+    'from js.module("npm:left-pad@1.3.0") import unsafe { default as pad };\n',
+  );
+  rejected(["check", "package.wm"], "not supported by this wm build");
+  rejected(["compile", "hello.wm", "--executable", "-o", "hello"], "cannot create executables");
   const compiled = JSON.parse(
     run(process.execPath, [launcher, "compile-library-json", join(directory, "math.wm")], { env }),
   );

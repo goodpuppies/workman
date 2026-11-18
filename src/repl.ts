@@ -9,6 +9,7 @@ import {
   handleTerminationSignals,
   linkProjectPackages,
   relayTerminationSignals,
+  scriptCommand,
   terminationExitCode,
 } from "./child_runtime.ts";
 import { createTemporaryDirectory } from "./temporary_directory.ts";
@@ -83,14 +84,14 @@ async function executeReplArtifacts(
     for (const artifact of artifacts) {
       await Deno.writeTextFile(`${dir}/${artifact.path}`, artifact.code);
     }
-    const child = new Deno.Command(Deno.execPath(), {
-      args: [
-        "run",
-        "-A",
-        ...denoConfigArgs(dirname(inputPath)),
-        ...runtimeFlagsForJavaScript(entry.code),
-        `${dir}/${entry.path}`,
-      ],
+    const program = scriptCommand(`${dir}/${entry.path}`, [], [
+      "-A",
+      ...denoConfigArgs(dirname(inputPath)),
+      ...runtimeFlagsForJavaScript(entry.code),
+    ]);
+    const child = new Deno.Command(program.command, {
+      args: program.args,
+      env: program.env,
       stdout: "piped",
       stderr: "piped",
     }).spawn();
@@ -368,8 +369,10 @@ class ReplHost {
     await Deno.writeTextFile(path, REPL_HOST_SOURCE);
     await linkProjectPackages(project, directory);
     // One process serves every phrase, so it gets every runtime flag a phrase might need.
-    const child = new Deno.Command(Deno.execPath(), {
-      args: ["run", "-A", ...denoConfigArgs(project), "--unstable-webgpu", path],
+    const host = scriptCommand(path, [], ["-A", ...denoConfigArgs(project), "--unstable-webgpu"]);
+    const child = new Deno.Command(host.command, {
+      args: host.args,
+      env: host.env,
       stdin: "piped",
       stdout: "piped",
       stderr: "piped",

@@ -5,6 +5,7 @@ import type { ProjectStatusResult } from "./lsp/project_status.ts";
 import { decodeMessages, encodeMessage, type RpcMessage } from "./lsp/rpc.ts";
 import { pathToFileUri } from "./lsp/uri.ts";
 import { type Head, type Problem, publish } from "./problems_client.ts";
+import { scriptCommand } from "./child_runtime.ts";
 
 /**
  * One analysis result: the diagnostics, plus which project head produced them.
@@ -168,8 +169,10 @@ export async function collectSnapshot(input: string): Promise<Snapshot> {
 export async function startProblemsSession(input: string): Promise<ProblemsSession> {
   const root = dirname(input);
   const rootUri = pathToFileURL(root).href;
-  const child = new Deno.Command(Deno.execPath(), {
-    args: ["run", "-A", new URL("./lsp/node_entry.ts", import.meta.url).href],
+  const server = scriptCommand(new URL("./lsp/node_entry.ts", import.meta.url).href);
+  const child = new Deno.Command(server.command, {
+    args: server.args,
+    env: server.env,
     stdin: "piped",
     stdout: "piped",
     stderr: "piped",

@@ -6,6 +6,7 @@ import {
   denoConfigArgs,
   linkProjectPackages,
   relayTerminationSignals,
+  scriptCommand,
   terminateChild,
 } from "./child_runtime.ts";
 import { createTemporaryDirectory, type TemporaryDirectory } from "./temporary_directory.ts";
@@ -55,15 +56,14 @@ export async function runFile(input: string, options: RunOptions = {}): Promise<
       await Deno.writeTextFile(`${dir}/${artifact.path}`, artifact.code);
     }
     progress.finish();
-    const child = new Deno.Command(Deno.execPath(), {
-      args: [
-        "run",
-        "-A",
-        ...denoConfigArgs(projectDirectory),
-        ...runtimeFlagsForJavaScript(entry.code),
-        `${dir}/${entry.path}`,
-        ...(options.args ?? []),
-      ],
+    const program = scriptCommand(`${dir}/${entry.path}`, options.args ?? [], [
+      "-A",
+      ...denoConfigArgs(projectDirectory),
+      ...runtimeFlagsForJavaScript(entry.code),
+    ]);
+    const child = new Deno.Command(program.command, {
+      args: program.args,
+      env: program.env,
       stdin: "inherit",
       stdout: options.stdout ?? "inherit",
       // Keep recent diagnostics so leaving a TUI's alternate screen cannot erase them.

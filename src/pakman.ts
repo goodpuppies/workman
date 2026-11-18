@@ -6,6 +6,7 @@ import { runtimeFlagsForJavaScript } from "./runtime_flags.ts";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { cacheJsrPackage, workmanCache } from "./package_cache.ts";
+import { scriptCommand } from "./child_runtime.ts";
 
 const sourceUrl = new URL("../tooling/pakman", import.meta.url);
 const root = sourceUrl.protocol === "file:" ? fileURLToPath(sourceUrl) : undefined;
@@ -86,8 +87,10 @@ export async function pakmanCommand(args: string[]): Promise<number> {
   }
   const output = await cachedOutput(root);
   const code = await build(root, output);
-  const child = new Deno.Command(Deno.execPath(), {
-    args: ["run", "-A", ...runtimeFlagsForJavaScript(code), output, ...args],
+  const program = scriptCommand(output, args, ["-A", ...runtimeFlagsForJavaScript(code)]);
+  const child = new Deno.Command(program.command, {
+    args: program.args,
+    env: program.env,
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",

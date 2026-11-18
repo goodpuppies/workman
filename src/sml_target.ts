@@ -14,6 +14,7 @@ import { workmanCache } from "./user_paths.ts";
 import { createTemporaryDirectory } from "./temporary_directory.ts";
 import { discoverStandardModules } from "./standard_library.ts";
 import { libraryImport } from "./host_modules.ts";
+import { scriptCommand } from "./child_runtime.ts";
 
 const HOST_MODULES = [
   ["subset_host", "SubsetHost"],
@@ -108,16 +109,7 @@ export async function smlCommand(args: string[]): Promise<number> {
         stdout: "inherit",
         stderr: "inherit",
       }).output()
-      : await new Deno.Command(Deno.env.get("WORKMAN_DENO_PATH") || Deno.execPath(), {
-        args: [
-          "run",
-          "-A",
-          new URL("./generated/subsetml.js", import.meta.url).href,
-          ...translatorArgs,
-        ],
-        stdout: "inherit",
-        stderr: "inherit",
-      }).output();
+      : await javaScriptTranslator(translatorArgs).output();
     if (!translated.success) return 1;
 
     // The project names the adapters by the absolute paths given above; make them relative so the
@@ -216,4 +208,19 @@ function nativeSource(path: string): string {
   const source = nativeBasisSources[path];
   if (source === undefined) throw new Error(`the package lacks ${path}`);
   return source;
+}
+
+/** The JavaScript SubsetML reader, run with an explicit `WORKMAN_DENO_PATH` Deno when one is set. */
+function javaScriptTranslator(args: string[]): Deno.Command {
+  const reader = new URL("./generated/subsetml.js", import.meta.url).href;
+  const deno = Deno.env.get("WORKMAN_DENO_PATH");
+  const command = deno
+    ? { command: deno, args: ["run", "-A", reader, ...args], env: {} }
+    : scriptCommand(reader, args);
+  return new Deno.Command(command.command, {
+    args: command.args,
+    env: command.env,
+    stdout: "inherit",
+    stderr: "inherit",
+  });
 }

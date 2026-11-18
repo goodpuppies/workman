@@ -30,7 +30,7 @@
   },
   "tasks": {
     "release:stage": "deno run -A scripts/release.ts",
-    "generate-assets": "deno run --allow-read --allow-write scripts/generate_assets.ts",
+    "generate-assets": "deno run --allow-read --allow-write --allow-run scripts/generate_assets.ts",
     "byte-type:build": "deno run -A scripts/build_byte_type.ts",
     "c-header:build": "deno run -A scripts/build_c_header_extractor.ts",
     "c-header:check": "deno run --allow-read scripts/check_c_header_extractor.ts",

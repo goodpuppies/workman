@@ -81,6 +81,9 @@ const output = [
   ),
   "};",
   "",
+  "/** `deno types` of the Deno that generated this file, which JS/TS reflection gives TypeScript. */",
+  `export const denoTypeDeclarations = ${JSON.stringify(denoTypeDeclarations())};`,
+  "",
   "/** Zig template used for C header reflection, embedded for packaged compilers. */",
   `export const cHeaderExtractorSource = ${
     JSON.stringify(
@@ -147,4 +150,15 @@ async function generateParser(
     throw error;
   });
   if (current !== generated) await Deno.writeTextFile(parserUrl, generated);
+}
+
+/**
+ * The declarations of the Deno running this script, which is the Deno that builds the release
+ * binaries, so reflection describes the runtime those binaries embed.
+ */
+function denoTypeDeclarations(): string {
+  const output = new Deno.Command(Deno.execPath(), { args: ["types"], stderr: "inherit" })
+    .outputSync();
+  if (!output.success) throw new Error("deno types failed");
+  return new TextDecoder().decode(output.stdout).replace(/\r\n?/g, "\n");
 }

@@ -55,15 +55,21 @@ The installed Vite and Bun adapters resolve the same binary and invoke `compile-
 do not refer to the source checkout or launch Deno. Their override option is `compilerPath`; the
 source-checkout adapters retain `denoPath` for development.
 
-The compiled executable supports checking, JS/library compilation, the content mapper, the WM LSP,
-and other analysis commands. The packed-install smoke test checks a pure-WM module, positional JS
-exports, framed mapper requests, and the installed Vite integration with external Deno absent from
-PATH. It also copies the executable out of the package and tests that standalone download shape.
-This is not a claim that every WM feature is Deno-independent: JS/TS reflection paths can still
-invoke external Deno. Runtime commands (`run`, `watch`, `repl`, `pakman`, `problems`, `test`,
-no-argument REPL, and executable generation) are deliberately rejected by this experimental
-standalone entry. Use the source-based Deno/JSR installation for those until runtime dispatch is
-updated.
+The compiled executable embeds the Deno runtime and needs no Deno installation. Commands that run a
+program (`run`, `watch`, `repl`, `test`, `pakman`, `problems`, `wm sml`'s JavaScript reader) restart
+the executable as a script runner instead of invoking a Deno CLI (`src/child_runtime.ts`). JS/TS
+reflection uses the Deno declarations generated into `src/generated/assets.ts` by `deno types` and the
+`@types/node` declarations embedded in the executable, so build releases with the Deno version the
+executable should embed and regenerate assets first.
+
+Two features still need the Deno/JSR installation. Programs that import packages (bare, `npm:`,
+`jsr:` or remote specifiers) are rejected with an explanation, because the executable's module
+resolver only knows packages embedded at build time; see `markdown/npm-standalone-runtime.md`.
+`--executable` needs Deno's own compile toolchain and is rejected as well.
+
+The packed-install smoke test checks a pure-WM module, positional JS exports, framed mapper requests,
+and the installed Vite integration with external Deno absent from PATH. It also copies the executable
+out of the package and tests that standalone download shape.
 
 ## CI candidate artifacts
 

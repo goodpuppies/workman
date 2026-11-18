@@ -1,5 +1,4 @@
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { compileFile } from "./compiler.ts";
 import { watchProject } from "./project_watch.ts";
 import { createTemporaryDirectory } from "./temporary_directory.ts";
@@ -7,8 +6,10 @@ import {
   exitIfTerminated,
   handleTerminationSignals,
   relayTerminationSignals,
+  scriptCommand,
   terminateChild,
   terminationExitCode,
+  wmCommand,
 } from "./child_runtime.ts";
 
 export type ProjectStep = { kind: "wm" | "exec"; program: string; arguments: string[] };
@@ -34,21 +35,6 @@ export async function findProject(directory: string): Promise<string | undefined
     }
     if (dirname(current) === current) return undefined;
   }
-}
-
-/** The same compiler installation that is executing this command, independent of PATH. */
-function wmInvocation(arguments_: string[]): string[] {
-  const cli = new URL("./cli.ts", import.meta.url);
-  const configuration = cli.protocol === "file:"
-    ? ["--config", fileURLToPath(new URL("../deno.json", import.meta.url))]
-    : ["--no-config"];
-  return [
-    "run",
-    "-A",
-    ...configuration,
-    cli.protocol === "file:" ? fileURLToPath(cli) : cli.href,
-    ...arguments_,
-  ];
 }
 
 function strings(value: unknown): value is string[] {
@@ -117,8 +103,10 @@ export async function readProjectCommands(path: string): Promise<ProjectCommand[
     );
     const output = join(temporary.path, "describe.mjs");
     await Deno.writeTextFile(output, await compileFile(entry));
-    const child = new Deno.Command(Deno.execPath(), {
-      args: ["run", "--no-config", "--no-prompt", output],
+    const describe = scriptCommand(output, [], ["--no-config", "--no-prompt"]);
+    const child = new Deno.Command(describe.command, {
+      args: describe.args,
+      env: describe.env,
       cwd: dirname(path),
       stdin: "null",
       stdout: "piped",
@@ -204,8 +192,9 @@ async function runProjectSteps(
     if (signal?.aborted) return 0;
     // Extra CLI arguments belong to the final command, not prerequisite build steps.
     const args = [...step.arguments, ...(index === command.steps.length - 1 ? arguments_ : [])];
-    const child = new Deno.Command(step.kind === "wm" ? Deno.execPath() : step.program, {
-      args: step.kind === "wm" ? wmInvocation(args) : args,
+    const wm = step.kind === "wm" ? wmCommand(args) : undefined;
+    const child = new Deno.Command(wm ? wm.command : step.program, {
+      args: wm ? wm.args : args,
       cwd: directory,
       env,
       stdin: "inherit",
