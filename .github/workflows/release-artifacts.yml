@@ -11,6 +11,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
+        with:
+          # src/module_scope.wm imports SubsetML's scope rules from the submodule.
+          submodules: true
       - uses: denoland/setup-deno@v2
         with:
           deno-version: 2.9.8
@@ -40,6 +43,9 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          # src/module_scope.wm imports SubsetML's scope rules from the submodule.
+          submodules: true
       - uses: denoland/setup-deno@v2
         with:
           deno-version: 2.9.8

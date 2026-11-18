@@ -13,6 +13,9 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          # src/module_scope.wm imports SubsetML's scope rules from the submodule.
+          submodules: true
       - uses: denoland/setup-deno@v2
         with:
           # generate-assets embeds `deno types`; it must match the Deno that built the release.
