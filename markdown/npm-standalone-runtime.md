@@ -1,6 +1,7 @@
 # npm as the default path: a self-contained `wm` binary
 
-Status: steps 1, 3 and 4 implemented 2026-11-18; step 2 deferred; steps 5 and 6 pending. Goal: `npx @goodpuppies/workman run app.wm` (and an npm-installed `wm`)
+Status: steps 1, 3, 4 and 5 implemented 2026-11-18, and step 6 except C FFI and `wm sml`, which
+need toolchains on the CI runners; step 2 deferred. Goal: `npx @goodpuppies/workman run app.wm` (and an npm-installed `wm`)
 does everything the JSR/source install does, with no separate Deno installation.
 
 ## Where the npm build falls short today
