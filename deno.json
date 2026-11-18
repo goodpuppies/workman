@@ -25,7 +25,8 @@
       "tooling/wmslang/*.wm"
     ],
     "exclude": [
-      "subml-basis/translator/"
+      "subml-basis/translator/",
+      "src/generated/deno_types.d.ts.txt"
     ]
   },
   "tasks": {

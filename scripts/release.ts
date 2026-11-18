@@ -109,6 +109,8 @@ export async function stageRelease(output: string, targets: readonly string[], b
         "src/generated/frontend_v2_parser.js",
         "src/lsp/node_entry.ts",
         "src/generated/subsetml.js",
+        // Deno's declarations for reflection; the binary has no Deno CLI for `deno types`.
+        "src/generated/deno_types.d.ts.txt",
         // Node's declarations for reflecting node: modules, with undici-types beside them in
         // Deno's node_modules layout; nothing imports these types-only packages.
         relative(root, dirname(dirname(Deno.realPathSync(join(root, "node_modules/@types/node"))))),

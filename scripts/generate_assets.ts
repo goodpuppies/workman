@@ -81,9 +81,6 @@ const output = [
   ),
   "};",
   "",
-  "/** `deno types` of the Deno that generated this file, which JS/TS reflection gives TypeScript. */",
-  `export const denoTypeDeclarations = ${JSON.stringify(denoTypeDeclarations())};`,
-  "",
   "/** Zig template used for C header reflection, embedded for packaged compilers. */",
   `export const cHeaderExtractorSource = ${
     JSON.stringify(
@@ -100,6 +97,17 @@ const current = await Deno.readTextFile(outputUrl).catch((error) => {
   throw error;
 });
 if (current !== output) await Deno.writeTextFile(outputUrl, output);
+
+// The compiled npm binary embeds this file for JS/TS reflection; it has no Deno CLI to ask. The JSR
+// package leaves it out (deno.json `publish.exclude`, for JSR's size limit) and runs `deno types`.
+// `.txt`, so the repository's own type check doesn't load a second copy of Deno's globals.
+const denoTypesUrl = new URL("../src/generated/deno_types.d.ts.txt", import.meta.url);
+const denoTypes = denoTypeDeclarations();
+const currentDenoTypes = await Deno.readTextFile(denoTypesUrl).catch((error) => {
+  if (error instanceof Deno.errors.NotFound) return undefined;
+  throw error;
+});
+if (currentDenoTypes !== denoTypes) await Deno.writeTextFile(denoTypesUrl, denoTypes);
 
 await Promise.all([
   generateParser(
