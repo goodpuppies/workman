@@ -51,13 +51,16 @@ export async function testCommand(args: string[]): Promise<number> {
   }
 
   // wm imports are relative paths, so the entry module refers to everything
-  // relative to the directory it is written in.
-  const dir = await Deno.makeTempDir({ prefix: "wm-test-" });
-  const from = (file: string) => {
-    const path = relative(dir, file);
+  // relative to the directory it is written in. The compiler resolves modules by
+  // their real paths, so both sides of the relative path must be real paths too:
+  // macOS's temporary directory /var/folders is a link to /private/var/folders.
+  const dir = await Deno.realPath(await Deno.makeTempDir({ prefix: "wm-test-" }));
+  const real = await Promise.all(files.map((file) => Deno.realPath(file)));
+  const from = (index: number) => {
+    const path = relative(dir, real[index]);
     return JSON.stringify(path.startsWith(".") ? path : `./${path}`);
   };
-  const imports = files.map((file, index) => `from ${from(file)} import * as Suite${index};`);
+  const imports = files.map((_, index) => `from ${from(index)} import * as Suite${index};`);
   const suites = files.map((file, index) =>
     `Runner.suite(${JSON.stringify(relative(Deno.cwd(), file) || file)}, Suite${index}.tests)`
   );

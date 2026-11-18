@@ -550,7 +550,9 @@ function denoReflectionGraphs(source: string): DenoModuleGraph[] {
 }
 
 function denoModuleGraph(specifier: string, cwd: string): DenoModuleGraph | undefined {
-  if (needsDenoModuleResolution(specifier) && withoutDenoCli()) {
+  // Reflection receives local files as absolute paths, which isBareDenoSpecifier does not recognize
+  // on Windows (C:\...).
+  if (!isAbsolute(specifier) && needsDenoModuleResolution(specifier) && withoutDenoCli()) {
     throw new Error(
       `package imports such as ${specifier} are not supported by this wm build yet; ` +
         "use the Deno/JSR installation of wm for programs that import packages",
