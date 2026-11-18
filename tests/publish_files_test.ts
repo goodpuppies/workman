@@ -28,10 +28,13 @@ async function* sourceFiles(directory: string): AsyncGenerator<string> {
 }
 
 /**
- * Read only outside Deno, where wm can't build it, and generated, so it is never in the repository.
- * Under Deno, wm builds it from `tooling/wmslang/*.wm`.
+ * Optional resources that are deliberately not published:
+ * - `wmslang.generated.mjs` is read only outside Deno, where wm can't build it, and is generated, so
+ *   it is never in the repository. Under Deno, wm builds it from `tooling/wmslang/*.wm`.
+ * - `node_modules` holds `@types/node` for reflection in a source checkout and in the compiled npm
+ *   binary, which embeds it. A JSR install has none and resolves the declarations through Deno.
  */
-const unpublishedResources = new Set(["tooling/wmslang/wmslang.generated.mjs"]);
+const unpublishedResources = new Set(["tooling/wmslang/wmslang.generated.mjs", "node_modules"]);
 
 // The release publishes only what wm needs to run (deno.json `publish.include`). Files the compiler
 // reads beside its own modules at runtime, such as the wmslang and pakman sources, must be in it.
