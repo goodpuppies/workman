@@ -594,6 +594,10 @@ let readContent = (body: Js.Object) => {
 
 Dynamic lookup is fallible and returns `Result`.
 
+Dotted access works on names: `response.ok`, `response.json()`. For a member of a computed
+expression, pipe into the member: `"hello" :> .length`, `makeResponse() :> .ok`. Both forms use
+the same safe FFI inference.
+
 ## Callbacks
 
 JS callbacks are written as ordinary Workman lambdas:

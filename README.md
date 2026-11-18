@@ -24,32 +24,6 @@ deno install -g -A --name wm jsr:@goodpuppies/workman
 for fresher versions, you can add the argument
 `--min-dep-age=0`
 
-## Standalone executables
-
-```sh
-wm compile hello.wm --executable -o hello
-./hello
-```
-
-WM emits JavaScript and generated workers, then invokes Deno's `compile`.
-The executable includes those modules and its Deno runtime; it needs no WM
-launcher. Deno may download its compilation runtime and imports during the
-build. Like `wm run`, the resulting application runs with full Deno permissions.
-`wm compile hello.wm out.js` still emits JavaScript.
-
-## C interoperability
-
-C header imports (`c.header`) use a bundled Aro extractor on Linux, macOS, and
-Windows for x64 and ARM64; users do not need Zig. The compiler and LSP unpack the
-matching binary with its resource headers and licenses on first use. System C
-headers/SDKs are still required where included by your header. See
-[C header reflection](markdown/c_ffi/reflection-extractor.md) for configuration
-and the [extractor's beta limits](tooling/c-header-extractor/README.md).
-
-JS members allow name-rooted dots (`response.ok`, `response.json()`). Members of
-computed expressions use explicit pipes (`"hello" :> .length`, `makeResponse() :> .ok`).
-Both use the same safe FFI inference; see [member access](markdown/js-member-access.md).
-
 ## Language Features
 
 An SML based core with all the fp goodies:
@@ -69,220 +43,25 @@ Besides just fp Workman also has:
 - a thought out typescript like syntax with very little invariance
 - great errors with a lot of debug info
 
-## Lsp/editor extension
+## Editors and tools
 
-is available for [vscode](https://marketplace.visualstudio.com/items?itemName=goodpuppies.workman)
+The [VS Code extension](https://marketplace.visualstudio.com/items?itemName=goodpuppies.workman)
+gives you the language server; other editors can start it with `wm lsp`
+(see [`editors`](https://github.com/goodpuppies/workman/blob/main/editors/README.md)). The `wm` command also has:
 
-Install the Workman CLI with Deno:
-
-```sh
-deno install -g -A --name wm jsr:@goodpuppies/workman
-```
-
-Editors can start the language server over stdio with `wm lsp`. Editor-specific
-configuration lives under [`editors`](./editors/README.md).
-
-Use `wm problems entrypoint.wm` for a terminal diagnostics list in editors without a problems
-panel. The viewer is written in Workman and gets its snapshot from an independent LSP process.
-Press `e`, `w`, `i`, or `h` to toggle error, warning, information, or hint diagnostics; `a` restores
-all severities. It watches the entrypoint directory recursively and refreshes when `.wm` files are
-saved.
-
-`wm test` runs the tests in `*.test.wm` files, in the style of `deno test`. Its framework,
-[`tooling/testman`](tooling/testman/README.md), is a proposal and may be redesigned.
-
-`wm pakman` is a package manager written in Workman, where every package is a small program
-that acts as the version manager for one piece of software. See
-[`tooling/pakman`](tooling/pakman/README.md).
-
-## Developing the shared Basis
-
-The portable library comes from the pinned [SubsetML](subm/SubsetML) submodule.
-To build its compiler and regenerate Workman's checked-in library snapshot, install
-MLton and run from this repository root:
-
-```sh
-git submodule update --init subm/SubsetML
-make -C subm/SubsetML
-deno run -A scripts/sync_subml_basis.ts
-```
-
-Edit the owning SubsetML `.sml` sources rather than generated `subml-basis/*.wm`
-files. Ordinary Workman use loads the checked-in snapshot and needs no SubsetML
-build. See [library ownership and workflow](markdown/subsetml-basis.md).
+- `wm repl` and `wm watch` for interactive sessions and re-running on save ([REPL guide](https://github.com/goodpuppies/workman/blob/main/docs/repl.md))
+- `wm compile hello.wm --executable -o hello` for standalone executables
+- `wm test`, `wm problems` and `wm pakman` ([command-line tools](https://github.com/goodpuppies/workman/blob/main/docs/cli.md))
+- `wm sml` to compile a program to Standard ML for MLton ([SML target](https://github.com/goodpuppies/workman/blob/main/docs/sml-target.md))
 
 ## Documentation
 
-* [Experimental TypeScript content mapper](docs/content-mapper.md): typed WM imports, source navigation, and live module updates.
-* [Vite and Bun integration](docs/bundlers.md): direct WM imports and WM-backed TanStack server functions.
-* [Compiling to SML](docs/sml-target.md): `wm sml` translates a program to Standard ML that MLton builds natively.
-
-* To get up to speed quickly, see [the syntax guide](https://github.com/goodpuppies/workman/blob/main/docs/syntax-guide.md). It is short and the best way to learn the language
-* see [the docs folder](https://github.com/goodpuppies/workman/tree/main/docs)
-* and [examples](https://github.com/goodpuppies/workman/tree/main/examples)
+* Start with [the syntax guide](https://github.com/goodpuppies/workman/blob/main/docs/syntax-guide.md). It is short and the best way to learn the language.
+* [JavaScript FFI](https://github.com/goodpuppies/workman/blob/main/docs/jsffi.md) and [C interoperability](https://github.com/goodpuppies/workman/blob/main/docs/cffi.md), with simple HTTP servers under `examples/server/`
+* [Vite and Bun integration](https://github.com/goodpuppies/workman/blob/main/docs/bundlers.md) and the experimental [TypeScript content mapper](https://github.com/goodpuppies/workman/blob/main/docs/content-mapper.md)
+* everything else is in [the docs folder](https://github.com/goodpuppies/workman/tree/main/docs), and there are [examples](https://github.com/goodpuppies/workman/tree/main/examples)
 
 ## Development
 
-See [release preparation](docs/releases.md) for npm packages, compiled binaries, and the JSR release workflow.
-
-Install the dependencies once with `deno install`; Deno and TypeScript both resolve packages from the
-resulting `node_modules`. `deno task check` type-checks `src/`, `tests/`, and `scripts/` with
-TypeScript 7.1 and the Workman [content mapper](docs/content-mapper.md).
-
-### Workman modules in the compiler
-
-New compiler code can be written in Workman and imported from TypeScript directly:
-
-```ts
-import { suggestName } from "../name_suggestion.wm";
-```
-
-`deno task src-wm:build` compiles every `.wm` module under `src/`, and every `.wm` module that
-TypeScript in `src/`, `tests/`, `scripts/` or `tooling/` imports, to a tracked artifact in
-`src/generated/wm/`, and maps each module to its artifact in `deno.json`'s import map. Deno runs the
-artifact, while `deno task check` types the import from the Workman source through the content
-mapper. Build a new module before the compiler imports it: until the import map has its entry, Deno
-cannot load the compiler. Since the compiler may compile its own modules, `deno task generate`
-repeats the build until the artifacts stop changing. Read Workman `Option`s and other boundary types
-with the helpers in `src/integrations/interop.mjs`.
-
-The diagnostic renderer (`tooling/tuiman/diagnostic.wm`) and `wm problems`
-(`tooling/problems/app.wm`) are imported this way. frontend-v2 keeps its own stage-0 artifact,
-which the compiler loads by URL.
-
-For local development, the repository installer remains available:
-
-```sh
-deno task install
-wm run examples/factorial.wm
-```
-
-Run `wm` or `wm repl` for an interactive session. The prompt is a multi-line text box: move around it with
-the arrow keys, Home/End, and Ctrl+Left/Right, and paste multi-line code freely. Failed inputs leave
-the accepted bindings unchanged. Imports resolve from the directory you started `wm repl` in, so
-`from "./lib.wm" import *;` imports `lib.wm` there.
-
-Pass code as one quoted argument to evaluate it, print its results, and exit:
-
-```sh
-wm repl 'let answer = 40; answer + 2;'
-```
-
-Use `preload` to evaluate code before opening the interactive prompt. Imports and bindings remain
-available in that session, and imports resolve from the working directory:
-
-```sh
-wm repl preload 'from "./repl.wm" import *;'
-```
-
-An argument ending in `.wm` retains file watch mode: `wm repl scratch.wm`. Both code forms also
-accept `--v2`. One-shot code exits with a nonzero status if a phrase fails; preload reports failures
-and continues to the prompt, retaining successful phrases.
-
-`wm run`, `wm watch` and `wm repl` write the compiled JavaScript to the OS temporary directory, never
-beside your sources, and remove it when they finish, including after Ctrl-C. The program still runs
-with the `deno.json` nearest to the source, so its import map and npm settings apply.
-
-| Key                      | Action                                                                                  |
-| ------------------------ | --------------------------------------------------------------------------------------- |
-| Enter                    | Run the input if it ends with a top-level `;` and the cursor is on its last line; otherwise add a new line |
-| Shift+Enter or Alt+Enter | Jump to the end, add the missing `;`, and press Enter                                   |
-| Ctrl+Enter or Ctrl+J     | Always add a new line                                                                   |
-| Up/Down                  | Move between lines; past the first or last line, recall earlier input                   |
-| Ctrl-C                   | Discard the current input; exit if it is empty                                          |
-| Ctrl-D                   | Exit if the input is empty                                                              |
-| Ctrl-L                   | Clear the screen                                                                        |
-
-Typing `(`, `[`, `{`, `"`, `'`, or a backtick also adds its closing character, and typing that
-character steps over it. Backspace removes an empty pair, and Enter opens one onto its own lines. Nothing is
-paired in front of a word, inside a string, or in a comment, and `'` after a name stays part of the
-name, as in `x'`.
-
-A session starts with SML's usual top-level structures available without imports: `OS.Process`,
-`OS.Path`, `Bool`, `Char`, `Int` and `StringCvt`, alongside `Io` for files and `Text` for Unicode
-text, plus the preloaded `List`, `String`, `Option` and the rest. These are ordinary imports in the
-session's module, so a later import of the same name shadows them.
-
-Calling `quit()` also ends the session. It is available only in `wm repl` sessions, never returns,
-and can be called anywhere, as in `if (done) { quit() } else { 42 };`. Your own `let quit = ...`
-replaces it.
-
-Shift+Enter needs a terminal with the kitty keyboard protocol, such as Ghostty, kitty, WezTerm, foot,
-Alacritty, or iTerm2. Other terminals send it as a plain Enter, so use Alt+Enter there. While a
-recalled input is unedited, Up/Down keep walking history; press any other movement key to edit it.
-
-Commands start with `:`, and any unambiguous prefix works, so `:t` is `:type`. A command that takes
-an expression ends with `;` like any other input, since an expression can always continue on the next
-line. Other commands run on Enter:
-
-| Command               | Action                                                            |
-| --------------------- | ----------------------------------------------------------------- |
-| `:help [command]`     | List the commands and keys, or show the details of one command    |
-| `:type <expression>;` | Show an expression's type without running it or changing bindings |
-
-To change the prompt, add a `repl` section to `~/.config/workman/config.json`
-(`$XDG_CONFIG_HOME/workman/config.json`; `%APPDATA%\workman\config.json` on Windows):
-
-```json
-{
-  "repl": {
-    "name": "wm",
-    "prompt": "> ",
-    "continuation": "| ",
-    "highlight": true
-  }
-}
-```
-
-`prompt` starts a new input and defaults to `- `, and `continuation` starts its later lines and
-defaults to `= `. `name` goes in front of `prompt` and is empty by default, so this example shows
-`wm> `. The strings are used exactly as written, so include any space you want before your input;
-`"prompt": ":_"` puts your text straight after it. The shorter prompt is padded on the left so lines
-stay aligned.
-
-`highlight` colors your input as you type, using your terminal's color theme. It is on by default;
-set it to `false` to turn it off. `NO_COLOR` also turns it off. Piped input ignores all of these
-settings.
-
-Interactive input history is shared across sessions and saved as `repl-history.json` in Workman's
-state directory (`$XDG_STATE_HOME/workman`, defaulting to `~/.local/state/workman` on Unix;
-`%LOCALAPPDATA%\workman` on Windows). It keeps the most recent 1,000 inputs, including failed
-inputs. Delete that file to clear saved history. Piped input is not saved.
-
-For a live top-level evaluation loop, use `wm repl <file.wm>`. The file is evaluated immediately and
-again whenever it is saved; unlike `wm run`, it does not require a `main` function:
-
-```workman
-let answer = 1 + 1;
-```
-
-Running `wm repl answer.wm` displays `answer = 2 : Real64.Real`. A bare top-level expression is bound to
-`it`, following the SML top-level convention.
-
-To run a normal program on every save, use `wm watch <file.wm>`. Workman watches the complete
-reachable module graph and refreshes that set after every change, so editing a direct or transitive
-`.wm` dependency restarts the program too:
-
-```sh
-wm watch app.wm -- arg1 arg2
-```
-
-The installer writes a small launcher into `~/.local/bin` on Unix-like systems, or `~/.deno/bin` on
-Windows. On Unix it also adds the launcher directory to `PATH` for Bash, Zsh, and Fish. You can
-override the launcher directory with `--bin-dir`:
-
-```sh
-deno task install --bin-dir /path/to/bin
-```
-
-Pass `--no-modify-path` if your shell environment manages `PATH` elsewhere. Open a new shell after
-installation for the updated `PATH` to take effect.
-
-The source installer records the absolute path of the Deno executable that runs it, so its
-launcher also works in shells where Deno is absent from `PATH`. Reinstall the launcher if
-that executable moves. Launchers generated by `deno install -g` are managed by Deno and
-may still require `deno` on `PATH`; use `deno task install --force` from a source checkout
-to replace an existing `wm` launcher with the source installer's version.
-
-C interop is documented in [docs/cffi.md](docs/cffi.md), including simple
-Windows and Unix HTTP servers under `examples/server/`.
+See [developing Workman](https://github.com/goodpuppies/workman/blob/main/docs/development.md) for building from source, the shared SubsetML Basis
+and compiler modules written in Workman, and [release preparation](https://github.com/goodpuppies/workman/blob/main/docs/releases.md).
