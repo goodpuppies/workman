@@ -33,7 +33,7 @@ record Diagonal = {
 // of document lengths. A caller-supplied limit bounds the search on unrelated texts;
 // exceeding it is an explicit computation error, never a guessed successful diff.
 let compare = (original, projected, limit: Int32) => {
-  let validLimit = limit <= 4096 && Lists.validCount(limit);
+  let validLimit = limit <= 4096 && Lists.validCount32(limit);
   if (!validLimit) {R.Err(InvalidLimit)} else {
     let originalLength = Text.length(original);
     let projectedLength = Text.length(projected);

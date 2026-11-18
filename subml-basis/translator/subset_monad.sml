@@ -4,18 +4,22 @@
    be used at several types where it is let-bound. A carrier passed as a parameter has one
    instantiation per call. *)
 structure SubsetMonad = struct
+  (* A successful iteration either advances its state or returns a final output. *)
+  datatype ('state, 'output) step = Continue of 'state | Stop of 'output
+
   type ('viaArg, 'viaResult, 'viaErrArg, 'viaErrResult, 'succeedArg, 'succeedResult,
         'mapCarrier, 'mapTransform, 'mapResult,
         'map2Left, 'map2Right, 'map2Combine, 'map2Result,
         'andThenCarrier, 'andThenTransform, 'andThenResult,
-        'mapErrCarrier, 'mapErrTransform, 'mapErrResult) carrier = {
+        'mapErrCarrier, 'mapErrTransform, 'mapErrResult, 'iteration) carrier = {
     via : 'viaArg -> 'viaResult,
     viaErr : 'viaErrArg -> 'viaErrResult,
     succeed : 'succeedArg -> 'succeedResult,
     map : 'mapCarrier * 'mapTransform -> 'mapResult,
     map2 : 'map2Left * 'map2Right * 'map2Combine -> 'map2Result,
     andThen : 'andThenCarrier * 'andThenTransform -> 'andThenResult,
-    mapErr : 'mapErrCarrier * 'mapErrTransform -> 'mapErrResult
+    mapErr : 'mapErrCarrier * 'mapErrTransform -> 'mapErrResult,
+    loop : 'iteration
   }
 
   (* The subset a lifted operator needs: inject a pure operand, and combine two carriers
@@ -31,22 +35,29 @@ structure SubsetMonad = struct
   (* Explicit type variables are rigid, so each annotation spells out how the operations it uses
      relate; the others stay independent. `via` and `viaErr` stay curried: they build a stage
      rather than being one. *)
-  val via = fn (domain : ('a, 'b, 'c, 'd, 'e, 'f, 'g, 'h, 'i, 'j, 'k, 'l, 'm, 'n, 'o, 'p, 'q, 'r, 's) carrier) =>
+  val via = fn (domain : ('a, 'b, 'c, 'd, 'e, 'f, 'g, 'h, 'i, 'j, 'k, 'l, 'm, 'n, 'o, 'p, 'q, 'r, 's, 'iteration) carrier) =>
     fn f => #via domain f
 
-  val viaErr = fn (domain : ('a, 'b, 'c, 'd -> 'e, 'f, 'g, 'h, 'i, 'j, 'k, 'l, 'm, 'n, 'o, 'p, 'q, 'r, 's, 't) carrier) =>
+  val viaErr = fn (domain : ('a, 'b, 'c, 'd -> 'e, 'f, 'g, 'h, 'i, 'j, 'k, 'l, 'm, 'n, 'o, 'p, 'q, 'r, 's, 't, 'iteration) carrier) =>
     fn inject => fn f => #viaErr domain inject f
 
   (* The stage functions take the carrier value first, so a pipeline supplies it:
      `value :> Monad.map(Result, f)`. *)
-  val map = fn (wrapped, domain : ('a, 'b, 'c, 'd, 'e, 'f, 'g, 'h, 'i, 'j, 'k, 'l, 'm, 'n, 'o, 'p, 'q, 'r, 's) carrier, transform) =>
+  val map = fn (wrapped, domain : ('a, 'b, 'c, 'd, 'e, 'f, 'g, 'h, 'i, 'j, 'k, 'l, 'm, 'n, 'o, 'p, 'q, 'r, 's, 'iteration) carrier, transform) =>
     #map domain (wrapped, transform)
 
-  val mapErr = fn (wrapped, domain : ('a, 'b, 'c, 'd, 'e, 'f, 'g, 'h, 'i, 'j, 'k, 'l, 'm, 'n, 'o, 'p, 'q, 'r, 's) carrier, transform) =>
+  val mapErr = fn (wrapped, domain : ('a, 'b, 'c, 'd, 'e, 'f, 'g, 'h, 'i, 'j, 'k, 'l, 'm, 'n, 'o, 'p, 'q, 'r, 's, 'iteration) carrier, transform) =>
     #mapErr domain (wrapped, transform)
 
-  val andThen = fn (wrapped, domain : ('a, 'b, 'c, 'd, 'e, 'f, 'g, 'h, 'i, 'j, 'k, 'l, 'm, 'n, 'o, 'p, 'q, 'r, 's) carrier, transform) =>
+  val andThen = fn (wrapped, domain : ('a, 'b, 'c, 'd, 'e, 'f, 'g, 'h, 'i, 'j, 'k, 'l, 'm, 'n, 'o, 'p, 'q, 'r, 's, 'iteration) carrier, transform) =>
     #andThen domain (wrapped, transform)
+
+  (* Iteration is supplied by the carrier, so synchronous implementations can use a
+     direct self tail call rather than recurse through an opaque andThen callback. *)
+  val loop = fn (initial,
+      domain : ('a, 'b, 'c, 'd, 'e, 'f, 'g, 'h, 'i, 'j, 'k, 'l, 'm, 'n, 'o, 'p, 'q, 'r, 's,
+                'state * ('state -> 'checked) -> 'output) carrier,
+      advance) => #loop domain (initial, advance)
 
   (* Applies a carrier-returning function to each item in order and collects the results in one
      carrier. Each item runs only after the previous one succeeded, so the first failure stops
@@ -54,7 +65,7 @@ structure SubsetMonad = struct
      not grow the stack. *)
   val traverse = fn (items : 'item list,
                      domain : ('a, 'b, 'c, 'd, 'value list, 'carried, 'mapped, 'value -> 'value list, 'carried,
-                               'e, 'f, 'g, 'h, 'carried, 'value list -> 'carried, 'carried, 'i, 'j, 'k) carrier,
+                               'e, 'f, 'g, 'h, 'carried, 'value list -> 'carried, 'carried, 'i, 'j, 'k, 'iteration) carrier,
                      f : 'item -> 'mapped) =>
     let
       val rec go = fn (rest, acc) =>

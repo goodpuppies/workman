@@ -2,7 +2,7 @@ from js.module("react") import unsafe { useState };
 from "./won-view.wm" import * as View;
 
 -- All three bindings are renderer conventions; functions stay in WM.
-let header = View.component () => {
+let header = View.component => {
   WON[
     header<className="header">(
       nav(ul[li(a<href="/">("Home"))])
@@ -18,7 +18,7 @@ let counter = View.componentWith => {
   ];
   (bindings, WON[
     section[
-      h1("React in Workman")
+      h1("React in Workman!")
       p["Count: " Bind("count")]
       button<onClick = Action("increment")>("Add one")
     ]

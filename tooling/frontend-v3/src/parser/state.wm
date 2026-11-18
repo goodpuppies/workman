@@ -21,7 +21,7 @@ record Boundary = {
   authoredOpen: Bool,
 };
 let initial = (source, document: Token.LexicalDocument) => {
-  State(Cursor.fromDocument(source, document), 0, 0, 0, Lists.length(document.marks), [])
+  State(Cursor.fromDocument(source, document), 0, 0, 0, Lists.length32(document.marks), [])
 };
 let consume = (state: State) => {
   match(Cursor.take(state.cursor)) {
@@ -94,7 +94,7 @@ let retainCursor = (start: State, finish: State) => {
   State { ..start, cursor = finish.cursor, authoredEnd = finish.authoredEnd }
 };
 let tokensBetween = (start: State, finish: State) => {
-  match(Lists.take(start.cursor.remainingTokens, finish.cursor.tokenIndex - start.cursor.tokenIndex)) {
+  match(Lists.take32(start.cursor.remainingTokens, finish.cursor.tokenIndex - start.cursor.tokenIndex)) {
     R.Ok(tokens) => {tokens},
     R.Err(_) => {Panic("unreachable")} // Both cursors are ordered views of one lexer document.
   }

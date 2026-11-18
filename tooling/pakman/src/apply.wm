@@ -188,7 +188,7 @@ let apply = (plan: Plan) => {
       writeOwned(root, after),
       runTriggers(root, appendAll(addPaths, plan.remove))
     |
-      :> Task.map((_) => { (List.length(plan.add), List.length(plan.remove)) })
+      :> Task.map((_) => { (List.length32(plan.add), List.length32(plan.remove)) })
   };
   readOwned(root)
     :> check

@@ -19,7 +19,7 @@ Deno.test("portable pakman helpers agree with Unicode ordering, checked parsing 
         R.Ok(O.Less) => { -1 }, R.Ok(O.Equal) => { 0 }, R.Ok(O.Greater) => { 1 }, R.Err(_) => { 99 }
       }
     };
-    let pad = (text: String, width: Int32.Int) => { R.getOr(Cvt.padTextRight(text, width, (32: Int32.Int)), "FAILED") };
+    let pad = (text: String, width: Int32.Int) => { R.getOr(Cvt.padTextRight32(text, width, (32: Int32.Int)), "FAILED") };
     let parent = (text: String) => { R.getOr(Path.dir(text), "FAILED") };
     let subsequence = (text: String, pattern: String) => { R.getOr(Strings.isSubsequence(text, pattern), false) };
   `;

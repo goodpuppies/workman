@@ -21,9 +21,9 @@ Deno.test("Result and Option combinators infer generically", async () => {
     });
     let plain = opt :> Option.getOr(0);
     let listMapped = [1, 2, 3] :> List.map((n) => { n + 1 });
-    let listLength = [1, 2, 3] :> List.length;
-    let listItem = [1, 2, 3] :> List.at(1);
-    let missingListItem = [1, 2, 3] :> List.at(8);
+    let listLength = [1, 2, 3] :> List.length32;
+    let listItem = [1, 2, 3] :> List.at32(1);
+    let missingListItem = [1, 2, 3] :> List.at32(8);
     let filtered = [1, 2, 3, 4] :> List.filter((n) => { n > 2 });
     let reversed = [1, 2, 3] :> List.reverse;
     let traversed = [1, 2, 3] :> Result.traverse((n) => {
@@ -119,7 +119,7 @@ Deno.test("Result and Option combinators infer generically", async () => {
   assertEquals(result.structure.strEnv.get("Traverse")?.valEnv.get("with")?.imported, true);
 });
 
-Deno.test("Result.debug exposes its intentional typed hole", async () => {
+Deno.test("Result.debug reports its failure at the authored call", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;
   await Deno.writeTextFile(
@@ -130,9 +130,11 @@ Deno.test("Result.debug exposes its intentional typed hole", async () => {
   const result = await runCli(["run", input]);
 
   assertEquals(result.code, 1);
-  assertStringIncludes(result.stderr, "error[type.typed-hole host/js/debug.wm:");
-  assertStringIncludes(result.stderr, "std/result.wm:");
-  assertStringIncludes(result.stderr, "typed hole; expected type: 'a");
+  assertStringIncludes(result.stderr, `error[runtime.result-debug ${input}:1:`);
+  assertStringIncludes(result.stderr, "Result.debug failed: could not decode response");
+  assertEquals(result.stderr.includes("host/js/debug.wm:"), false);
+  assertEquals(result.stderr.includes("std/result.wm:"), false);
+  assertEquals(result.stdout, "");
   assertEquals(result.stderr.includes("Panic:"), false);
 });
 
@@ -167,13 +169,13 @@ Deno.test("expanded List helpers evaluate with current argument order", async ()
     input,
     `
       let main = () => {
-        print(List.length([1, 2, 3]));
+        print(List.length32([1, 2, 3]));
         print(List.append([1, 2], [3, 4]));
         print(List.filter([1, 2, 3, 4], (n) => { n > 2 }));
-        print(List.take([1, 2, 3], 2));
-        print(List.drop([1, 2, 3], 2));
-        print(List.at([1, 2, 3], 1));
-        print(List.at([1, 2, 3], 8));
+        print(List.take32([1, 2, 3], 2));
+        print(List.drop32([1, 2, 3], 2));
+        print(List.at32([1, 2, 3], 1));
+        print(List.at32([1, 2, 3], 8));
         print(List.foldLeft([1, 2, 3], 0, (n, sum) => { sum + n }));
         print(List.reverse([1, 2, 3]));
         print(List.exists([1, 2, 3], (n) => { n > 2 }));
@@ -222,7 +224,7 @@ Deno.test("Monad.via requires a Carrier record", async () => {
         let stub = (_) => { ? };
         let task = .{
           via = (f) => { f() }, viaErr = stub, succeed = stub, map = stub,
-          map2 = stub, andThen = stub, mapErr = stub,
+          map2 = stub, andThen = stub, mapErr = stub, loop = stub,
         };
         let value = Monad.via task () => { 42 };
       `);

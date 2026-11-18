@@ -26,7 +26,7 @@ let tests = [
     let request = package("wm", "~0.4.1");
     let pkg = Package("1.0.0", [], [Symlink(file(request, ".local/bin/wm"), ".local/bin/app")], [file(request, "lib/api")]);
     checks([
-      assertEqual(List.length(instances(pkg)), 1),
+      assertEqual(List.length32(instances(pkg)), 1),
       assertEqual(dependencies(pkg), []),
       assertEqual(baseFiles(pkg), []),
       assertEqual(render("/home/u", ref(StorePath("/state/store/wm", ".local/bin/wm"))), "/state/store/wm/.local/bin/wm"),
@@ -67,7 +67,7 @@ let tests = [
     ], [Base("/usr/lib/libgtk-3.so.0")]);
     checks([
       assertEqual(dependencies(pkg), ["hello-lib"]),
-      assertEqual(List.length(baseFiles(pkg)), 2)
+      assertEqual(List.length32(baseFiles(pkg)), 2)
     ])
   })
 ];

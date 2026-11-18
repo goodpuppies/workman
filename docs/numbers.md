@@ -104,3 +104,146 @@ let isEven = n => n % 2 == 0;  -- Int32 -> Bool
 ```
 
 The named forms such as `Word8.add` remain.
+
+## Integer library functions
+
+`Int32` and `Int64` share the same parsing and checked-arithmetic API. Changing the namespace
+and integer annotations preserves these contracts:
+
+| Function | Return value |
+| --- | --- |
+| `fromString(text)` | `Result<Int, Error>`; skip ASCII whitespace and scan a decimal prefix, accepting `+`, `-` or `~` |
+| `parseDecimal(text)` | `Result<Int, Error>`; signed decimal with no whitespace or trailing input |
+| `parseNatural(text)` | `Result<Int, Error>`; one or more decimal digits, with no sign |
+| `checkedAdd(a, b)`, `checkedSub(a, b)`, `checkedMul(a, b)` | `Ok(value)` or `Err(Overflow)` |
+| `fromReal64(value)` | `Ok(value)` for an integral real in range; otherwise `Err(InvalidInteger)` or `Err(Overflow)` |
+| `toString(value)` | `String` |
+| `minimum`, `maximum` | The bounds of the selected integer type |
+
+Parsing errors are `InvalidInteger`, `Overflow`, or `StringError<String.Error>`. Fractional
+and nonfinite real inputs produce `InvalidInteger`; integral real inputs outside the destination
+range produce `Overflow`. These functions return `Result` for invalid input, following the
+Basis failure convention. Ordinary arithmetic operators and `div`/`mod` retain their panic behavior.
+
+```wm
+let id = Int64.parseDecimal("456456") :> Result.debug;
+let total = Int64.checkedAdd(id, id) :> Result.debug;
+```
+
+Conversions reflect whether failure is possible. `Int32.toReal64` returns a real directly because
+every `Int32` is exactly representable. `Int64.toReal64` returns `Result<Real64, Int64.Error>`
+and reports `PrecisionLoss` when a real cannot represent the integer exactly. It accepts exactly
+representable values above the safe-integer range, such as powers of two.
+
+Collection counts and indexes default to `Int64`. Explicit `32` variants accept and return
+`Int32`. At an intentional width boundary, use `Int64.fromInt32` to widen and `Int64.toInt32`
+to narrow with a checked `Result`; no conversion through a real is needed.
+
+Migration: `Int32.checkedAdd`/`checkedSub`/`checkedMul` and `Int32.fromReal64` now return `Result`
+instead of `Option`; use `Ok`/`Err` and `Result` combinators. `Int64.fromString`, `fromReal64` and
+`toReal64` now return `Result` instead of throwing on invalid input.
+
+## Generating and folding ranges
+
+Use `Int32.range(first, last)` or `Int64.range(first, last)` to enumerate integer **values**.
+Both bounds are inclusive. Values appear in ascending order; reversed bounds produce `[]`.
+The endpoint can be the maximum integer of the selected type without overflowing the next step.
+
+```wm
+let ids = Int64.range(3000000000, 3000000002);
+-- [3000000000, 3000000001, 3000000002]
+```
+
+The values do not pass through collection indexes. `List.length(ids)` returns `Int64`;
+`List.length32(ids)` returns `Int32`. Its elements are `Int64`. Range generation does not calculate `last - first + 1`, so no count
+conversion is needed. Building a very large list can still exhaust memory.
+
+Use `foldRange(first, last, initial, f)` to process a range without building an intermediate list.
+Its callback takes `(value, accumulator)`, as with `List.foldLeft`. The accumulator can have a
+different type from the range values. Reversed bounds return `initial` without calling `f`.
+
+```wm
+let total = Int64.foldRange(3000000000, 3000000002, (0: Int64),
+  (id, sum) => Int64.checkedAdd(id, sum) :> Result.debug);
+```
+
+`List.unfold(initial, step)` is the portable state-based generator underneath range generation.
+Each call to `step(state)` returns `Some((value, nextState))`, or `None` to finish normally.
+The state and elements can have different types. No integer count or index is involved.
+
+```wm
+let values = List.unfold(["a", "b"], match(state) => {
+  [] => None,
+  [value, ..rest] => Some((value, rest))
+});
+-- ["a", "b"]
+```
+
+`List.unfold` and the Int32 helpers are implemented in the shared SubsetML Basis without new
+host primitives. The Int64 helpers use the same contracts in WM's Int64 module; the explicit `32` collection APIs keep the portable subset's integer requirements unchanged.
+
+## Collection count and index widths
+
+Unsuffixed list, byte-string and Unicode-text count/index functions use `Int64`. Their `32`
+variants preserve the signed 32-bit contract:
+
+| Int64 default | Int32 variant |
+| --- | --- |
+| `List.length`, bare `length` | `List.length32`, bare `length32` |
+| `List.repeat`, `splitAt`, `at`, `take`, `drop`, `tabulate` | `repeat32`, `splitAt32`, `at32`, `take32`, `drop32`, `tabulate32` |
+| `String.size`, bare `size` | `String.size32`, bare `size32` |
+| `String.extract`, `substring` | `String.extract32`, `substring32` |
+| `Text.size`, `extract`, `substring` | `Text.size32`, `extract32`, `substring32` |
+| `StringCvt.padLeft`, `padRight`, `padTextLeft`, `padTextRight` | `padLeft32`, `padRight32`, `padTextLeft32`, `padTextRight32` |
+
+`List.tabulate` passes an `Int64` index to its callback; `List.tabulate32` passes `Int32`.
+The element type is independent of the index type. Validation and typed errors are the same
+at both widths. Wide operations traverse using wide arithmetic; they do not silently narrow
+counts to Int32. Bounds checks avoid adding a start and count, which could overflow.
+
+```wm
+let ids: List<Int64> = List.tabulate(3, i => 3000000000 + i) :> Result.debug;
+let count: Int64 = List.length(ids);
+let (left, right) = List.splitAt(ids, Int64.div(count, 2)) :> Result.debug;
+let smallCount: Int32 = List.length32(ids);
+```
+
+Ordinary integer literal and arithmetic defaulting remains Int32. A separately bound Int32
+count must use a `32` function or be explicitly widened; later calls do not change an earlier
+binding's type. Character/scalar codes, compiler source offsets, and fixed-format codecs
+retain their explicitly sized contracts. This change does not alter vector APIs that use reals.
+
+The shared SubsetML Basis owns the `32` variants and generic traversal cores; WM's `std`
+extensions provide the unsuffixed Int64 wrappers. Explicit `basis/` imports expose the shared
+32-bit names; implicit namespaces and `std/` imports also expose the wide defaults. The
+current native SML reader stages the portable 32-bit surface. Int64 calls there remain
+unsupported; MLWorks runtime panic support is deferred, with no fallback to 32-bit arithmetic.
+
+## Explicit arithmetic domains
+
+Numeric folds can take an ordinary arithmetic record instead of fixing their element type:
+
+```wm
+let narrow: Int32 = [1, 2, 3] :> List.sumWith(Int32);
+let wide: Int64 = [3000000000, 2] :> List.sumWith(Int64.math);
+let product: Real64 = [1.5, 2.0] :> List.productWith(Real64);
+```
+
+`Numeric.Arithmetic<T>` has four fields: `zero: T`, `one: T`, `add: (T, T) -> T`, and
+`mul: (T, T) -> T`. `sumWith(items, math)` starts with `zero` and calls `add(total, item)`
+from left to right. `productWith` starts with `one` and calls `mul(total, item)` in the same
+order. Empty inputs return the corresponding identity.
+
+Int32, Int64, Real32, Real64, Word8, Word16, Word32 and Word64 export this record as `math`
+and also as `carrier`. Bare `Int32` in value position selects `Int32.carrier` through the
+existing namespace rule; `Int32.math` is the explicit spelling. No contextual switching is
+performed: each module's `carrier` is one fixed value with one type scheme. A numeric arithmetic
+record and a monadic `Carrier` have different types. `Result.carrier` retains its existing shape.
+
+The selected operations retain their normal semantics: signed integer overflow panics, word
+arithmetic wraps, and real arithmetic rounds as usual. A previously bound `List<Int32>` does
+not become `List<Int64>` merely by choosing Int64 arithmetic; convert its elements explicitly.
+
+The record and fold implementations live in the portable SubsetML Basis. User-defined domains
+can supply `Numeric.Arithmetic<T>` values with the same shape; no compiler specialization or
+new host primitive is required.

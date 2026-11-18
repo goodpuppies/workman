@@ -1,0 +1,85 @@
+from "basis/monad.wm" import { Step, Continue, Stop };
+from "basis/list.wm" import * as SubsetList;
+
+// Pure consumers for List.collect. Continue requests another checked input;
+// Stop returns its output immediately, without checking the remaining inputs.
+record Consumer<item, answer, state, output> = {
+  initial: state,
+  step: (item, answer, state) -> Step<state, output>,
+  finish: state -> output
+};
+
+let filter = Consumer{
+  initial = [],
+  step = (item, keep, acc) => Continue(if (keep) { [item, ..acc] } else { acc }),
+  finish = SubsetList.reverse
+};
+
+let map = Consumer{
+  initial = [],
+  step = (_, answer, acc) => Continue([answer, ..acc]),
+  finish = SubsetList.reverse
+};
+
+let concatMap = Consumer{
+  initial = [],
+  step = (_, answer, acc) => Continue(SubsetList.reverseAppend(answer, acc)),
+  finish = SubsetList.reverse
+};
+
+let filterMap = Consumer{
+  initial = [],
+  step = (_, answer, acc) => {
+    Continue(match(answer) { Some(item) => { [item, ..acc] }, None => { acc } })
+  },
+  finish = SubsetList.reverse
+};
+
+let find = Consumer{
+  initial = None,
+  step = (item, keep, acc) => if (keep) { Stop(Some(item)) } else { Continue(acc) },
+  finish = acc => acc
+};
+
+let findMap = Consumer{
+  initial = None,
+  step = (_, answer, acc) => {
+    match(answer) { Some(_) => { Stop(answer) }, None => { Continue(acc) } }
+  },
+  finish = acc => acc
+};
+
+let exists = Consumer{
+  initial = false,
+  step = (_, matches, _) => if (matches) { Stop(true) } else { Continue(false) },
+  finish = acc => acc
+};
+
+let all = Consumer{
+  initial = true,
+  step = (_, matches, _) => if (matches) { Continue(true) } else { Stop(false) },
+  finish = acc => acc
+};
+
+let takeWhile = Consumer{
+  initial = [],
+  step = (item, keep, acc) => {
+    if (keep) { Continue([item, ..acc]) } else { Stop(SubsetList.reverse(acc)) }
+  },
+  finish = SubsetList.reverse
+};
+
+let partition = Consumer{
+  initial = ([], []),
+  step = (item, keep, (yes, no)) => {
+    Continue(if (keep) { ([item, ..yes], no) } else { (yes, [item, ..no]) })
+  },
+  finish = (yes, no) => (SubsetList.reverse(yes), SubsetList.reverse(no))
+};
+
+// Collect the last successful answer, with an explicit fallback for empty input.
+let lastOr = fallback => Consumer{
+  initial = fallback,
+  step = (_, answer, _) => Continue(answer),
+    finish = answer => answer
+};

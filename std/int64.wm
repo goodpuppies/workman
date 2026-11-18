@@ -1,7 +1,13 @@
+from "basis/numeric.wm" import * as Numeric;
+from "basis/int32.wm" import * as Narrow;
+from "basis/string.wm" import * as SubsetString;
+from "basis/result.wm" import * as SubsetResult;
+from "basis/char.wm" import * as SubsetChar;
+from "basis/list.wm" import * as SubsetList;
 from js.module("./js/int64.js") import unsafe {
   fromNumber as primFromReal64: Real64.Real -> Int64.Int,
   toNumber as primToReal64: Int64.Int -> Real64.Real,
-  fromString as primFromString: String -> Int64.Int,
+  isExactReal: Int64.Int -> Bool,
   toString as primToString: Int64.Int -> String,
   div as primDiv: (Int64.Int, Int64.Int) -> Int64.Int,
   mod as primMod: (Int64.Int, Int64.Int) -> Int64.Int,
@@ -10,10 +16,195 @@ from js.module("./js/int64.js") import unsafe {
 /** The type a bare `Int64` names in annotations (docs/modules.md). */
 type Self = Int64.Int;
 
-let fromReal64 = primFromReal64;
-let toReal64 = primToReal64;
-let fromString = primFromString;
-let toString = primToString;
-/** Flooring division and its remainder, as SML's `div` and `mod`; zero divisors fail with `Div`. */
+/** Flooring division and modulo; arithmetic errors retain the language's panic behavior. */
 let div = primDiv;
 let mod = primMod;
+
+type Error = InvalidInteger | Overflow | PrecisionLoss | StringError<SubsetString.Error>;
+
+// Accumulate negatively so the minimum integer never needs to be negated.
+private let digits = (bytes, negative) => {
+  let last: Int64.Int = if (negative) { 8 } else { 7 };
+  let finish = (rest, acc: Int64.Int, seen) => {
+    if (seen) {
+      SubsetResult.Ok(if (negative) { acc } else { 0 - acc }, rest)
+    } else { SubsetResult.Err(InvalidInteger) }
+  };
+  let rec go = (rest, acc: Int64.Int, seen) => {
+    match(rest) {
+      [] => { finish(rest, acc, seen) },
+      [c, ..tail] => {
+        if (SubsetChar.isDigit(c)) {
+          match(SubsetChar.toCode(c)) {
+            SubsetResult.Err(error) => { SubsetResult.Err(InvalidInteger) },
+            SubsetResult.Ok(code) => {
+              let digit = primFromReal64(Narrow.toReal64(code - 48));
+              if (acc < -922337203685477580 ||
+                  (acc == -922337203685477580 && digit > last)) {
+                SubsetResult.Err(Overflow)
+              } else {
+                go(tail, acc * 10 - digit, true)
+              }
+            }
+          }
+        } else { finish(rest, acc, seen) }
+      }
+    }
+  };
+  go(bytes, 0, false)
+};
+
+private let signed = (bytes) => {
+  match(bytes) {
+    ['~', ..rest] => { digits(rest, true) },
+    ['-', ..rest] => { digits(rest, true) },
+    ['+', ..rest] => { digits(rest, false) },
+    Var(rest) => { digits(rest, false) }
+  }
+};
+
+// SML INTEGER.fromString: skip ASCII space, parse a signed decimal prefix.
+let fromString = (value) => {
+  SubsetResult.andThen(
+    SubsetResult.mapErr(SubsetString.fromNative(value), StringError),
+    (bytes) => {
+      SubsetResult.map(
+        signed(SubsetList.dropWhile(bytes, SubsetChar.isSpace)),
+        (number, rest) => { number }
+      )
+    }
+  )
+};
+
+// Full-input decimal and unsigned decimal parsers: no whitespace or trailing data.
+private let complete = (result) => {
+  SubsetResult.andThen(
+    result,
+    (number, rest) => {
+      match(rest) {
+        [] => { SubsetResult.Ok(number) },
+        [c, ..tail] => { SubsetResult.Err(InvalidInteger) }
+      }
+    }
+  )
+};
+let parseDecimal = (value) => {
+  SubsetResult.andThen(
+    SubsetResult.mapErr(SubsetString.fromNative(value), StringError),
+    (bytes) => { complete(signed(bytes)) }
+  )
+};
+let parseNatural = (value) => {
+  SubsetResult.andThen(
+    SubsetResult.mapErr(SubsetString.fromNative(value), StringError),
+    (bytes) => { complete(digits(bytes, false)) }
+  )
+};
+
+/* Workman's `%`: the remainder of division truncated toward zero, with the dividend's sign.
+   Floored `mod` differs from it exactly when the remainder is nonzero and the signs differ. */
+let rem = (dividend: Int64.Int, divisor: Int64.Int) => {
+  let m = mod(dividend, divisor);
+  if (m != 0 && (dividend < 0) != (divisor < 0)) { m - divisor } else { m }
+};
+
+let minimum: Int64.Int = -9223372036854775808;
+let maximum: Int64.Int = 9223372036854775807;
+
+/* Checked arithmetic: Err Overflow where `+`, `-` or `*` would overflow. Each test runs before the
+   operation and never overflows itself. */
+let checkedAdd = (a: Int64.Int, b: Int64.Int) => {
+  if ((b > 0 && a > maximum - b) || (b < 0 && a < minimum - b)) {
+    SubsetResult.Err(Overflow)
+  } else { SubsetResult.Ok(a + b) }
+};
+let checkedSub = (a: Int64.Int, b: Int64.Int) => {
+  if ((b < 0 && a > maximum + b) || (b > 0 && a < minimum + b)) {
+    SubsetResult.Err(Overflow)
+  } else { SubsetResult.Ok(a - b) }
+};
+/* Magnitudes x and y are safe once neither operand is the minimum. A negative product may
+   reach magnitude maximum + 1: with q = maximum div y, x = q + 1 fits exactly when
+   maximum mod y = y - 1. */
+let checkedMul = (a: Int64.Int, b: Int64.Int) => {
+  if (a == 0 || b == 0) { SubsetResult.Ok(0) } else {
+    if (a == minimum) {
+      if (b == 1) { SubsetResult.Ok(a) } else { SubsetResult.Err(Overflow) }
+    } else {
+      if (b == minimum) {
+        if (a == 1) { SubsetResult.Ok(b) } else { SubsetResult.Err(Overflow) }
+      } else {
+        let x = if (a < 0) { -a } else { a };
+        let y = if (b < 0) { -b } else { b };
+        let q = div(maximum, y);
+        if ((a < 0) == (b < 0)) {
+          if (x <= q) { SubsetResult.Ok(x * y) } else { SubsetResult.Err(Overflow) }
+        } else {
+          if (x <= q || (x == q + 1 && mod(maximum, y) == y - 1)) {
+            SubsetResult.Ok(-x * y)
+          } else { SubsetResult.Err(Overflow) }
+        }
+      }
+    }
+  }
+};
+
+let toString = primToString;
+
+/** Exact conversion; fractional and nonfinite inputs are invalid integers. */
+let fromReal64 = (value: Real64.Real) => {
+  if (value % 1.0 == 0.0) {
+    if (value >= -9223372036854775808.0 && value < 9223372036854775808.0) {
+      Ok(primFromReal64(value))
+    } else { Err(Overflow) }
+  } else { Err(InvalidInteger) }
+};
+
+/** A real is returned only when it represents the integer exactly. */
+let toReal64 = (value: Int64.Int) => {
+  if (isExactReal(value)) { Ok(primToReal64(value)) } else { Err(PrecisionLoss) }
+};
+
+/** Every Int32 has an exact Int64 representation. */
+let fromInt32 = (value: Int32.Int) => primFromReal64(Narrow.toReal64(value));
+
+/** Narrow without losing information. */
+let toInt32 = (value: Int64.Int) => {
+  if (value >= -2147483648 && value <= 2147483647) {
+    match(Narrow.fromReal64(primToReal64(value))) {
+      Ok(number) => Ok(number),
+      Err(_) => Err(Overflow)
+    }
+  } else { Err(Overflow) }
+};
+
+/** Inclusive ascending range; reversed bounds produce an empty list. */
+let range = (first: Int64.Int, last: Int64.Int) => {
+  SubsetList.unfold(Some(first), match(state) => {
+    None => None,
+    Some(value) => {
+      if (value > last) { None } else {
+        let next = if (value == last) { None } else { Some(value + 1) };
+        Some((value, next))
+      }
+    }
+  })
+};
+
+/** Fold an inclusive range without allocating its list; callback takes (value, accumulator). */
+let foldRange = (first: Int64.Int, last: Int64.Int, initial, f) => {
+  let rec go = (value: Int64.Int, acc) => {
+    let next = f(value, acc);
+    if (value == last) { next } else { go(value + 1, next) }
+  };
+  if (first > last) { initial } else { go(first, initial) }
+};
+
+
+/** Default arithmetic dictionary; bare Int64 in value position selects carrier. */
+let math: Numeric.Arithmetic<Int64.Int> = .{
+  zero = 0, one = 1,
+  add = (a: Int64.Int, b: Int64.Int) => a + b,
+  mul = (a: Int64.Int, b: Int64.Int) => a * b
+};
+let carrier = math;

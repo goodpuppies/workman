@@ -20,6 +20,7 @@ let with = (.{ succeed, map, andThen }: Carrier<
   mapErrCarrier,
   mapErrTransform,
   mapErrResult,
+  iteration,
 >) => {
   let rec traverse = match(items, transform) => {
     ([], _) => {

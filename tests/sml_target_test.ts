@@ -12,7 +12,11 @@ async function wm(args: string[], cwd: string) {
     stderr: "piped",
   }).output();
   const decoder = new TextDecoder();
-  return { code: output.code, stdout: decoder.decode(output.stdout), stderr: decoder.decode(output.stderr) };
+  return {
+    code: output.code,
+    stdout: decoder.decode(output.stdout),
+    stderr: decoder.decode(output.stderr),
+  };
 }
 
 async function hasMlton(): Promise<boolean> {
@@ -40,7 +44,10 @@ Deno.test("wm sml writes a relocatable MLton project that prints as wm run does"
     const translated = await wm(["sml", "app.wm", "out"], directory);
     assertEquals(translated.code, 0, translated.stderr);
     const project = await Deno.readTextFile(join(directory, "out", "project.mlb"));
-    assert(!project.includes(directory), "project.mlb names files inside the output directory relatively");
+    assert(
+      !project.includes(directory),
+      "project.mlb names files inside the output directory relatively",
+    );
     assertStringIncludes(project, '"subset_host_native.sml"');
     if (!await hasMlton()) return;
 
@@ -52,7 +59,8 @@ Deno.test("wm sml writes a relocatable MLton project that prints as wm run does"
       stderr: "piped",
     }).output();
     assert(built.success, new TextDecoder().decode(built.stderr));
-    const native = await new Deno.Command(join(directory, "moved", "app"), { stdout: "piped" }).output();
+    const native = await new Deno.Command(join(directory, "moved", "app"), { stdout: "piped" })
+      .output();
     const run = await wm(["run", "app.wm"], directory);
     assertEquals(new TextDecoder().decode(native.stdout), run.stdout);
   } finally {
@@ -86,9 +94,13 @@ Deno.test("wm sml translates a program that never prints, and rejects JavaScript
 Deno.test("wm sml shares pervasive bindings and portable std extensions with lexical shadowing", async () => {
   const directory = await Deno.makeTempDir({ prefix: "wm-sml-scope-" });
   try {
-    await Deno.writeTextFile(join(directory, "own.wm"),
-      'type Option = | None | Some<String>;\nlet map = (n: Int32.Int) => { n + 10 };\n');
-    await Deno.writeTextFile(join(directory, "app.wm"), `
+    await Deno.writeTextFile(
+      join(directory, "own.wm"),
+      "type Option = | None | Some<String>;\nlet map = (n: Int32.Int) => { n + 10 };\n",
+    );
+    await Deno.writeTextFile(
+      join(directory, "app.wm"),
+      `
 from "std/general.wm" import { before as keep };
 let projected = map([1, 2], (n) => { n + 1 });
 let collected = foldLeft(projected, 0, (n, acc) => { n + acc });
@@ -112,7 +124,8 @@ let _ = print(projected, collected, shadowed, arm, labeled.map, nested(), length
 type Order = | Less | Equal;
 let ownRank = match { Less => { 8 }, Equal => { 9 } };
 let _ = print(ownRank(Less));
-`);
+`,
+    );
     const translated = await wm(["sml", "app.wm", "out"], directory);
     assertEquals(translated.code, 0, translated.stderr);
     const emitted = await Deno.readTextFile(join(directory, "out", "app.sml"));
@@ -120,22 +133,28 @@ let _ = print(ownRank(Less));
     if (!await hasMlton()) return;
     const built = await new Deno.Command("mlton", {
       args: ["-output", "app", "project.mlb"],
-      cwd: join(directory, "out"), stderr: "piped",
+      cwd: join(directory, "out"),
+      stderr: "piped",
     }).output();
     assert(built.success, new TextDecoder().decode(built.stderr));
-    const native = await new Deno.Command(join(directory, "out", "app"), { stdout: "piped" }).output();
+    const native = await new Deno.Command(join(directory, "out", "app"), { stdout: "piped" })
+      .output();
     const run = await wm(["run", "app.wm"], directory);
     assertEquals(run.code, 0, run.stderr);
     assertEquals(new TextDecoder().decode(native.stdout), run.stdout);
 
     // An explicit open has precedence over the default map and remains private.
-    await Deno.writeTextFile(join(directory, "explicit.wm"),
-      'from "./own.wm" import *;\nlet answer = map(2);\nlet own: Option = Some("own");\nlet _ = print(answer, own);\n');
+    await Deno.writeTextFile(
+      join(directory, "explicit.wm"),
+      'from "./own.wm" import *;\nlet answer = map(2);\nlet own: Option = Some("own");\nlet _ = print(answer, own);\n',
+    );
     const explicit = await wm(["sml", "explicit.wm", "explicit"], directory);
     assertEquals(explicit.code, 0, explicit.stderr);
 
-    await Deno.writeTextFile(join(directory, "leak.wm"),
-      'from "./app.wm" import * as App;\nlet leaked = App.isEmpty([]);\n');
+    await Deno.writeTextFile(
+      join(directory, "leak.wm"),
+      'from "./app.wm" import * as App;\nlet leaked = App.isEmpty([]);\n',
+    );
     const leak = await wm(["sml", "leak.wm", "leak"], directory);
     assertEquals(leak.code, 1);
     assertStringIncludes(leak.stderr, "unbound");
@@ -147,21 +166,28 @@ let _ = print(ownRank(Less));
 Deno.test("wm sml translates Result's std helpers, and Result.debug stops through its MLton adapter", async () => {
   const directory = await Deno.makeTempDir({ prefix: "wm-sml-result-" });
   try {
-    await Deno.writeTextFile(join(directory, "app.wm"), `
+    await Deno.writeTextFile(
+      join(directory, "app.wm"),
+      `
 let parsed = ["1", "2"] :> Result.traverse(Int32.fromString);
 let first: Int32.Int = Ok(4) :> Result.debug;
 let _ = print(parsed, Result.map3(Ok(1), Ok(2), Ok(3), (a, b, c) => { a + b + c }), first);
 let failed: Int32.Int = Err("boom") :> Result.debug;
-`);
+`,
+    );
     const translated = await wm(["sml", "app.wm", "out"], directory);
     assertEquals(translated.code, 0, translated.stderr);
     if (!await hasMlton()) return;
     const built = await new Deno.Command("mlton", {
       args: ["-output", "app", "project.mlb"],
-      cwd: join(directory, "out"), stderr: "piped",
+      cwd: join(directory, "out"),
+      stderr: "piped",
     }).output();
     assert(built.success, new TextDecoder().decode(built.stderr));
-    const native = await new Deno.Command(join(directory, "out", "app"), { stdout: "piped", stderr: "piped" })
+    const native = await new Deno.Command(join(directory, "out", "app"), {
+      stdout: "piped",
+      stderr: "piped",
+    })
       .output();
     assertEquals(native.code, 1);
     assertEquals(new TextDecoder().decode(native.stdout), "(Ok([1, 2]), Ok(6), 4)\n");
@@ -174,7 +200,9 @@ let failed: Int32.Int = Err("boom") :> Result.debug;
 Deno.test("wm sml selectively re-exports values and generic types through facades", async () => {
   const directory = await Deno.makeTempDir({ prefix: "wm-sml-exports-" });
   try {
-    await Deno.writeTextFile(join(directory, "base.wm"), `
+    await Deno.writeTextFile(
+      join(directory, "base.wm"),
+      `
 type Shape = | Circle<Int32.Int>;
 type Items<a> = List<a>;
 record Pair<a> = { first: a, second: a };
@@ -182,14 +210,23 @@ let identity = (x) => { x };
 let make = (n: Int32.Int) => { Circle(n) };
 let hidden = 99;
 let _ = print("loaded");
-`);
-    await Deno.writeTextFile(join(directory, "facade.wm"), `
+`,
+    );
+    await Deno.writeTextFile(
+      join(directory, "facade.wm"),
+      `
 export from "./base.wm" import { Shape as Figure, Items, Pair as Duo, identity as id, identity as Some, make };
-`);
-    await Deno.writeTextFile(join(directory, "forward.wm"), `
+`,
+    );
+    await Deno.writeTextFile(
+      join(directory, "forward.wm"),
+      `
 export from "./facade.wm" import { Figure, Items, Duo, id, Some as apply, make };
-`);
-    await Deno.writeTextFile(join(directory, "app.wm"), `
+`,
+    );
+    await Deno.writeTextFile(
+      join(directory, "app.wm"),
+      `
 from "./forward.wm" import * as F;
 from "./base.wm" import * as B;
 let shape: F.Figure = F.make(4);
@@ -197,21 +234,27 @@ let values: F.Items<Int32.Int> = [F.id(1), F.id(2)];
 let pair: F.Duo<Int32.Int> = F.Duo { first = 3, second = 5 };
 let n = match(shape) { B.Circle(n) => { n } };
 let _ = print(n, values, pair.first, pair.second, F.apply("ok"));
-`);
+`,
+    );
     const translated = await wm(["sml", "app.wm", "out"], directory);
     assertEquals(translated.code, 0, translated.stderr);
     if (await hasMlton()) {
       const built = await new Deno.Command("mlton", {
-        args: ["-output", "app", "project.mlb"], cwd: join(directory, "out"), stderr: "piped",
+        args: ["-output", "app", "project.mlb"],
+        cwd: join(directory, "out"),
+        stderr: "piped",
       }).output();
       assert(built.success, new TextDecoder().decode(built.stderr));
-      const native = await new Deno.Command(join(directory, "out", "app"), { stdout: "piped" }).output();
+      const native = await new Deno.Command(join(directory, "out", "app"), { stdout: "piped" })
+        .output();
       const run = await wm(["run", "app.wm"], directory);
       assertEquals(run.code, 0, run.stderr);
       assertEquals(new TextDecoder().decode(native.stdout), run.stdout);
     }
-    await Deno.writeTextFile(join(directory, "leak.wm"),
-      'from "./facade.wm" import * as F;\nlet leaked = F.hidden;\n');
+    await Deno.writeTextFile(
+      join(directory, "leak.wm"),
+      'from "./facade.wm" import * as F;\nlet leaked = F.hidden;\n',
+    );
     const leak = await wm(["sml", "leak.wm", "leak"], directory);
     assertEquals(leak.code, 1);
     assertStringIncludes(leak.stderr, "unbound");
@@ -223,24 +266,39 @@ let _ = print(n, values, pair.first, pair.second, F.apply("ok"));
 Deno.test("wm sml preserves selective constructor aliases in patterns and lexical scopes", async () => {
   const directory = await Deno.makeTempDir({ prefix: "wm-sml-constructors-" });
   try {
-    await Deno.writeTextFile(join(directory, "base.wm"), `
+    await Deno.writeTextFile(
+      join(directory, "base.wm"),
+      `
 type Shape = | Circle<Int32.Int> | Empty;
 type Maybe<a> = | Missing | Present<a>;
 type Token = | Token<Int32.Int>;
 let make = () => { Circle(7) };
 let _ = print("initialized");
-`);
-    await Deno.writeTextFile(join(directory, "facade.wm"), `
+`,
+    );
+    await Deno.writeTextFile(
+      join(directory, "facade.wm"),
+      `
 export from "./base.wm" import { Shape as Figure, Circle as Ring, Empty as Blank, Maybe, Missing as Nothing, Present as Some, Token as Ticket, make };
-`);
-    await Deno.writeTextFile(join(directory, "forward.wm"), `
+`,
+    );
+    await Deno.writeTextFile(
+      join(directory, "forward.wm"),
+      `
 export from "./facade.wm" import { Figure, Ring as Loop, Blank, Maybe, Nothing, Some, Ticket, make };
-`);
-    await Deno.writeTextFile(join(directory, "outer.wm"),
-      'export from "./forward.wm" import * as API;\n');
-    await Deno.writeTextFile(join(directory, "selected.wm"),
-      'export from "./outer.wm" import { API as Shapes };\n');
-    await Deno.writeTextFile(join(directory, "app.wm"), `
+`,
+    );
+    await Deno.writeTextFile(
+      join(directory, "outer.wm"),
+      'export from "./forward.wm" import * as API;\n',
+    );
+    await Deno.writeTextFile(
+      join(directory, "selected.wm"),
+      'export from "./outer.wm" import { API as Shapes };\n',
+    );
+    await Deno.writeTextFile(
+      join(directory, "app.wm"),
+      `
 from "./selected.wm" import { Shapes as Q };
 from "./forward.wm" import { Loop as Selected };
 let read = (value: Q.Figure) => { match(value) { Q.Loop(n) => { n }, Q.Blank => { 0 } } };
@@ -255,30 +313,39 @@ let stamped = match(ticket) { Q.Ticket(n) => { n } };
 type Local = | Selected<String>;
 let local = match(Selected("own")) { Selected(s) => { s } };
 let _ = print(read(Q.make()), read(build(11)), read(Q.Blank), original, payload, absent, stamped, local);
-`);
+`,
+    );
     const translated = await wm(["sml", "app.wm", "out"], directory);
     assertEquals(translated.code, 0, translated.stderr);
     if (await hasMlton()) {
       const built = await new Deno.Command("mlton", {
-        args: ["-output", "app", "project.mlb"], cwd: join(directory, "out"), stderr: "piped",
+        args: ["-output", "app", "project.mlb"],
+        cwd: join(directory, "out"),
+        stderr: "piped",
       }).output();
       assert(built.success, new TextDecoder().decode(built.stderr));
-      const native = await new Deno.Command(join(directory, "out", "app"), { stdout: "piped" }).output();
+      const native = await new Deno.Command(join(directory, "out", "app"), { stdout: "piped" })
+        .output();
       const run = await wm(["run", "app.wm"], directory);
       assertEquals(run.code, 0, run.stderr);
       assertEquals(new TextDecoder().decode(native.stdout), run.stdout);
     }
-    await Deno.writeTextFile(join(directory, "other.wm"), 'type Shape = | Circle<Int32.Int>;\n');
-    await Deno.writeTextFile(join(directory, "wrong.wm"), `
+    await Deno.writeTextFile(join(directory, "other.wm"), "type Shape = | Circle<Int32.Int>;\n");
+    await Deno.writeTextFile(
+      join(directory, "wrong.wm"),
+      `
 from "./selected.wm" import { Shapes as Q };
 from "./other.wm" import * as Other;
 let wrong: Q.Figure = Other.Circle(1);
-`);
+`,
+    );
     const wrong = await wm(["sml", "wrong.wm", "wrong"], directory);
     assertEquals(wrong.code, 1);
     assertStringIncludes(wrong.stderr, "expected");
-    await Deno.writeTextFile(join(directory, "leak.wm"),
-      'from "./forward.wm" import * as F;\nlet leaked = F.Circle(1);\n');
+    await Deno.writeTextFile(
+      join(directory, "leak.wm"),
+      'from "./forward.wm" import * as F;\nlet leaked = F.Circle(1);\n',
+    );
     const leak = await wm(["sml", "leak.wm", "leak"], directory);
     assertEquals(leak.code, 1);
     assertStringIncludes(leak.stderr, "unbound");
@@ -290,26 +357,36 @@ let wrong: Q.Figure = Other.Circle(1);
 Deno.test("wm sml forwards named record layouts and ordered updates through facades", async () => {
   const directory = await Deno.makeTempDir({ prefix: "wm-sml-record-facades-" });
   try {
-    await Deno.writeTextFile(join(directory, "hidden.wm"),
-      'type Hidden = | Hidden<Int32.Int>;\n');
-    await Deno.writeTextFile(join(directory, "base.wm"), `
+    await Deno.writeTextFile(join(directory, "hidden.wm"), "type Hidden = | Hidden<Int32.Int>;\n");
+    await Deno.writeTextFile(
+      join(directory, "base.wm"),
+      `
 from "./hidden.wm" import * as H;
 record Pair<a> = { left: a, right: a };
 record Box<a> = { value: a, secret: H.Hidden };
 let secret = () => { H.Hidden(7) };
 let read = (box: Box<Int32.Int>) => { match(box.secret) { H.Hidden(n) => { n + box.value } } };
 let _ = print("initialized");
-`);
-    await Deno.writeTextFile(join(directory, "facade.wm"),
-      'export from "./base.wm" import { Pair as Duo, Box as Wrapped, secret, read };\n');
-    await Deno.writeTextFile(join(directory, "forward.wm"),
-      'export from "./facade.wm" import { Duo as Pair, Wrapped as Box, secret, read };\n');
-    await Deno.writeTextFile(join(directory, "outer.wm"),
-      'export from "./forward.wm" import * as Records;\n');
+`,
+    );
+    await Deno.writeTextFile(
+      join(directory, "facade.wm"),
+      'export from "./base.wm" import { Pair as Duo, Box as Wrapped, secret, read };\n',
+    );
+    await Deno.writeTextFile(
+      join(directory, "forward.wm"),
+      'export from "./facade.wm" import { Duo as Pair, Wrapped as Box, secret, read };\n',
+    );
+    await Deno.writeTextFile(
+      join(directory, "outer.wm"),
+      'export from "./forward.wm" import * as Records;\n',
+    );
     const header = `from "./outer.wm" import { Records as R };
 from "./forward.wm" import { Pair as LocalPair };
 `;
-    await Deno.writeTextFile(join(directory, "app.wm"), header + `
+    await Deno.writeTextFile(
+      join(directory, "app.wm"),
+      header + `
 let mark = (tag: String, value) => { print(tag); value };
 let seed = (tag: String) => { print(tag); R.Pair { left = 1, right = 2 } };
 let pair = R.Pair { left = mark("A", 10), ..seed("B"), right = mark("C", 20), ..seed("D") };
@@ -320,24 +397,30 @@ let first = LocalPair { left = 3, right = 4 };
 record LocalPair = { tag: Bool };
 let own = LocalPair { tag = true };
 let _ = print(pair.left, pair.right, R.read(box), R.read(changed), text.left, first.left, own.tag);
-`);
+`,
+    );
     const translated = await wm(["sml", "app.wm", "out"], directory);
     assertEquals(translated.code, 0, translated.stderr);
     if (await hasMlton()) {
       const built = await new Deno.Command("mlton", {
-        args: ["-output", "app", "project.mlb"], cwd: join(directory, "out"), stderr: "piped",
+        args: ["-output", "app", "project.mlb"],
+        cwd: join(directory, "out"),
+        stderr: "piped",
       }).output();
       assert(built.success, new TextDecoder().decode(built.stderr));
-      const native = await new Deno.Command(join(directory, "out", "app"), { stdout: "piped" }).output();
+      const native = await new Deno.Command(join(directory, "out", "app"), { stdout: "piped" })
+        .output();
       const run = await wm(["run", "app.wm"], directory);
       assertEquals(run.code, 0, run.stderr);
       assertEquals(new TextDecoder().decode(native.stdout), run.stdout);
     }
-    for (const source of [
-      'let wrong = R.Pair { left = "wrong", ..R.Pair { left = 1, right = 2 } };',
-      'let wrong = R.Box { value = 1, secret = 2 };',
-      'from "./facade.wm" import * as F;\nlet leaked = F.Pair { left = 1, right = 2 };',
-    ]) {
+    for (
+      const source of [
+        'let wrong = R.Pair { left = "wrong", ..R.Pair { left = 1, right = 2 } };',
+        "let wrong = R.Box { value = 1, secret = 2 };",
+        'from "./facade.wm" import * as F;\nlet leaked = F.Pair { left = 1, right = 2 };',
+      ]
+    ) {
       await Deno.writeTextFile(join(directory, "bad.wm"), header + source + "\n");
       const rejected = await wm(["sml", "bad.wm", "bad"], directory);
       assertEquals(rejected.code, 1, source);
@@ -365,7 +448,9 @@ Deno.test("wm sml's native translator, built once into the cache, writes what th
     const first = await run(["native"], {});
     assertEquals(first.code, 0, first.stderr);
     assertStringIncludes(first.stderr, "building the native SubsetML translator");
-    const cached = [...Deno.readDirSync(join(directory, "cache", "workman", "subsetml"))].map((entry) => entry.name);
+    const cached = [...Deno.readDirSync(join(directory, "cache", "workman", "subsetml"))].map((
+      entry,
+    ) => entry.name);
     assertEquals(cached.length, 1);
     assert(cached[0].startsWith("subsetml-"), cached[0]);
     const second = await run(["again"], {});
@@ -390,4 +475,98 @@ Deno.test("the bundled translator imports nothing by an absolute file URL", asyn
   const bundle = await Deno.readTextFile(new URL("../src/generated/subsetml.js", import.meta.url));
   assertEquals(bundle.includes('import("file://'), false);
   assertEquals(bundle.includes('import("../../subml-basis/js/subset_host.js")'), true);
+});
+
+Deno.test("wm sml retains the explicit 32-bit collection surface without wide wrappers", async () => {
+  if (!await hasMlton()) return;
+  const directory = await Deno.makeTempDir({ prefix: "wm-sml-counts32-" });
+  try {
+    const source = `let values = List.tabulate32(3, i => i + 1) :> Result.debug;
+let count: Int32 = List.length32(values);
+let (left, right) = List.splitAt32(values, 1) :> Result.debug;
+let bytes = String.substring32("abcd", 1, 2) :> Result.debug;
+let padded = StringCvt.padLeft32(bytes, 4, '0') :> Result.debug;
+let _ = print(count, left, right, padded);`;
+    await Deno.writeTextFile(join(directory, "app.wm"), source);
+    const translated = await wm(["sml", "app.wm", "out", "--mlton"], directory);
+    assertEquals(translated.code, 0, translated.stderr);
+    const native = await new Deno.Command(join(directory, "out", "app"), { stdout: "piped" })
+      .output();
+    const js = await wm(["run", "app.wm"], directory);
+    assertEquals(js.code, 0, js.stderr);
+    assertEquals(new TextDecoder().decode(native.stdout), js.stdout);
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
+Deno.test("wm sml supports arithmetic and monadic carriers with different record shapes", async () => {
+  if (!await hasMlton()) return;
+  const directory = await Deno.makeTempDir({ prefix: "wm-sml-arithmetic-" });
+  try {
+    await Deno.writeTextFile(
+      join(directory, "app.wm"),
+      `
+let sum = [1, 2, 3] :> List.sumWith(Int32);
+let product = [2, 3, 4] :> List.productWith(Int32.math);
+let mapped = Ok(sum) :> Monad.map(Result, n => n + 1) :> Result.debug;
+let _ = print(sum, product, mapped);
+`,
+    );
+    const translated = await wm(["sml", "app.wm", "out", "--mlton"], directory);
+    assertEquals(translated.code, 0, translated.stderr);
+    const native = await new Deno.Command(join(directory, "out", "app"), { stdout: "piped" })
+      .output();
+    const js = await wm(["run", "app.wm"], directory);
+    assertEquals(js.code, 0, js.stderr);
+    assertEquals(new TextDecoder().decode(native.stdout), js.stdout);
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
+Deno.test("std deferred generation short circuits on native SML and JS", async () => {
+  if (!await hasMlton()) return;
+  const directory = await Deno.makeTempDir({ prefix: "wm-sml-generation-" });
+  try {
+    await Deno.writeTextFile(
+      join(directory, "app.wm"),
+      `
+from "std/primitive.wm" import * as P;
+from "std/list.wm" import { generate, collect };
+let filtered = [1, 2, 3, 4] :> List.generate(Result, n => Ok(n % 2 == 0)) :> List.collect(Primitive.filter) :> Result.debug;
+let mapped = [1, 2] :> generate(Result, n => Ok(Int32.toString(n))) :> collect(P.map) :> Result.debug;
+let flattened = [1, 2] :> List.generate(Result, n => Ok([n, n])) :> List.collect(Primitive.concatMap) :> Result.debug;
+let selected = [1, 2, 3] :> List.generate(Result,
+  n => Ok(if (n == 2) { None } else { Some(n) })) :> List.collect(Primitive.filterMap) :> Result.debug;
+let found = [1, 2, 3] :> List.generate(Result, n => {
+  if (n == 3) { Panic("check after match") } else { Ok(n == 2) }
+}) :> List.collect(Primitive.find);
+let failed = [1, 2, 3] :> List.generate(Result, n => {
+  if (n == 1) { Ok(false) } else {
+    if (n == 2) { Err("stop") } else { Panic("check after error") }
+  }
+}) :> List.collect(Primitive.find);
+let long = List.tabulate32(200000, i => i) :> Result.debug
+  :> List.generate(Result, _ => Ok(false)) :> List.collect(Primitive.find);
+let total = [3, 4, 5] :> List.generateState(Result, (0: Int32), Int32.checkedAdd)
+  :> List.collect(Primitive.lastOr(0)) :> Result.debug;
+let overflow = [Int32.maximum, 1, 2] :> List.generateState(Result, (0: Int32), (n, sum) => {
+  if (n == 2) { Panic("stateful check after overflow") } else { Int32.checkedAdd(n, sum) }
+}) :> List.collect(Primitive.lastOr(0));
+let _ = print(filtered, mapped, flattened, selected, found == Ok(Some(2)), failed == Err("stop"), long == Ok(None), total, overflow == Err(Int32.Overflow));
+`,
+    );
+    const translated = await wm(["sml", "app.wm", "out", "--mlton"], directory);
+    assertEquals(translated.code, 0, translated.stderr);
+    const native = await new Deno.Command(join(directory, "out", "app"), { stdout: "piped" })
+      .output();
+    assertEquals(native.code, 0);
+    const js = await wm(["run", "app.wm"], directory);
+    assertEquals(js.code, 0, js.stderr);
+    assertEquals(js.stdout, "([2, 4], [1, 2], [1, 1, 2, 2], [1, 3], true, true, true, 12, true)\n");
+    assertEquals(new TextDecoder().decode(native.stdout), js.stdout);
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
 });

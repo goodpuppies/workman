@@ -78,7 +78,7 @@ let tests = [
     let found = releaseCandidates(stableReleases)([release("v2.0.0", false, [unknown]), release("v1.0.0", false, [])]);
     checks([
       assertEqual(versions(found), ["2.0.0", "1.0.0"]),
-      assertEqual(List.map(found, (c: Candidate) => { List.length(c.checksums) }), [0, 0])
+      assertEqual(List.map(found, (c: Candidate) => { List.length32(c.checksums) }), [0, 0])
     ])
   }),
   test("a release whose ref finds nothing is not a candidate", () => {

@@ -132,11 +132,11 @@ let current = (paths: Paths, root) => {
 
 -- "12.won" -> Some(12)
 let generationNumber = (name) => {
-  match(UnicodeText.size(name)) {
+  match(UnicodeText.size32(name)) {
     Ok(length) => {
       if (length <= (4: Int32) || !(UnicodeText.isSuffix(name, ".won") :> Result.getOr(false))) { None }
       else {
-        let stem = UnicodeText.substring(name, (0: Int32), length - (4: Int32)) :> Result.getOr("");
+        let stem = UnicodeText.substring32(name, (0: Int32), length - (4: Int32)) :> Result.getOr("");
         let number = parseIntOr(stem, 0 - 1);
         if (number > 0) { Some(number) } else { None }
       }
@@ -311,7 +311,7 @@ let changedFrom = (map) => {
 -- Runs a plan: in-process when the root is writable, otherwise as the applier
 -- program under PAKMAN_SUDO (default `sudo`), so only that step is privileged.
 let applyPlan = (paths: Paths, plan: Plan) => {
-  let counts = (List.length(plan.add), List.length(plan.remove));
+  let counts = (List.length32(plan.add), List.length32(plan.remove));
   let planFile = paths.tmp ++ "/apply-" ++ Text.of(nowSeconds()) ++ ".won";
   let applier = paths.state ++ "/programs/_apply.js";
   let elevate = via Task (program) => {

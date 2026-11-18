@@ -56,20 +56,20 @@ let fromUtf8 = (bytes) => {
 let explode = (value) => { SubsetResult.andThen(toUtf8(value), SubsetUtf8.decode) };
 let implode = (scalars) => { SubsetResult.andThen(SubsetUtf8.encode(scalars), fromUtf8) };
 let str = (scalar) => { implode([scalar]) };
-let size = (value) => { SubsetResult.map(explode(value), SubsetList.length) };
+let size32 = (value) => { SubsetResult.map(explode(value), SubsetList.length32) };
 
 // Text indices and counts are Unicode scalars, never bytes or UTF-16 units.
-let extract = (value, start, count) => {
+let extract32 = (value, start, count) => {
   SubsetResult.andThen(
     SubsetResult.mapErr(explode(value), UnicodeError),
     (scalars) => {
       SubsetResult.andThen(
-        SubsetResult.mapErr(SubsetList.drop(scalars, start), (error) => { InvalidIndex }),
+        SubsetResult.mapErr(SubsetList.drop32(scalars, start), (error) => { InvalidIndex }),
         (rest) => {
           let selected = match(count) {
             SubsetOptionValue.None => { SubsetResult.Ok(rest) },
-            SubsetOptionValue.Some(size) => {
-              SubsetResult.mapErr(SubsetList.take(rest, size), (error) => { InvalidIndex })
+            SubsetOptionValue.Some(size32) => {
+              SubsetResult.mapErr(SubsetList.take32(rest, size32), (error) => { InvalidIndex })
             }
           };
           SubsetResult.andThen(selected, (chosen) => { SubsetResult.mapErr(implode(chosen), UnicodeError) })
@@ -78,7 +78,7 @@ let extract = (value, start, count) => {
     }
   )
 };
-let substring = (value, start, count) => { extract(value, start, SubsetOptionValue.Some(count)) };
+let substring32 = (value, start, count) => { extract32(value, start, SubsetOptionValue.Some(count)) };
 
 let map = (value, transform) => {
   SubsetResult.andThen(explode(value), (scalars) => { implode(SubsetList.map(scalars, transform)) })
@@ -128,7 +128,7 @@ let compare = (left, right) => {
   )
 };
 
-// Valid UTF-8 substring matches cannot start or end inside a scalar encoding.
+// Valid UTF-8 substring32 matches cannot start or end inside a scalar encoding.
 let isPrefix = (value, prefix) => {
   SubsetResult.andThen(
     toUtf8(value),

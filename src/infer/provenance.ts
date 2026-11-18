@@ -39,6 +39,7 @@ export type ConstraintOrigin = {
 };
 
 export type EvidenceOrigin = ConstraintOrigin & {
+  signature?: { name: string; type: Ty };
   primary?: boolean;
   expectedCallTupleShape?: number;
   actualCallTupleShape?: number;
@@ -47,6 +48,8 @@ export type EvidenceOrigin = ConstraintOrigin & {
 
 export type TypeSource = {
   origin?: ConstraintOrigin;
+  /** Authored application that produces this value, including its concrete components. */
+  applicationOrigin?: ConstraintOrigin;
   definition?: ConstraintOrigin;
   notes?: ConstraintOrigin[];
   type?: Ty;
@@ -134,6 +137,7 @@ function mapSourceOrigins(
   Object.assign(mapped, source, {
     document,
     origin: source.origin ? map(source.origin) : undefined,
+    applicationOrigin: source.applicationOrigin ? map(source.applicationOrigin) : undefined,
     definition: source.definition ? map(source.definition) : undefined,
     notes: source.notes?.map(map),
     fnParams: source.fnParams?.map((item) => mapSourceOrigins(item, map, seen, document)),
@@ -306,6 +310,20 @@ function constraintFailure(
       origin: anchorFromOrigin(item),
     });
     writer.addEdge({ from: claimId, to: constraintId, role: "supports" });
+    if (item.signature) {
+      const signatureId = writer.nextId("cl");
+      writer.add({
+        kind: "claim",
+        id: signatureId,
+        claim: {
+          kind: "has-type",
+          subject: `${item.signature.name} signature`,
+          type: writer.snapshotType(item.signature.type),
+        },
+        origin: anchorFromOrigin(item),
+      });
+      writer.addEdge({ from: signatureId, to: constraintId, role: "supports" });
+    }
   }
   bindings.forEach(({ variable, target, path }, index) => {
     (variable as { instance?: Ty }).instance = instances[index];
@@ -790,9 +808,7 @@ export function rememberExpressionSource(
       const callee = expressionSources.get(pipeInvocationPlan(expr).callee);
       const result = concreteCallResultSource(callee);
       expressionSources.set(expr, {
-        ...base,
-        origin: sourceForExpr(expr.right, "pipe stage result").origin,
-        derivedFrom: result ? [result] : undefined,
+        ...applicationResultSource(expr, type, provenance, result),
       });
       return;
     }
@@ -862,6 +878,50 @@ function concreteCallResultSource(callee: TypeSource | undefined): TypeSource | 
 
 export function fnSource(params: TypeSource[], result?: TypeSource): TypeSource {
   return { fnParams: params, fnResult: result };
+}
+
+export function applicationResultSource(
+  expr: Expr,
+  type: Ty,
+  provenance: TypeProvenance,
+  definition?: TypeSource,
+): TypeSource {
+  const stage = expr.kind === "Pipe" ? pipeInvocationPlan(expr).callee : expr;
+  const name = expr.kind === "Pipe" && stage.kind === "Var"
+    ? `${stage.name} call result`
+    : expressionSourceMessage(expr);
+  const origin = sourceForExpr(stage, name).origin;
+  const seen = new Set<Ty>();
+  const component = (value: Ty, evidence: TypeSource | undefined): TypeSource => {
+    const resolved = prune(value);
+    const base: TypeSource = {
+      type: value,
+      provenance,
+      derivedFrom: evidence ? [evidence] : undefined,
+    };
+    // A generic component forwards a caller's type. A later annotation must not
+    // retroactively make the operation appear to introduce that concrete type.
+    if (resolved.tag === "var" || seen.has(resolved)) return base;
+    seen.add(resolved);
+    const child = (type: Ty, segment: DiffPathSegment) =>
+      component(type, sourceAtPath(evidence, [segment]));
+    const result: TypeSource = {
+      ...base,
+      origin,
+      applicationOrigin: origin,
+      namedArgs: resolved.tag === "named"
+        ? resolved.args.map((arg, index) =>
+          child(arg, { kind: "named-arg", index, typeName: resolved.name })
+        )
+        : undefined,
+      tupleItems: resolved.tag === "tuple"
+        ? resolved.items.map((item, index) => child(item, { kind: "tuple-item", index }))
+        : undefined,
+    };
+    seen.delete(resolved);
+    return result;
+  };
+  return { ...component(type, definition), origin };
 }
 
 export function tupleSource(items: TypeSource[]): TypeSource {
@@ -948,9 +1008,9 @@ function primaryOriginForSource(
 ): ConstraintOrigin | undefined {
   let current = source;
   let functionDefinition: ConstraintOrigin | undefined;
-  // A unary call source is the argument expression itself. Keep the call expression as the
-  // primary collision site; only descend when a packed multi-argument tuple identifies one slot.
-  if (current?.origin) return undefined;
+  // A unary call source already identifies the offending argument. Packed multi-argument
+  // sources have no origin until the conflict path selects an individual slot.
+  if (current?.origin) return current.origin;
   for (const [index, segment] of path.entries()) {
     current = current ? childSource(current, segment) : undefined;
     if (current?.origin) {
@@ -1069,14 +1129,19 @@ function childTypeSource(source: TypeSource, segment: DiffPathSegment): TypeSour
   if (!source.type || !source.provenance) return undefined;
   const type = childType(source.type, segment);
   if (!type) return undefined;
+  const inferredOrigin = commitmentOriginForType(type, source.provenance) ??
+    source.derivedFrom?.map(originForSource).find((origin) => !!origin);
   return {
     type,
     provenance: source.provenance,
+    applicationOrigin: source.applicationOrigin,
     // A structural child such as the first parameter of an inferred callback may not contain a
     // type variable of its own. In that case its shape still came from the parent variable's
     // commitment (for example `render(None, ...)` committing a callback parameter to Option).
-    origin: commitmentOriginForType(type, source.provenance) ??
-      source.derivedFrom?.map(originForSource).find((origin) => !!origin),
+    origin: source.applicationOrigin ?? inferredOrigin,
+    derivedFrom: source.applicationOrigin && inferredOrigin
+      ? [{ origin: inferredOrigin }]
+      : undefined,
   };
 }
 

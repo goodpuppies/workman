@@ -4,20 +4,10 @@ const checked = (value) => {
   }
   return value;
 };
-export const fromNumber = (value) => {
-  if (!Number.isSafeInteger(value)) {
-    throw new RangeError("Int64.fromNumber requires an exact integer");
-  }
-  return checked(BigInt(value));
-};
-export const toNumber = (value) => {
-  const result = Number(value);
-  if (!Number.isSafeInteger(result)) {
-    throw new RangeError("Int64 value is not exactly representable as Number");
-  }
-  return result;
-};
-export const fromString = (value) => checked(BigInt(value));
+// WM validates conversion input and reports typed Result errors before calling these primitives.
+export const fromNumber = (value) => checked(BigInt(value));
+export const toNumber = (value) => Number(value);
+export const isExactReal = (value) => BigInt(Number(value)) === value;
 export const toString = (value) => value.toString();
 const fail = (name, message) => {
   const error = new Error(message);
@@ -28,7 +18,9 @@ const fail = (name, message) => {
 export const div = (left, right) => {
   if (right === 0n) return fail("Div", "Int64 division by zero");
   const quotient = left / right;
-  return checked((left % right !== 0n) && ((left < 0n) !== (right < 0n)) ? quotient - 1n : quotient);
+  return checked(
+    (left % right !== 0n) && ((left < 0n) !== (right < 0n)) ? quotient - 1n : quotient,
+  );
 };
 export const mod = (left, right) => {
   if (right === 0n) return fail("Div", "Int64 remainder by zero");

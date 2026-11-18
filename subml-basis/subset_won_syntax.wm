@@ -81,8 +81,8 @@ let hexByte = (c) => {
   let rec split = (n, hi) => { if (n < 16) { (hi, n) } else { split(n - 16, hi + 1) } };
   let (hi, lo) = split(code, 0);
   native([
-    SubsetResult.getOr(SubsetList.at(hexDigits, hi), '0'),
-    SubsetResult.getOr(SubsetList.at(hexDigits, lo), '0')
+    SubsetResult.getOr(SubsetList.at32(hexDigits, hi), '0'),
+    SubsetResult.getOr(SubsetList.at32(hexDigits, lo), '0')
   ])
 };
 

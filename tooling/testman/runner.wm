@@ -96,7 +96,7 @@ let rec runSuitesFrom = (filter, suites: List<Suite>, done: List<Outcome>) => {
       match(selected(filter, first)) {
         [] => { runSuitesFrom(filter, rest, done) },
         Var(tests) => {
-          print(gray("running " ++ plural(List.length(tests), "test") ++ " from " ++ first.file));
+          print(gray("running " ++ plural(List.length32(tests), "test") ++ " from " ++ first.file));
           runAll(first.file, tests, done)
             :> Task.andThen((more) => { runSuitesFrom(filter, rest, more) })
         }
@@ -117,8 +117,8 @@ let failureOf = (o: Outcome) => {
 -- Prints the summary and returns the number of failed tests.
 let report = (outcomes: List<Outcome>, ms) => {
   let failures = List.filterMap(outcomes, failureOf);
-  let failed = List.length(failures);
-  let passed = List.length(outcomes) - failed;
+  let failed = List.length32(failures);
+  let passed = List.length32(outcomes) - failed;
   match(failures) {
     [] => { void },
     _ => {

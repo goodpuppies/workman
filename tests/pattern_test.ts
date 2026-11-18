@@ -161,6 +161,90 @@ Deno.test("warns for basic redundant match arms", async () => {
   );
 });
 
+Deno.test("tuple Result coverage warns for both a shadowed error arm and the final fallback", async () => {
+  const source = `let combine = match(left, right) => {
+  (Ok(a), Ok(b)) => 0,
+  (Err(error), _) => 1,
+  (_, Err(error)) => 2,
+  (Err(a), Err(b)) => 3,
+  _ => 4
+};`;
+  const result = await checkSource(source);
+  const redundant = result.diagnostics.filter((diagnostic) =>
+    diagnostic.code === "pattern.redundant-arm"
+  );
+  assertEquals(
+    redundant.map((diagnostic) => {
+      if (diagnostic.primary.kind !== "source") throw new Error("missing redundant arm location");
+      return source.slice(diagnostic.primary.span.start, diagnostic.primary.span.end);
+    }),
+    ["(Err(a), Err(b))", "_"],
+  );
+  assertEquals(result.warnings.some((warning) => warning.includes("non-exhaustive")), false);
+});
+
+Deno.test("an error-pair arm before the broader Result cases remains reachable", async () => {
+  const result = await checkSource(`let combine = match(left, right) => {
+  (Ok(a), Ok(b)) => 0,
+  (Err(a), Err(b)) => 1,
+  (Err(error), _) => 2,
+  (_, Err(error)) => 3,
+  _ => 4
+};`);
+  assertEquals(result.warnings, ["redundant match arm: _"]);
+});
+
+Deno.test("wildcard rows join specific rows across Bool, nested, record and recursive columns", async () => {
+  for (
+    const source of [
+      `let f = match(a, b) => {
+      (_, true) => 1, (true, false) => 2, (false, false) => 3, _ => 4
+    };`,
+      `type Box<T> = | Box<T>;
+    let f = match(a, b) => {
+      (Box(true), _) => 1, (_, true) => 2, (Box(false), false) => 3, _ => 4
+    };`,
+      `record Flag = { value: Bool };
+    let f = (a: Flag, b: Bool) => match(a, b) {
+      (.{value = true}, _) => 1, (_, true) => 2, (.{value = false}, false) => 3, _ => 4
+    };`,
+      `type Tree = | Leaf<Bool> | Branch<Tree, Tree>;
+    let f = match(a, b) => {
+      (Leaf(true), _) => 1, (_, true) => 2, (Leaf(false), false) => 3,
+      (Branch(_, _), false) => 4, _ => 5
+    };`,
+    ]
+  ) {
+    const result = await checkSource(source);
+    assertEquals(result.warnings, ["redundant match arm: _"], source);
+  }
+});
+
+Deno.test("mixed wildcard rows do not hide gaps in tuple coverage", async () => {
+  for (
+    const source of [
+      "let f = match(a, b) => { (_, true) => 1, (true, false) => 2, _ => 3 };",
+      "let f = match(a, b) => { (0, _) => 1, (_, true) => 2, _ => 3 };",
+      `type Box<T> = | Box<T>;
+    let f = match(a, b) => { (Box(true), _) => 1, (_, true) => 2, _ => 3 };`,
+    ]
+  ) {
+    assertEquals((await checkSource(source)).warnings, [], source);
+    const incomplete = source.replace(/, _ => 3(?=\s*})/, "");
+    const result = await checkSource(incomplete);
+    assertEquals(
+      result.warnings.some((warning) => warning.includes("non-exhaustive")),
+      true,
+      incomplete,
+    );
+    assertEquals(
+      result.warnings.some((warning) => warning.includes("redundant")),
+      false,
+      incomplete,
+    );
+  }
+});
+
 Deno.test("supports constructor and literal let patterns", async () => {
   await checkSource(`
     type Option<T> = None | Some<T>;

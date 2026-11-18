@@ -91,7 +91,7 @@ let read = (reader: Reader.Reader, pos: Source.Position, markId) => {
           }
         };
         let item = Token.Trivia(kind, Reader.textBetween(reader, pos, endPos), Source.Span(pos, endPos), itemMarks);
-        loop(endPos, [item, ..trivia], BasisList.append(BasisList.reverse(itemMarks), marks), nextId + BasisList.length(itemMarks))
+        loop(endPos, [item, ..trivia], BasisList.append(BasisList.reverse(itemMarks), marks), nextId + BasisList.length32(itemMarks))
       }
     }
   };

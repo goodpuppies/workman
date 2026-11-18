@@ -1554,6 +1554,10 @@ Both `Panic("message")` and `Panic "message"` are supported. The space form take
 one argument, like ordinary space application; group a computed message, as in
 `Panic ("failed: " ++ detail)`.
 
+Piping a string into `Panic` also works: `"failed" :> Panic` is equivalent to
+`Panic("failed")`. This includes pipeline lambdas (`=> :> Panic`) and constructor
+arms (`Err => :> Panic`) whose payload is a string.
+
 `Panic` is a special expression for unrecoverable errors. It can appear in any type context since it
 never returns:
 

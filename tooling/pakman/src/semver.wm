@@ -24,7 +24,7 @@ let parse = (text: String) => {
 
 let matches = (selector, version) => {
   let patchRange = UnicodeText.isPrefix(selector, "~") :> Result.getOr(false);
-  let base = if (patchRange) { UnicodeText.extract(selector, (1: Int32), None) :> Result.getOr("") } else { selector };
+  let base = if (patchRange) { UnicodeText.extract32(selector, (1: Int32), None) :> Result.getOr("") } else { selector };
   match(parse(base)) {
     None => { Err("unsupported dependency version " ++ selector ++ "; expected X.Y.Z or ~X.Y.Z") },
     Some(wanted) => {

@@ -383,7 +383,7 @@ structure WmPrint = struct
   and arms = fn rules =>
     let
       val arm = fn (p, e) => cats [pat (true, false, p), text " => ", block (blockParts e)]
-      val count = SubsetList.length rules
+      val count = SubsetList.length32 rules
       val rec go = fn
           (_, []) => []
         | (i, r :: rest) => (if i < count - 1 then cat (arm r, text ",") else arm r) :: go (i + 1, rest)
@@ -394,7 +394,7 @@ structure WmPrint = struct
   (* `{ decs; e1; ...; en }`, on one line when it is a single short expression. *)
   and block = fn (ds, es) =>
     let
-      val count = SubsetList.length es
+      val count = SubsetList.length32 es
       val rec exps = fn
           (_, []) => []
         | (i, e :: rest) => (if i < count - 1 then cat (exp e, text ";") else exp e) :: exps (i + 1, rest)

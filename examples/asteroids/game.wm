@@ -305,7 +305,7 @@ let stepPlaying = (g: Game, input: Input, dt: Real64) => {
   let hitShip = if (struck) { .{ ..ship, alive = false } } else { ship };
   let respawnAfter = if (struck && lives > 0) { respawnDelay } else { respawn };
 
-  let advancing = List.length(impact.rocks) == 0 && status == Playing;
+  let advancing = List.length32(impact.rocks) == 0 && status == Playing;
   let (asteroids, rng) =
     if (advancing) {
       spawnWave(startingAsteroids + g.wave, impact.seed)

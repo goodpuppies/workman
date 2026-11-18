@@ -26,7 +26,7 @@ structure Basis = struct
   (* --------------------------------------------------------------------------------------- *)
   (* Types *)
 
-  val arguments = fn tn => let val SubsetResult.Ok args = SubsetList.tabulate (arityOf tn, TGen) in args end
+  val arguments = fn tn => let val SubsetResult.Ok args = SubsetList.tabulate32 (arityOf tn, TGen) in args end
   val tyStr = fn tn => TyStr (arityOf tn, TCon (tn, arguments tn), [])
 
   val conEntry = fn (name, scheme) => (name, (scheme, SCon))

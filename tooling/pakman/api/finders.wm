@@ -65,7 +65,7 @@ let decodeAsset = (found) => {
     Result.map(textField(found, "browser_download_url"), (url) => {
       let digest = textField(found, "digest") :> Result.getOr("");
       let sha256 = if (UnicodeText.isPrefix(digest, "sha256:") :> Result.getOr(false)) {
-        UnicodeText.extract(digest, (7: Int32.Int), None) :> Result.getOr("")
+        UnicodeText.extract32(digest, (7: Int32.Int), None) :> Result.getOr("")
       } else { "" };
       ReleaseAsset(name, url, sha256)
     })

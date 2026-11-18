@@ -160,7 +160,7 @@ structure SmlPrint = struct
      the others after their `| `. *)
   and matchRules = fn (aligned, rules) =>
     let
-      val count = SubsetList.length rules
+      val count = SubsetList.length32 rules
       val rule = fn (i, (p, e)) =>
         let
           val body = if i < count - 1 andalso endsInMatch e then parenAt (1, expL e) else exp e

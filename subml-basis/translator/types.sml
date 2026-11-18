@@ -123,13 +123,13 @@ structure Types = struct
           (_, []) => true
         | (digits, (l, _) :: rest) => l = tupleLabel digits andalso check (nextTupleLabel digits, rest)
     in
-      if SubsetList.length fields >= 2 andalso check ([#"1"], fields) then SOME (SmlList.map (fn (_, t) => t) fields) else NONE
+      if SubsetList.length32 fields >= 2 andalso check ([#"1"], fields) then SOME (SmlList.map (fn (_, t) => t) fields) else NONE
     end
 
   (* Replaces TGen i by the i-th argument. *)
   val rec substGen = fn (args, t) =>
     case t of
-      TGen i => let val SubsetResult.Ok t = SubsetList.at (args, i) in t end
+      TGen i => let val SubsetResult.Ok t = SubsetList.at32 (args, i) in t end
     | TCon (n, ts) => TCon (n, SmlList.map (fn a => substGen (args, a)) ts)
     | TArrow (a, b) => TArrow (substGen (args, a), substGen (args, b))
     | TRecord fields => TRecord (SmlList.map (fn (l, a) => (l, substGen (args, a))) fields)

@@ -5,15 +5,19 @@
    like any other record. Each operation has its own type parameters, so one record value can
    be used at several types where it is let-bound. A carrier passed as a parameter has one
    instantiation per call. */
+// A successful iteration either advances its state or returns a final output.
 
-record Carrier<viaArg, viaResult, viaErrArg, viaErrResult, succeedArg, succeedResult, mapCarrier, mapTransform, mapResult, map2Left, map2Right, map2Combine, map2Result, andThenCarrier, andThenTransform, andThenResult, mapErrCarrier, mapErrTransform, mapErrResult> = {
+type Step<state, output> = Continue<state> | Stop<output>;
+
+record Carrier<viaArg, viaResult, viaErrArg, viaErrResult, succeedArg, succeedResult, mapCarrier, mapTransform, mapResult, map2Left, map2Right, map2Combine, map2Result, andThenCarrier, andThenTransform, andThenResult, mapErrCarrier, mapErrTransform, mapErrResult, iteration> = {
   via: viaArg -> viaResult,
   viaErr: viaErrArg -> viaErrResult,
   succeed: succeedArg -> succeedResult,
   map: (mapCarrier, mapTransform) -> mapResult,
   map2: (map2Left, map2Right, map2Combine) -> map2Result,
   andThen: (andThenCarrier, andThenTransform) -> andThenResult,
-  mapErr: (mapErrCarrier, mapErrTransform) -> mapErrResult
+  mapErr: (mapErrCarrier, mapErrTransform) -> mapErrResult,
+  loop: iteration
 };
 
 /* The subset a lifted operator needs: inject a pure operand, and combine two carriers
@@ -28,29 +32,37 @@ record Applicative<succeedArg, succeedResult, mapCarrier, mapTransform, mapResul
 /* Explicit type variables are rigid, so each annotation spells out how the operations it uses
    relate; the others stay independent. `via` and `viaErr` stay curried: they build a stage
    rather than being one. */
-let via = (domain: Carrier<a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s>) => (f) => { domain.via(f) };
+let via = (domain: Carrier<a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, iteration>) => (f) => { domain.via(f) };
 
-let viaErr = (domain: Carrier<a, b, c, d -> e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t>) => (inject) => (f) => { domain.viaErr(inject)(f) };
+let viaErr = (domain: Carrier<a, b, c, d -> e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, iteration>) => (inject) => (f) => { domain.viaErr(inject)(f) };
 
 /* The stage functions take the carrier value first, so a pipeline supplies it:
    `value :> Monad.map(Result, f)`. */
 let map = (
   wrapped,
-  domain: Carrier<a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s>,
+  domain: Carrier<a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, iteration>,
   transform
 ) => { domain.map(wrapped, transform) };
 
 let mapErr = (
   wrapped,
-  domain: Carrier<a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s>,
+  domain: Carrier<a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, iteration>,
   transform
 ) => { domain.mapErr(wrapped, transform) };
 
 let andThen = (
   wrapped,
-  domain: Carrier<a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s>,
+  domain: Carrier<a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, iteration>,
   transform
 ) => { domain.andThen(wrapped, transform) };
+
+/* Iteration is supplied by the carrier, so synchronous implementations can use a
+   direct self tail call rather than recurse through an opaque andThen callback. */
+let loop = (
+  initial,
+  domain: Carrier<a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, (state, state -> checked) -> output>,
+  advance
+) => { domain.loop(initial, advance) };
 
 /* Applies a carrier-returning function to each item in order and collects the results in one
    carrier. Each item runs only after the previous one succeeded, so the first failure stops
@@ -58,7 +70,7 @@ let andThen = (
    not grow the stack. */
 let traverse = (
   items: List<item>,
-  domain: Carrier<a, b, c, d, List<value>, carried, mapped, value -> List<value>, carried, e, f, g, h, carried, List<value> -> carried, carried, i, j, k>,
+  domain: Carrier<a, b, c, d, List<value>, carried, mapped, value -> List<value>, carried, e, f, g, h, carried, List<value> -> carried, carried, i, j, k, iteration>,
   f: item -> mapped
 ) => {
   let rec go = (rest, acc) => {

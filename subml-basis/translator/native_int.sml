@@ -111,7 +111,7 @@ structure NativeInt = struct
             end)
       val names = SmlList.map (fn (path, _, _, _) => basename path) files
       val duplicate = SmlList.find (fn name =>
-        SubsetList.length (SmlList.filter (fn other => name = other) names) > 1) names
+        SubsetList.length32 (SmlList.filter (fn other => name = other) names) > 1) names
     in case duplicate of SOME name => Unify.Err ("duplicate native output filename: " ^ name, 0)
       | NONE => Unify.bind Basis.initial (fn env => fn st =>
           Unify.bind (loop (env, st, files, [])) (fn outputs => fn next =>

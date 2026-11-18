@@ -148,7 +148,7 @@ let wrapLine = (value, width: Real64) => {
     []
   } else {
     let rows = pack(chunkAll(words(safeText(value)), width), width, "", []);
-    if (List.length(rows) == 0) { [""] } else { rows }
+    if (List.length32(rows) == 0) { [""] } else { rows }
   }
 };
 

@@ -39,7 +39,7 @@ let render = (program: Ast.Program) => {
       let last = Lists.foldLeft(units, 0, (unit, previous) => {unit});
       Writer { ..state,
         unitsRev = Lists.reverseAppend(units, Lists.reverseAppend(prefix, state.unitsRev)),
-        length = state.length + Lists.length(prefix) + Lists.length(units),
+        length = state.length + Lists.length32(prefix) + Lists.length32(units),
         atLineStart = last == 10 || last == 13, pendingSpace = false }
     }
   };
@@ -59,7 +59,7 @@ let render = (program: Ast.Program) => {
     // Empty spans contribute no correspondence; compareAnchored requires real spelling.
     if (start == end) {next} else {
       Writer { ..next, correspondenceRev = [Diff.Correspondence(start, end,
-        next.length - Lists.length(units), next.length), ..next.correspondenceRev] }
+        next.length - Lists.length32(units), next.length), ..next.correspondenceRev] }
     }
   };
   let trivia = (state, items) => {
@@ -79,7 +79,7 @@ let render = (program: Ast.Program) => {
   };
   let virtual = (state, id, units, pair) => {
     let next = write(state, units);
-    Writer { ..next, virtualRev = [VirtualSpan(id, next.length - Lists.length(units), next.length, pair), ..next.virtualRev] }
+    Writer { ..next, virtualRev = [VirtualSpan(id, next.length - Lists.length32(units), next.length, pair), ..next.virtualRev] }
   };
   let slot = (state, value, pair) => {
     match(value) {

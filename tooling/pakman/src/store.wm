@@ -61,7 +61,7 @@ let checkLock = (def: PackageInfo, pkg: Package, entry: LockEntry) => {
   };
   let stale = Err(def.name ++ ": pakman.lock does not match the definition; run `pakman resolve "
     ++ def.name ++ "`");
-  if (List.length(pkg.sources) != List.length(entry.sources)) {
+  if (List.length32(pkg.sources) != List.length32(entry.sources)) {
     stale
   } else {
     pkg.sources :> mapAll(lockedFor) :> Option.collectList :> match {
@@ -213,7 +213,7 @@ let realizePlanWith = (paths: Paths, def: PackageInfo, entry: LockEntry, private
   (pkg: Package) => {
     let hashInputs = via Task (sources) => {
       let tools = pkg.install :> List.filterMap(match { Build(_, tools) => { Some(tools) }, _ => { None } }) :> concatAll;
-      let identity = if (List.length(List.filter(pkg.install, match { Build(_, _) => { true }, _ => { false } })) == 0) {
+      let identity = if (List.length32(List.filter(pkg.install, match { Build(_, _) => { true }, _ => { false } })) == 0) {
         -- Even without a callback, private instance identity includes its recipe.
         if (privateInstance) { sha256File(def.program) } else { Task.succeed("") }
       } else { buildIdentity(def.program, tools) };
@@ -224,7 +224,7 @@ let realizePlanWith = (paths: Paths, def: PackageInfo, entry: LockEntry, private
         inputsText(if (privateInstance) { "@private" } else { baseFor(paths, def) }, def, pkg, sources, builder, entry.ref)
           :> Task.fromResult :> Task.andThen(sha256Text)
       }
-        :> Task.map((fullHash) => { (sources, ByteString.substring(fullHash, (0: Int32), (32: Int32)) :> Result.getOr(fullHash)) })
+        :> Task.map((fullHash) => { (sources, ByteString.substring32(fullHash, (0: Int32), (32: Int32)) :> Result.getOr(fullHash)) })
     };
     let locate = via Task (sources, hash) => {
       let storePath = paths.store ++ "/" ++ hash ++ "-" ++ packageStoreName(def.name) ++ "-" ++ packageStoreName(pkg.version);

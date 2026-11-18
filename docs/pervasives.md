@@ -31,14 +31,15 @@ modules. Calls keep the defining library's data-first argument order.
 
 | Defining library | Unqualified functions |
 | --- | --- |
-| Shared Basis list (`basis/list.wm`) | `map`, `filter`, `forEach`, `foldLeft`, `foldRight`, `head`, `tail`, `length`, `isEmpty`, `reverse`, `concat` |
+| Shared Basis list (`basis/list.wm`) | `map`, `filter`, `forEach`, `foldLeft`, `foldRight`, `head`, `tail`, `length32`, `isEmpty`, `reverse`, `concat` |
 | Shared Basis option (`basis/option.wm`) | `getOr`, `isSome`, `toResult` |
 | Shared Basis bool (`basis/bool.wm`) | `not` |
 | Shared Basis char (`basis/char.wm`) | `chr` (`fromCode`), `ord` (`toCode`) |
-| Shared Basis string (`basis/string.wm`) | `explode` (`fromNative`), `implode` (`toNative`), `size`, `str` |
+| Shared Basis string (`basis/string.wm`) | `explode` (`fromNative`), `implode` (`toNative`), `size32`, `str` |
 | WM General | `before`, `ignore`, `o` |
 | WM Real | `ceil`, `floor`, `round`, `trunc` |
-| WM String (`std/string.wm`) | `toList` (`String.toList`) |
+| WM List (`std/list.wm`) | `length` (Int64) |
+| WM String (`std/string.wm`) | `size` (Int64), `toList` (`String.toList`) |
 | WM Vector | `vector` (the `Vector.fromList` function) |
 
 The shared SubsetML Basis owns the portable list, option, boolean, character and string operations. The
@@ -109,12 +110,12 @@ The current rounding helpers return `Result<Real64, Basis.Error>`, report NaN as
 with its existing generic display and newline behavior.
 
 The implicit `List` namespace extends the shared Basis. `List.length` and bare `length`
-both return `Int32`, and `List.foldLeft` and bare `foldLeft` both pass `(element, accumulator)`
+both return `Int64`; `List.length32` and bare `length32` return `Int32`, and `List.foldLeft` and bare `foldLeft` both pass `(element, accumulator)`
 to their callbacks. Explicit imports retain the same operations; choose an alias when useful:
 
 ```wm
 from "basis/list.wm" import * as Lists;
-let count: Int32 = Lists.length([1, 2]);
+let count: Int32 = Lists.length32([1, 2]);
 ```
 
 Local declarations, parameters and explicit imports shadow pervasive values under

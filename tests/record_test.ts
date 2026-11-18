@@ -730,7 +730,7 @@ Deno.test("joint projection resolution survives imports and emits the selected n
       let render = (feed) => {
         let cursor = feed.cursor;
         let posts = List.map(feed.posts, (post: Real64) => { post + 1 });
-        List.length(posts)
+        List.length32(posts)
       };
       let main = () => { print(render(Records.Right(None, [1, 2]))) };
     `,
@@ -787,7 +787,7 @@ Deno.test("exported field requirements accept caller-owned nominal types and pre
       let result = Access.mapToken(session, (token) => { token ++ "!" });
       let main = () => {
         print(sessionToken ++ "/" ++ keptSession.did);
-        print(feedsToken + Int32.toReal64(List.length(keptFeeds.posts)));
+        print(feedsToken + Int32.toReal64(List.length32(keptFeeds.posts)));
         print(result);
         print(Access.same(session))
       };

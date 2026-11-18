@@ -231,7 +231,7 @@ structure WmLexer = struct
         (* Binding `=`, immediately followed by a bare lambda's `=>`, is legal WM. *)
         if startsWith (i, "==>") then Ok (WKey "=", i + 1)
         else case SmlList.find (fn (s, cs) => startsWithBytes (i, cs)) symbolBytes of
-          SOME (s, cs) => Ok (WKey s, i + SubsetList.length cs)
+          SOME (s, cs) => Ok (WKey s, i + SubsetList.length32 cs)
         | NONE => Err ("unexpected character", i)
 
       (* Backtick text from i up to the closing backtick (true) or a `${` (false). Text may span

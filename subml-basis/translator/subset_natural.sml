@@ -8,7 +8,7 @@ from "./subset_string.sml" import * as SubsetString;
 (* Checked nonnegative arithmetic over signed 32-bit integers. *)
 structure SubsetNatural = struct
   datatype error = InvalidNatural | InvalidDivisor
-  val isValid = SubsetList.validCount
+  val isValid = SubsetList.validCount32
 
   (* Internal: nonnegative integer operands and a positive divisor. *)
   val split = fn (value : int, base : int) => (value div base, value mod base)

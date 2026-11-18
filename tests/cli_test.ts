@@ -1111,7 +1111,7 @@ Deno.test("cli run computes the length of a deep list without growing the JS sta
         if (n == 0) { items } else { build(n - 1, [n, ..items]) }
       };
       let main = () => {
-        print(List.length(build(50000, [])));
+        print(List.length32(build(50000, [])));
         void
       };
     `,
@@ -1428,15 +1428,15 @@ Deno.test("repl session has SML's top-level structures without imports", async (
     "Io.readFile;",
     "OS.Process.isSuccess(OS.Process.success);",
     'OS.Path.dir("a/b");',
-    "StringCvt.padLeft(\"a\", 3, ' ');",
-    "Text.size;",
+    "StringCvt.padLeft32(\"a\", 3, ' ');",
+    "Text.size32;",
     "Text.of(10);",
     "let number = 10;",
     "Text.of(number);",
     "10 :> .toString() :> Result.getOr(\"failed\");",
     // Session imports shadow the header's, as in any module.
     'from "basis/list.wm" import * as Text;',
-    "Text.length;",
+    "Text.length32;",
   ];
   const input = new ReadableStream<Uint8Array>({
     start(controller) {

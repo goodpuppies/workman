@@ -38,7 +38,7 @@ structure CompilerText = struct
   val slice = fn (value, start, count) =>
     let val SubsetResult.Ok bytes = SubsetBytes.slice (characters value, start, count) in stringOf bytes end
   val drop = fn (value, count) =>
-    let val SubsetResult.Ok bytes = SubsetList.drop (characters value, count) in stringOf bytes end
+    let val SubsetResult.Ok bytes = SubsetList.drop32 (characters value, count) in stringOf bytes end
   val firstIs = fn (value, predicate) =>
     case characters value of [] => false | c :: rest => predicate c
   val escapeSmlChar = fn c => let val SubsetResult.Ok text = SubsetSmlEscape.escapeByte c in text end
@@ -72,8 +72,8 @@ structure CompilerText = struct
               val y = digit (b, alphabet, 0)
           in x < y orelse (x = y andalso within (rest, limit)) end
       | _ => false
-      val size = SubsetList.length normalized
-      val limitSize = SubsetList.length bound
+      val size = SubsetList.length32 normalized
+      val limitSize = SubsetList.length32 bound
     in size < limitSize orelse (size = limitSize andalso within (normalized, bound)) end
 
   val int32Literal = fn text =>

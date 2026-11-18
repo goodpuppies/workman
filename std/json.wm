@@ -46,7 +46,7 @@ let readBytes = (bytes) => {
 private let hexDigit = (code) => {
   SubsetResult.getOr(
     SubsetString.str(SubsetResult.getOr(
-      SubsetList.at(
+      SubsetList.at32(
         ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'],
         code
       ),
@@ -182,7 +182,7 @@ let at = (found, index) => {
       match(node.data) {
         JsonValue.Array(items) => {
           let steps = [JsonValue.Index(index), ..node.steps];
-          match(SubsetList.at(items, index)) {
+          match(SubsetList.at32(items, index)) {
             SubsetResult.Err(error) => { SubsetResult.Err(JsonValue.Missing(steps)) },
             SubsetResult.Ok(item) => { SubsetResult.Ok(JsonValue.node(steps, item)) }
           }

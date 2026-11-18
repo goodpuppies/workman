@@ -77,7 +77,7 @@ export function emitRuntimePrelude(): string[] {
     `const __wm_js_option_unwrap = (value) => value?.ctor === -1 ? null : value?.ctor === -2 ? value.a0 : value;`,
     `const __wm_c_text_encoder = new globalThis.TextEncoder();
 const __wm_c_string_to_cstr = (value) => {
-  const bytes = __wm_c_text_encoder.encode(String(value) + "\\0");
+  const bytes = __wm_c_text_encoder.encode(globalThis.String(value) + "\\0");
   return globalThis.Deno.UnsafePointer.of(bytes);
 };
 const __wm_c_codecs = {};
@@ -328,10 +328,10 @@ const __wm_c_struct_to_buffer = (name, value) => {
   if (value === undefined) return "void";
   if (value === null) return "null";
   if (typeof value === "string") return quoteStrings ? JSON.stringify(value) : value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  if (typeof value === "bigint") return String(value);
+  if (typeof value === "number" || typeof value === "boolean") return globalThis.String(value);
+  if (typeof value === "bigint") return globalThis.String(value);
   if (typeof value === "function") return "<function>";
-  if (typeof value !== "object") return String(value);
+  if (typeof value !== "object") return globalThis.String(value);
   if (seen.has(value)) return "<cycle>";
   seen.add(value);
   let shown;
@@ -392,10 +392,10 @@ const __wm_c_struct_to_buffer = (name, value) => {
     ...emitBasisConstructors(),
     `const __wm_js_error = (error) => {
   try {
-    if (error instanceof Error) return __wm_basis_Js_Error(String(error.message));
+    if (error instanceof Error) return __wm_basis_Js_Error(globalThis.String(error.message));
     if (typeof error === "string") return __wm_basis_Js_Error(error);
     if (error && typeof error === "object" && "message" in error) {
-      return __wm_basis_Js_Error(String(error.message));
+      return __wm_basis_Js_Error(globalThis.String(error.message));
     }
   } catch (_error) {
     return __wm_basis_Js_Unknown;
@@ -519,8 +519,8 @@ const __wm_c_struct_to_buffer = (name, value) => {
   Err: __wm_basis_Err,
 };`,
     `const __wm_error_message = (error) => {
-  if (error && typeof error === "object" && "message" in error) return String(error.message);
-  return String(error);
+  if (error && typeof error === "object" && "message" in error) return globalThis.String(error.message);
+  return globalThis.String(error);
 };`,
     ...emitBasisOperators(),
   ];

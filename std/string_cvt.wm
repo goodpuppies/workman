@@ -1,0 +1,36 @@
+from "basis/string.wm" import * as Strings;
+from "basis/text.wm" import * as UnicodeText;
+from "basis/result.wm" import * as Results;
+export from "basis/string_cvt.wm" import *;
+
+// @int64-counts
+from "./list.wm" import * as WideList;
+
+private let pad = (value, width: Int64.Int, piece, count: Int64.Int, left) => {
+  if (width <= count) { value } else {
+    let padding = WideList.repeatWith(piece, width - count,
+      (n: Int64.Int) => n == 0, (n: Int64.Int) => n - 1) :> Strings.concat;
+    if (left) { padding ++ value } else { value ++ padding }
+  }
+};
+
+let padLeft = (value, width: Int64.Int, c) => {
+  Results.andThen(Strings.fromNative(value), bytes => {
+    Results.map(Strings.str(c), piece => pad(value, width, piece, WideList.length(bytes), true))
+  })
+};
+let padRight = (value, width: Int64.Int, c) => {
+  Results.andThen(Strings.fromNative(value), bytes => {
+    Results.map(Strings.str(c), piece => pad(value, width, piece, WideList.length(bytes), false))
+  })
+};
+let padTextLeft = (value, width: Int64.Int, scalar) => {
+  Results.andThen(UnicodeText.explode(value), scalars => {
+    Results.map(UnicodeText.str(scalar), piece => pad(value, width, piece, WideList.length(scalars), true))
+  })
+};
+let padTextRight = (value, width: Int64.Int, scalar) => {
+  Results.andThen(UnicodeText.explode(value), scalars => {
+    Results.map(UnicodeText.str(scalar), piece => pad(value, width, piece, WideList.length(scalars), false))
+  })
+};

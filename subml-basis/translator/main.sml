@@ -137,7 +137,7 @@ structure Main = struct
         | SubsetResult.Err error => (eprint (sourceErrorText error); [])) loaded)
     in
       if SmlList.null files then usage ()
-      else (if (SubsetList.length parsed = SubsetList.length files) then finish (f parsed) else finish false)
+      else (if (SubsetList.length32 parsed = SubsetList.length32 files) then finish (f parsed) else finish false)
     end
 
   val translate = fn (outDir, parsed) =>

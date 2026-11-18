@@ -82,12 +82,14 @@ structure Doc = struct
       if fits oneLine orelse SmlList.null ds then oneLine
       else
         let
-          val count = SubsetList.length ds
+          val count = SubsetList.length32 ds
+          val openLine = CompilerText.stringOf (SubsetList.reverse (SubsetList.dropWhile (
+            SubsetList.reverse (CompilerText.characters openD), SubsetChar.isSpace)))
           val rec items = fn
               (_, []) => []
             | (i, d :: rest) => (if i < count - 1 then cat (d, text sep) else d) :: items (i + 1, rest)
         in
-          stack [text openD, indent (2, stack (items (0, ds))), text closeD]
+          stack [text openLine, indent (2, stack (items (0, ds))), text closeD]
         end
     end
 
@@ -98,7 +100,7 @@ structure Doc = struct
     CompilerText.stringOf (SubsetBytes.trim (CompilerText.characters s, SubsetChar.isSpace))
 
   val spaces = fn n =>
-    let val SubsetResult.Ok bytes = SubsetList.repeat (#" ", n) in CompilerText.stringOf bytes end
+    let val SubsetResult.Ok bytes = SubsetList.repeat32 (#" ", n) in CompilerText.stringOf bytes end
 
   val isBlankText = fn s => SmlList.all SubsetChar.isSpace (CompilerText.characters s)
 

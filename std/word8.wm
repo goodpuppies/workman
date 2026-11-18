@@ -1,3 +1,4 @@
+from "basis/numeric.wm" import * as Numeric;
 from js.module("./js/word.js") import unsafe {
   word8FromNumber: Real64.Real -> Word8.Word,
   smallWordToNumber as primToReal64: Word8.Word -> Real64.Real,
@@ -33,3 +34,12 @@ let sub = word8Sub;
 let mul = word8Mul;
 let div = word8Div;
 let mod = word8Mod;
+
+
+/** Default arithmetic dictionary; bare Word8 in value position selects carrier. */
+let math: Numeric.Arithmetic<Word8.Word> = .{
+  zero = 0, one = 1,
+  add = (a: Word8.Word, b: Word8.Word) => a + b,
+  mul = (a: Word8.Word, b: Word8.Word) => a * b
+};
+let carrier = math;

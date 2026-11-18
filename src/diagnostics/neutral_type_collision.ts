@@ -17,6 +17,8 @@ import {
   typeSnapshotRendered,
 } from "./rendering.ts";
 import type { AuthoredDiagnosticProfile } from "./profile.ts";
+import { authoredOrigin } from "./origin_selection.ts";
+import { focusedSignature } from "./signature_display.ts";
 import {
   type Document,
   type Line,
@@ -138,6 +140,10 @@ function renderNeutralTypeCollision(
   const pipeArgument = adapter.code === "type.pipe-input-mismatch"
     ? explicitPipeArgument(diagnostic)
     : undefined;
+  if (!detailed && adapter.code === "type.pipe-input-mismatch" && pipeArgument === undefined) {
+    const pipe = renderPipeInputCollision(diagnostic, filePath, source);
+    if (pipe) return pipe;
+  }
   const leftObserved = observed.find((claim) =>
     claim.claim.kind === "has-type" &&
     typeSnapshotRendered(diagnostic, claim.claim.type) === leftLeaf
@@ -155,8 +161,12 @@ function renderNeutralTypeCollision(
     : undefined;
   const leftPath = leftObserved ? longestDerivationPath(diagnostic, leftObserved) : [];
   const rightPath = rightObserved ? longestDerivationPath(diagnostic, rightObserved) : [];
-  const leftOrigin = leftPath[0] ?? leftObserved;
-  const rightOrigin = rightPath[0] ?? rightObserved;
+  const leftOrigin = detailed
+    ? leftPath[0] ?? leftObserved
+    : authoredOrigin(diagnostic, leftObserved);
+  const rightOrigin = detailed
+    ? rightPath[0] ?? rightObserved
+    : authoredOrigin(diagnostic, rightObserved);
   const annotationSlot = adapter.code === "type.mismatch"
     ? annotationMismatchSlot(diagnostic)
     : undefined;
@@ -176,12 +186,19 @@ function renderNeutralTypeCollision(
   // than degrading to a bare type.
   const leftParticipant = participantClaimFor(participants, leftType);
   const rightParticipant = participantClaimFor(participants, rightType, leftParticipant);
-  const leftDisplayOrigin = annotationSlot?.annotation ?? leftOrigin ?? leftParticipant ??
+  const leftCandidate = annotationSlot?.annotation ?? leftOrigin ?? leftParticipant ??
     callSlot?.calleeClaim;
+  const leftBoundary = !detailed && !authoredOrigin(diagnostic, leftCandidate) && constraint
+    ? authoredOrigin(
+      diagnostic,
+      claimById(diagnostic, constraint.roles.find((role) => role.term === "left")?.claim ?? ""),
+    )
+    : undefined;
+  const leftDisplayOrigin = leftBoundary ?? leftCandidate;
   const leftOriginLabel = annotationSlot
     ? "annotation requires"
     : !leftOrigin && !leftParticipant
-    ? callSlot?.calleeLabel
+    ? callSlot?.calleeLabel ?? (leftBoundary ? diagnostic.failure.frame.subject : undefined)
     : undefined;
   const rightDisplayOrigin = annotationSlot?.parameter ?? rightOrigin ?? rightParticipant ??
     callSlot?.argumentClaim;
@@ -566,6 +583,174 @@ function pipeParticipants(
     : undefined;
 }
 
+/** Describe the authored stage boundary before following types into their definitions. */
+function renderPipeInputCollision(
+  diagnostic: AuditableDiagnostic,
+  filePath: string | undefined,
+  source: string | undefined,
+): CollisionRendering | undefined {
+  const violation = diagnostic.failure.violation;
+  if (violation.kind !== "contradicted") return undefined;
+  const constraint = findConstraintForFrame(diagnostic);
+  if (!constraint) return undefined;
+  const claims = diagnostic.support.entries.filter((entry): entry is ClaimEntry =>
+    entry.kind === "claim" && entry.claim.kind === "has-type"
+  );
+  // Payload-return collisions have a more specific explanation and a repair hint.
+  if (
+    claims.some((claim) =>
+      claim.claim.kind === "has-type" && claim.claim.subject === "returned constructor payload"
+    )
+  ) return undefined;
+  const input = claims.find((claim) =>
+    claim.claim.kind === "has-type" && claim.claim.subject === "piped value"
+  );
+  const callee = claimById(
+    diagnostic,
+    constraint.roles.find((role) => role.term === "left")?.claim ?? "",
+  );
+  const functionType = diagnostic.support.types.find((type) => type.id === constraint.left);
+  if (
+    input?.claim.kind === "has-type" && callee && functionType &&
+    functionType.shape.kind !== "function" && violation.conflictPath.length === 0
+  ) {
+    const width = terminalWidth();
+    const document = callee.origin.kind === "source"
+      ? sourceDocument(diagnostic, callee.origin, filePath, source)
+      : undefined;
+    const excerpt = document?.source && callee.origin.kind === "source"
+      ? renderCompactExcerpt(document.source, callee.origin.span, document.filePath, width - 2)
+      : undefined;
+    const targetType = typeSnapshotRendered(diagnostic, constraint.left);
+    const expectedType = typeSnapshotRendered(diagnostic, constraint.right);
+    const inputType = typeSnapshotRendered(diagnostic, input.claim.type);
+    const stage = diagnostic.failure.frame.subject;
+    const targetLabel = stage === "pipe" ? "pipe target" : `${stage} pipe target`;
+    const columns = collisionOriginColumns(
+      diagnostic,
+      targetType,
+      callee,
+      inputType,
+      input,
+      source,
+      filePath,
+      false,
+      targetLabel,
+      "piped value",
+    );
+    const rendered = compactCollisionDocument(
+      diagnostic,
+      renderHeaderLine(diagnostic, filePath),
+      excerpt,
+      targetLabel,
+      targetType,
+      expectedType,
+      targetType,
+      inputType,
+      columns,
+      callee,
+      input,
+      source,
+      filePath,
+      undefined,
+      targetLabel,
+      "piped value",
+      width,
+    );
+    return { text: `${plainText(rendered)}\n`, document: rendered };
+  }
+  if (violation.conflictPath[0]?.kind !== "fn-param") return undefined;
+  if (
+    !input || input.claim.kind !== "has-type" || !callee ||
+    functionType?.shape.kind !== "function"
+  ) return undefined;
+  let expected = functionType.shape.params[0];
+  if (!expected) return undefined;
+  // An explicit pipe call inserts the piped value into slot zero of its argument tuple.
+  const hasFixedArguments = claims.some((claim) =>
+    claim.claim.kind === "has-type" && /^argument [1-9]\d*$/.test(claim.claim.subject)
+  );
+  if (hasFixedArguments) {
+    const tuple = diagnostic.support.types.find((type) => type.id === expected);
+    if (tuple?.shape.kind !== "tuple" || !tuple.shape.items[0]) return undefined;
+    expected = tuple.shape.items[0];
+  }
+  const producedType = typeSnapshotRendered(diagnostic, input.claim.type);
+  const expectedType = typeSnapshotRendered(diagnostic, expected);
+  const stage = diagnostic.failure.frame.subject;
+  const subject = stage === "pipe" ? "pipe input" : `${stage} pipe input`;
+  const width = terminalWidth();
+  const calleeDocument = callee.origin.kind === "source"
+    ? sourceDocument(diagnostic, callee.origin, filePath, source)
+    : undefined;
+  const excerpt = callee.origin.kind === "source" && calleeDocument?.source &&
+      spanWithinSource(calleeDocument.source, callee.origin.span)
+    ? renderCompactExcerpt(
+      calleeDocument.source,
+      callee.origin.span,
+      calleeDocument.filePath,
+      width - 2,
+    )
+    : undefined;
+  // The boundary types describe the equation; nested constraints should show where their
+  // differing component was introduced, rather than repeating the whole stage expression.
+  const inputPath = violation.conflictPath.slice(1 + (hasFixedArguments ? 1 : 0));
+  const producedLeaf = typeAtPath(diagnostic, input.claim.type, inputPath);
+  const expectedLeaf = typeAtPath(diagnostic, expected, inputPath);
+  const originFor = (leaf: string | undefined): ClaimEntry | undefined => {
+    if (!leaf || inputPath.length === 0) return undefined;
+    const collision = diagnostic.support.entries.find((entry) => entry.kind === "collision");
+    if (!collision) return undefined;
+    const observed = diagnostic.support.edges
+      .filter((edge) => edge.to === collision.id && edge.role === "observed")
+      .map((edge) => claimById(diagnostic, edge.from))
+      .find((claim) =>
+        claim?.claim.kind === "has-type" &&
+        typeSnapshotRendered(diagnostic, claim.claim.type) === leaf
+      );
+    if (!observed) return undefined;
+    return authoredOrigin(diagnostic, observed);
+  };
+  const producedOrigin = originFor(producedLeaf);
+  const expectedOrigin = originFor(expectedLeaf);
+  const producedOriginType = producedOrigin ? producedLeaf! : producedType;
+  const expectedOriginType = expectedOrigin ? expectedLeaf! : expectedType;
+  const producedLabel = producedOrigin ? undefined : "pipe output";
+  const expectedLabel = expectedOrigin ? undefined : "next stage input";
+  const originColumns = collisionOriginColumns(
+    diagnostic,
+    producedOriginType,
+    producedOrigin ?? input,
+    expectedOriginType,
+    expectedOrigin ?? callee,
+    source,
+    filePath,
+    false,
+    producedLabel,
+    expectedLabel,
+  );
+  const document = compactCollisionDocument(
+    diagnostic,
+    renderHeaderLine(diagnostic, filePath),
+    excerpt,
+    subject,
+    producedType,
+    expectedType,
+    producedOriginType,
+    expectedOriginType,
+    originColumns,
+    producedOrigin ?? input,
+    expectedOrigin ?? callee,
+    source,
+    filePath,
+    undefined,
+    producedLabel,
+    expectedLabel,
+    width,
+  );
+  return { text: `${plainText(document)}\n`, document };
+}
+
 function ifParticipants(
   diagnostic: AuditableDiagnostic,
   thenType: string,
@@ -624,8 +809,16 @@ function participantEquationLines(
     const code = tiny ? view.code.trimStart() : view.code;
     return { gutter, code };
   };
-  const rawLeft = normalizeParticipant(participantSource(participants.left.claim, source));
-  const rawRight = normalizeParticipant(participantSource(participants.right.claim, source));
+  const participantView = (claim: ClaimEntry): ParticipantSource => {
+    const document = claim.origin.kind === "source"
+      ? sourceDocument(diagnostic, claim.origin, filePath, source)
+      : undefined;
+    return document?.source
+      ? participantSource(claim, document.source)
+      : { gutter: "", code: "{..}" };
+  };
+  const rawLeft = normalizeParticipant(participantView(participants.left.claim));
+  const rawRight = normalizeParticipant(participantView(participants.right.claim));
   const typeWidth = Math.max(participants.left.type.length, participants.right.type.length);
   const gutterWidth = Math.max(rawLeft.gutter.length, rawRight.gutter.length);
   const separatorWidth = tiny ? 1 : 2;
@@ -761,6 +954,7 @@ function compactOriginCell(
   availableWidth?: number,
   forceMultiline = false,
 ): Line[] {
+  claim = authoredOrigin(diagnostic, claim);
   const document = claim?.origin.kind === "source"
     ? sourceDocument(diagnostic, claim.origin, filePath, source)
     : undefined;
@@ -769,6 +963,7 @@ function compactOriginCell(
     ? undefined
     : availableWidth - (availableWidth <= TINY_TERMINAL_WIDTH ? 0 : 2);
   const label = labelOverride ?? (claim ? claimSubject(claim, claimSource) : undefined);
+  type = originDisplayType(diagnostic, claim, label, type, contentWidth ?? 120);
   if (
     !claimSource || claim?.origin.kind !== "source" ||
     !spanWithinSource(claimSource, claim.origin.span)
@@ -791,6 +986,33 @@ function compactOriginCell(
       { underlineRole: "secondary", forceMultiline },
     ),
   ];
+}
+
+function originDisplayType(
+  diagnostic: AuditableDiagnostic,
+  claim: ClaimEntry | undefined,
+  label: string | undefined,
+  fallback: string,
+  width: number,
+): string {
+  if (!label?.endsWith(" signature") || claim?.claim.kind !== "has-type") return fallback;
+  const type = claim.claim.type;
+  if (
+    diagnostic.support.types.find((snapshot) => snapshot.id === type)?.shape.kind !== "function"
+  ) {
+    return fallback;
+  }
+  const path = diagnostic.failure.violation.kind === "contradicted"
+    ? diagnostic.failure.violation.conflictPath
+    : [];
+  return focusedSignature(
+    diagnostic,
+    type,
+    diagnostic.code === "type.call-argument-mismatch"
+      ? [{ kind: "fn-param", index: 0 }, ...path]
+      : path,
+    Math.max(16, width - label.length - 2),
+  );
 }
 
 function renderCompactDocumentColumns(left: Line[], right: Line[]): Line[] {
@@ -963,17 +1185,22 @@ function callCollisionSlot(
     ? diagnostic.failure.violation.conflictPath
     : [];
   const baseSubject = collisionSubject(diagnostic, source);
-  const calleeClaim = diagnostic.support.entries.find((entry): entry is ClaimEntry =>
+  const calleeFact = diagnostic.support.entries.find((entry): entry is ClaimEntry =>
     entry.kind === "claim" && entry.claim.kind === "fact" &&
     entry.claim.text.startsWith("callee ")
   );
+  const calleeName = calleeFact?.claim.kind === "fact"
+    ? /^callee ([^:]+):/.exec(calleeFact.claim.text)?.[1]
+    : undefined;
+  const calleeClaim =
+    diagnostic.support.entries.find((entry): entry is ClaimEntry =>
+      entry.kind === "claim" && entry.claim.kind === "has-type" &&
+      entry.claim.subject === `${calleeName ?? "callee"} signature`
+    ) ?? calleeFact;
   const argumentClaim = diagnostic.support.entries.find((entry): entry is ClaimEntry =>
     entry.kind === "claim" && entry.claim.kind === "fact" &&
     entry.claim.text === "call argument"
   );
-  const calleeName = calleeClaim?.claim.kind === "fact"
-    ? /^callee ([^:]+):/.exec(calleeClaim.claim.text)?.[1]
-    : undefined;
   const arityMismatch = callArityMismatch(diagnostic);
   const parameterGroup = arityMismatch
     ? groupedCallClaims(
@@ -1007,7 +1234,7 @@ function callCollisionSlot(
   if (outerArgument === undefined || fnParameterAt < 0) {
     if (!calleeClaim && !argumentClaim) return undefined;
     return {
-      subject: calleeName ?? baseSubject,
+      subject: arityMismatch ? calleeName ?? baseSubject : baseSubject,
       calleeClaim: parameterGroup ?? calleeClaim,
       calleeLabel: parameterGroup
         ? `${arityMismatch?.expected} parameters declared here`
@@ -1128,11 +1355,19 @@ function collisionOriginColumns(
   rightLabel?: string,
 ): ColumnPair {
   const column = (type: string, claim: ClaimEntry | undefined, label?: string): string[] => {
+    if (!detailed) claim = authoredOrigin(diagnostic, claim);
     const document = claim?.origin.kind === "source"
       ? sourceDocument(diagnostic, claim.origin, filePath, source)
       : undefined;
     const claimSource = document?.source;
     const subject = label ?? (claim ? claimSubject(claim, claimSource) : undefined);
+    type = originDisplayType(
+      diagnostic,
+      claim,
+      subject,
+      type,
+      detailed ? Infinity : terminalWidth(),
+    );
     const heading = subject ? `${type} — ${subject}` : type;
     const excerpt = claimSource && claim?.origin.kind === "source"
       ? detailed

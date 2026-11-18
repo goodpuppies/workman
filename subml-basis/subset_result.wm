@@ -75,14 +75,24 @@ let map2 = (left, right, f) => {
   }
 };
 
+// Direct tail recursion is portable to SML and compiles to a loop on JS.
+let rec loop = (state, advance) => {
+  match(advance(state)) {
+    Err(error) => { Err(error) },
+    Ok(SubsetMonad.Stop(output)) => { Ok(output) },
+    Ok(SubsetMonad.Continue(next)) => { loop(next, advance) }
+  }
+};
+
 /* Result's carrier record, the value a bare `Result` stands for in Workman value position, a
    `SubsetMonad.carrier`. */
-let carrier: SubsetMonad.Carrier<a -> Result<b, e>, Result<a, e> -> Result<b, e>, f -> g, (c -> Result<d, f>) -> Result<c, g> -> Result<d, g>, h, Result<h, i>, Result<j, k>, j -> l, Result<l, k>, Result<m, n>, Result<o, n>, (m, o) -> p, Result<p, n>, Result<q, r>, q -> Result<s, r>, Result<s, r>, Result<t, u>, u -> v, Result<t, v>> = .{ 
+let carrier: SubsetMonad.Carrier<a -> Result<b, e>, Result<a, e> -> Result<b, e>, f -> g, (c -> Result<d, f>) -> Result<c, g> -> Result<d, g>, h, Result<h, i>, Result<j, k>, j -> l, Result<l, k>, Result<m, n>, Result<o, n>, (m, o) -> p, Result<p, n>, Result<q, r>, q -> Result<s, r>, Result<s, r>, Result<t, u>, u -> v, Result<t, v>, (state, state -> Result<SubsetMonad.Step<state, output>, loopError>) -> Result<output, loopError>> = .{
   via = via,
   viaErr = viaErr,
   succeed = succeed,
   map = map,
   map2 = map2,
   andThen = andThen,
-  mapErr = mapErr
+  mapErr = mapErr,
+  loop = loop
  };

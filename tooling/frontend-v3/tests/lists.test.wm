@@ -46,7 +46,7 @@ let tests = [
       R.Err(_) => {fail("list projection failed")},
       R.Ok(value) => {
         let materialized = Parser.parse(value.projection.text);
-        assertEqual(Lists.length(materialized.syntaxMarks), 0)
+        assertEqual(Lists.length32(materialized.syntaxMarks), 0)
       }
     }
   })

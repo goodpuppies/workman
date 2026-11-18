@@ -727,3 +727,174 @@ checked against the peeled payloads before the carriers are compared.
 A module's own declarations do not see its carrier, since registration completes
 with the module. A carrier module writes its payload arithmetic by hand and hands
 the operators to its consumers.
+
+## A carrier name has one type
+
+The bare-namespace rule selects the ordinary value named `carrier`; it does not restrict that
+value to the monadic `Carrier` record. Numeric modules use it for `Numeric.Arithmetic<T>`, also
+exported as `.math`, so `items :> List.sumWith(Int32)` selects `Int32.carrier`.
+
+A particular module has only one such default value and one type scheme. It cannot select
+between monadic and arithmetic record shapes based on the expected argument type. Different
+structures can export different types under the same name; functions still require the record
+type declared in their signatures. Use explicitly named records such as `.math` when a module
+needs several capabilities. See [explicit arithmetic domains](./numbers.md#explicit-arithmetic-domains).
+
+## Deferred generation and pure consumers
+
+Construct a deferred traversal with its carrier, then collect it with a pure consumer:
+
+```wm
+list
+  :> List.generate(Result, hasIdenticalHalves)
+  :> List.collect(Primitive.filter)
+```
+
+`List.generate(items, domain, check)` stores the original list, carrier record and callback.
+Construction runs no checks and allocates no second list of closures or annotated values.
+`List.collect(source, consumer)` requests checked inputs from left to right, using the carrier
+to preserve failures. Each successful answer is passed with its original input to the pure
+consumer. A decisive answer or a carrier failure stops before requesting another input.
+
+The same producer/consumer protocol supports different operations:
+
+```wm
+list :> List.generate(Result, predicate) :> List.collect(Primitive.find)
+list :> List.generate(Task, predicateTask) :> List.collect(Primitive.exists)
+list :> List.generate(Result, pairToDupes) :> List.collect(Primitive.map)
+list :> List.generate(Result, pairToDupes) :> List.collect(Primitive.concatMap)
+```
+
+| Consumer | Check's successful answer | Collection's successful output |
+| --- | --- | --- |
+| `Primitive.filter` | `Bool` | matching original inputs |
+| `Primitive.map` | any value | list of answers |
+| `Primitive.filterMap` | `Option<T>` | list of Some payloads |
+| `Primitive.concatMap` | `List<T>` | concatenated answer lists |
+| `Primitive.find` | `Bool` | first matching original input as `Option<T>` |
+| `Primitive.findMap` | `Option<T>` | first Some answer, or None |
+| `Primitive.exists` | `Bool` | true at the first true answer; otherwise false |
+| `Primitive.all` | `Bool` | false at the first false answer; otherwise true |
+| `Primitive.takeWhile` | `Bool` | original inputs before the first false answer |
+| `Primitive.partition` | `Bool` | pair of lists: true inputs, false inputs |
+| `Primitive.lastOr(fallback)` | any value | last answer, or the fallback for empty input |
+
+When `pairToDupes` returns a carried list, `Primitive.map` keeps each list as one output
+element; `Primitive.concatMap` emits its elements separately. Searches return successful
+absence as None, distinct from a carrier failure. Empty input calls no checks and returns the
+consumer's finished initial state: for example, an empty list, None, false for exists, or true
+for all.
+
+### Custom consumers and tail recursion
+
+`Primitive.Consumer<Item, Answer, State, Output>` is an ordinary record:
+
+```wm
+let count = Primitive.Consumer{
+  initial = 0,
+  step = (_, _, total) => Monad.Continue(total + 1),
+  finish = total => total
+};
+```
+
+Its step takes `(original input, successful answer, state)`. `Monad.Continue(nextState)`
+requests another checked input; `Monad.Stop(output)` returns immediately. `finish` runs only
+when the input is exhausted; Stop already contains the final output. The consumer's state
+and output types may differ. Stateful checks can use List.generateState, described below.
+
+The carrier's `loop` operation drives collection. `Result.loop(initial, advance)` directly
+tail-recurses over successful Continue states and returns on Stop or Err. `Task.loop` sequences
+iterations through Task's promise boundary. The generic wrapper is
+`Monad.loop(initial, domain, advance)`. These are ordinary functions; collection does not
+require compiler fusion or recursion through an opaque andThen callback. Long synchronous
+and asynchronous traversals remain stack safe.
+
+Custom `Monad.Carrier` records include a `loop` field in addition to via, viaErr, succeed,
+map, map2, andThen and mapErr. Its type parameters are independent of the other operations,
+just as map and andThen have their own instantiations. Numeric and Applicative dictionaries
+are unchanged.
+
+### Stateful generation
+
+`List.generateState(items, domain, initial, check)` defers a stateful traversal. Its check
+receives `(item, previousState)` and returns the next state inside the carrier. Each successful
+state is also the answer available to the consumer. A failure preserves the error and stops
+before another check; successful early-stopping consumers work the same way as for generate.
+
+A checked sum can be expressed without an effectful fold operation:
+
+```wm
+values
+  :> List.generateState(Result, (0: Int64), (value, total) => {
+    Int64.checkedAdd(value, total)
+  })
+  :> List.collect(Primitive.lastOr((0: Int64)))
+```
+
+`Primitive.lastOr(initial)` selects the final successful state and provides an explicit result
+for empty input. Collecting the same kind of generator with Primitive.map instead returns the
+history of successful states. The ordinary List.generate remains independent per element;
+its check receives just that element.
+
+### Reuse, eager annotation and imports
+
+A generated traversal captures one carrier instantiation. Use a fresh generator per consumer;
+SML may constrain a named generator's accumulator and result types at its first collection.
+Consuming the same generator again reruns its checks, including Task effects. Generation does
+not memoize results.
+
+`List.annotate(items, domain, check)` remains available when the complete carried list of
+`(original input, answer)` pairs is useful. It runs all checks before a later pure operation
+can inspect them. `List.concatMap(items, emit)` is the pure list operation that concatenates
+zero or more emitted elements per input, preserving their order.
+
+Explicit imports from `"std/list.wm"` and `"std/primitive.wm"` expose the same operations as
+the implicit namespaces. If input is already a carrier, use via around the complete generation
+and collection pipeline. Unify different error types explicitly with mapErr.
+
+## Callbacks that return a carrier
+
+`via` unwraps a function's input. It does not change how `List.filter` or a fold
+calls its callback. When the callback itself can fail or perform a task, generate
+with that carrier and collect with the consumer for the operation you want, as
+described in [deferred generation](#deferred-generation-and-pure-consumers):
+
+```wm
+let total = values
+  :> List.generateState(Result, (0: Int64), Int64.checkedAdd)
+  :> List.collect(Primitive.lastOr((0: Int64)));
+```
+
+The result is `Result<Int64, Int64.Error>`. Each check receives plain values and
+returns a carrier value; a failure skips the remaining checks.
+
+When the input is already a result, use `via` for the outer result around the whole
+generation and collection:
+
+```wm
+parsedValues
+  :> Monad.via Result values => {
+    values
+      :> List.generateState(Result, (0: Int64), (value, acc) => {
+        Int64.checkedAdd(value, acc) :> Result.mapErr(NumberFailed)
+      })
+      :> List.collect(Primitive.lastOr((0: Int64)))
+  }
+```
+
+The outer result and the checks must use the same error type. Map errors where
+they enter the pipeline. Operations such as `concat` have no callback to lift:
+`nestedLists :> Result.map(List.concat)` flattens the list inside the result.
+
+The arithmetic helpers `lengthWith`, `repeatWith`, `splitAtWith` and
+`tabulateWith`, and the numeric `sumWith`/`productWith`, take explicit arithmetic
+operations rather than a monadic carrier. For fallible generation by index,
+generate indices first, map the count error, then collect the checked values:
+
+```wm
+List.tabulate(count, i => i)
+  :> Result.mapErr(ListFailed)
+  :> Monad.via Result indices => {
+    indices :> List.generate(Result, generate) :> List.collect(Primitive.map)
+  }
+```

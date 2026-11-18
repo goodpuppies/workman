@@ -30,3 +30,23 @@ let isSubsequence = (text: String, pattern: String) => {
     Results.map(UnicodeText.explode(pattern), (wanted) => { search(chars, wanted) })
   })
 };
+
+// @int64-counts
+// Default counts and indices are Int64; shared Basis functions retain explicit 32 suffixes.
+from "./list.wm" import * as WideList;
+
+let size = value => Results.map(Strings.fromNative(value), WideList.length);
+
+let extract = (value, start: Int64.Int, count: Option<Int64.Int>) => {
+  Results.andThen(Results.mapErr(Strings.fromNative(value), Strings.StringError), bytes => {
+    Results.andThen(Results.mapErr(WideList.drop(bytes, start), _ => Strings.InvalidIndex), rest => {
+      let selected = match(count) {
+        None => Ok(rest),
+        Some(size) => Results.mapErr(WideList.take(rest, size), _ => Strings.InvalidIndex)
+      };
+      Results.andThen(selected, chosen => Results.mapErr(Strings.toNative(chosen), Strings.StringError))
+    })
+  })
+};
+
+let substring = (value, start: Int64.Int, count: Int64.Int) => extract(value, start, Some(count));

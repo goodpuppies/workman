@@ -14,59 +14,65 @@ from "./subset_result.wm" import * as SubsetResult;
 from "./subset_list.wm" import * as SubsetList;
 from "./subset_text.wm" import * as SubsetText;
 
-let repeat = (piece, count: Int32.Int) => {
+let repeat32 = (piece, count: Int32.Int) => {
   let rec go = (left, acc) => {
     if (left <= 0) { SubsetString.concat(acc) } else { go(left - 1, [piece, ..acc]) }
   };
   go(count, [])
 };
-let pad = (value, width: Int32.Int, piece, length: Int32.Int, left) => {
+let pad32 = (value, width: Int32.Int, piece, length: Int32.Int, left) => {
   if (width <= length) { value } else {
-    let padding = repeat(piece, width - length);
+    let padding = repeat32(piece, width - length);
     if (left) { padding ++ value } else { value ++ padding }
   }
 };
 
-let padLeft = (value, width, c) => {
+let padLeft32 = (value, width, c) => {
   SubsetResult.andThen(
     SubsetString.fromNative(value),
     (bytes) => {
       SubsetResult.map(
         SubsetString.str(c),
-        (piece) => { pad(value, width, piece, SubsetList.length(bytes), true) }
+        (piece) => { pad32(value, width, piece, SubsetList.length32(bytes), true) }
       )
     }
   )
 };
-let padRight = (value, width, c) => {
+let padRight32 = (value, width, c) => {
   SubsetResult.andThen(
     SubsetString.fromNative(value),
     (bytes) => {
       SubsetResult.map(
         SubsetString.str(c),
-        (piece) => { pad(value, width, piece, SubsetList.length(bytes), false) }
+        (piece) => {
+          pad32(value, width, piece, SubsetList.length32(bytes), false)
+        }
       )
     }
   )
 };
-let padTextLeft = (value, width, scalar) => {
+let padTextLeft32 = (value, width, scalar) => {
   SubsetResult.andThen(
     SubsetText.explode(value),
     (scalars) => {
       SubsetResult.map(
         SubsetText.str(scalar),
-        (piece) => { pad(value, width, piece, SubsetList.length(scalars), true) }
+        (piece) => {
+          pad32(value, width, piece, SubsetList.length32(scalars), true)
+        }
       )
     }
   )
 };
-let padTextRight = (value, width, scalar) => {
+let padTextRight32 = (value, width, scalar) => {
   SubsetResult.andThen(
     SubsetText.explode(value),
     (scalars) => {
       SubsetResult.map(
         SubsetText.str(scalar),
-        (piece) => { pad(value, width, piece, SubsetList.length(scalars), false) }
+        (piece) => {
+          pad32(value, width, piece, SubsetList.length32(scalars), false)
+        }
       )
     }
   )

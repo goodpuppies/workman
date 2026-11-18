@@ -54,7 +54,7 @@ structure SubsetString = struct
     in go (bytes, 0, []) end
 
   (* Checked byte-string helpers share the extraction/reconstruction boundaries. *)
-  val size = fn value => SubsetResult.map (fromNative value, SubsetList.length)
+  val size32 = fn value => SubsetResult.map (fromNative value, SubsetList.length32)
   val str = fn c => toNative [c]
   (* A one-character native string. Total: a character is always a host text unit. *)
   val fromChar = fn c => SubsetTextHost.fromCodes [SubsetTextHost.charCode c]
@@ -80,17 +80,17 @@ structure SubsetString = struct
 
   (* Range errors are separate from the existing byte-conversion error type.
      Successive checked drops/takes avoid overflowing start + count. *)
-  val extract = fn (value, start, count) =>
+  val extract32 = fn (value, start, count) =>
     SubsetResult.andThen (SubsetResult.mapErr (fromNative value, StringError), fn bytes =>
-      SubsetResult.andThen (SubsetResult.mapErr (SubsetList.drop (bytes, start), fn error => InvalidIndex), fn rest =>
+      SubsetResult.andThen (SubsetResult.mapErr (SubsetList.drop32 (bytes, start), fn error => InvalidIndex), fn rest =>
         let
           val selected = case count of
               SubsetOptionValue.NONE => SubsetResult.Ok rest
-            | SubsetOptionValue.SOME size =>
-                SubsetResult.mapErr (SubsetList.take (rest, size), fn error => InvalidIndex)
+            | SubsetOptionValue.SOME size32 =>
+                SubsetResult.mapErr (SubsetList.take32 (rest, size32), fn error => InvalidIndex)
         in SubsetResult.andThen (selected, fn chosen =>
           SubsetResult.mapErr (toNative chosen, StringError)) end))
-  val substring = fn (value, start, count) => extract (value, start, SubsetOptionValue.SOME count)
+  val substring32 = fn (value, start, count) => extract32 (value, start, SubsetOptionValue.SOME count)
 
   val map = fn (value, transform) =>
     SubsetResult.andThen (fromNative value, fn bytes =>

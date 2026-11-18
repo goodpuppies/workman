@@ -85,8 +85,14 @@ Deno.test("Int32.Int and Real64.Real do not mix", async () => {
 });
 
 Deno.test("integer literals outside the Int32.Int range are rejected when selected as Int32.Int", async () => {
-  assertStringIncludes(await typeError(`let bad: Int32.Int = 2147483648;`), "out of range for Int32.Int");
-  assertStringIncludes(await typeError(`let bad: Int32.Int = -2147483649;`), "out of range for Int32.Int");
+  assertStringIncludes(
+    await typeError(`let bad: Int32.Int = 2147483648;`),
+    "out of range for Int32.Int",
+  );
+  assertStringIncludes(
+    await typeError(`let bad: Int32.Int = -2147483649;`),
+    "out of range for Int32.Int",
+  );
   assertStringIncludes(await typeError(`let bad: Int32.Int = 1.0;`), "Real64.Real");
 });
 
@@ -163,19 +169,142 @@ Deno.test("Int32 checked operations, conversions and Basis parsers", async () =>
       print(Int32.toReal64(5) / 2);
     `),
     [
-      "None",
-      "None",
-      "Some(-2147483648)",
-      "Some(3)",
-      "None",
-      "None",
-      "Some(0)",
+      "Err(Overflow)",
+      "Err(Overflow)",
+      "Ok(-2147483648)",
+      "Ok(3)",
+      "Err(InvalidInteger)",
+      "Err(Overflow)",
+      "Ok(0)",
       "Ok(-2147483648)",
       "Err(Overflow)",
       "Err(InvalidInteger)",
       "Ok(1)",
       "-2147483648",
       "2.5",
+    ],
+  );
+});
+
+Deno.test("Int32 and Int64 share parser and checked-operation contracts after a namespace replacement", async () => {
+  const source = `
+    let a: Int32 = 456456;
+    print(Int32.fromString(" \\t~12tail"));
+    print(Int32.fromString("+12.5"));
+    print(Int32.fromString("-"));
+    print(Int32.parseDecimal("+0012"));
+    print(Int32.parseDecimal("12x"));
+    print(Int32.parseDecimal(" 12"));
+    print(Int32.parseNatural("0012"));
+    print(Int32.parseNatural("-12"));
+    print(Int32.parseNatural(""));
+    print(Int32.checkedAdd(a, 1));
+    print(Int32.checkedAdd(Int32.maximum, 1));
+    print(Int32.checkedSub(Int32.minimum, 1));
+    print(Int32.checkedMul(Int32.minimum, 1));
+    print(Int32.checkedMul(Int32.minimum, -1));
+    print(Int32.checkedMul(0, Int32.minimum));
+    print(Int32.fromReal64(12.0));
+    print(Int32.fromReal64(1.5));
+    print(Int32.fromReal64(0.0 / 0.0));
+    print(Int32.fromReal64(1.0 / 0.0));
+    print(Int32.toString(a));
+    print(match(Int32.parseDecimal("1λ")) {
+      Err(Int32.StringError(_)) => true,
+      _ => false
+    });
+  `;
+  const narrow = await runLines(source);
+  const wide = await runLines(source.replaceAll("Int32", "Int64"));
+  // The successful minimum multiplication is intentionally width-dependent.
+  narrow[12] = "minimum";
+  wide[12] = "minimum";
+  assertEquals(wide, narrow);
+  assertEquals(narrow, [
+    "Ok(-12)",
+    "Ok(12)",
+    "Err(InvalidInteger)",
+    "Ok(12)",
+    "Err(InvalidInteger)",
+    "Err(InvalidInteger)",
+    "Ok(12)",
+    "Err(InvalidInteger)",
+    "Err(InvalidInteger)",
+    "Ok(456457)",
+    "Err(Overflow)",
+    "Err(Overflow)",
+    "minimum",
+    "Err(Overflow)",
+    "Ok(0)",
+    "Ok(12)",
+    "Err(InvalidInteger)",
+    "Err(InvalidInteger)",
+    "Err(InvalidInteger)",
+    "456456",
+    "true",
+  ]);
+});
+
+Deno.test("Int64 decimal parsing preserves exact bounds and rejects overflowing input", async () => {
+  assertEquals(
+    await runLines(`
+    print(Int64.parseDecimal("9223372036854775807"));
+    print(Int64.parseDecimal("-9223372036854775808"));
+    print(Int64.parseDecimal("9223372036854775808"));
+    print(Int64.parseDecimal("-9223372036854775809"));
+    print(Int64.fromString("999999999999999999999999999999999999"));
+    print(Int64.parseDecimal("0x10"));
+    print(Int64.parseNatural("000000000000000000000000000000000001"));
+    print(Int64.checkedMul(3037000499, 3037000499));
+    print(Int64.checkedMul(3037000500, 3037000500));
+    print(Int64.checkedMul(-4294967296, 2147483648));
+    print(Int64.checkedMul(Int64.minimum, 0));
+  `),
+    [
+      "Ok(9223372036854775807)",
+      "Ok(-9223372036854775808)",
+      "Err(Overflow)",
+      "Err(Overflow)",
+      "Err(Overflow)",
+      "Err(InvalidInteger)",
+      "Ok(1)",
+      "Ok(9223372030926249001)",
+      "Err(Overflow)",
+      "Ok(-9223372036854775808)",
+      "Ok(0)",
+    ],
+  );
+});
+
+Deno.test("Int64 conversions report errors without throwing or losing precision", async () => {
+  assertEquals(
+    await runLines(`
+    print(Int64.fromReal64(-9223372036854775808.0));
+    print(Int64.fromReal64(9223372036854775808.0));
+    print(Int64.fromReal64(1152921504606846976.0));
+    print(Int64.toReal64(1152921504606846976));
+    print(Int64.toReal64(9007199254740993));
+    print(Int64.toReal64(Int64.maximum));
+    print(Int64.toInt32(2147483647));
+    print(Int64.toInt32(-2147483648));
+    print(Int64.toInt32(2147483648));
+    print(Int64.toInt32(-2147483649));
+    print(Int64.fromInt32(Int32.minimum));
+    print(Int64.fromInt32(Int32.maximum));
+  `),
+    [
+      "Ok(-9223372036854775808)",
+      "Err(Overflow)",
+      "Ok(1152921504606846976)",
+      "Ok(1152921504606847000)",
+      "Err(PrecisionLoss)",
+      "Err(PrecisionLoss)",
+      "Ok(2147483647)",
+      "Ok(-2147483648)",
+      "Err(Overflow)",
+      "Err(Overflow)",
+      "-2147483648",
+      "2147483647",
     ],
   );
 });

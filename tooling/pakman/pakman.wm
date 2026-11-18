@@ -316,7 +316,7 @@ let update = (p, root) => {
 
 let scopeLabel = (info: Packages.PackageInfo) => { match(info.scope) { System => { "system" }, User => { "user" } } };
 
-let pad = (text, width) => { StringCvt.padTextRight(text, width, (32: Int32)) :> Result.getOr(text) };
+let pad = (text, width) => { StringCvt.padTextRight32(text, width, (32: Int32)) :> Result.getOr(text) };
 
 -- What upstream offers, newest first, marked with what's locked and what an
 -- automatic resolve would pick.
@@ -332,10 +332,10 @@ let listVersions = (p, info: Packages.PackageInfo) => {
         if (c.version == lockedVersion) { ["locked" ++ (locked :> Option.map(trackNote) :> Option.getOr(""))] } else { [] },
         if (c.version == pick) { ["default pick"] } else { [] },
         if (gated(c)) { ["younger than " ++ Text.of(minAgeDays(info)) ++ " days"] } else { [] },
-        if (List.length(c.checksums) > 0) { [] } else { ["no upstream checksum"] }
+        if (List.length32(c.checksums) > 0) { [] } else { ["no upstream checksum"] }
       ]);
       let marker = if (c.version == lockedVersion) { "* " } else { "  " };
-      marker ++ pad(c.version, (32: Int32)) ++ pad(c.channel, (9: Int32)) ++ pad(UnicodeText.substring(c.published, (0: Int32), (10: Int32)) :> Result.getOr(c.published), (12: Int32))
+      marker ++ pad(c.version, (32: Int32)) ++ pad(c.channel, (9: Int32)) ++ pad(UnicodeText.substring32(c.published, (0: Int32), (10: Int32)) :> Result.getOr(c.published), (12: Int32))
         ++ join(notes, ", ")
     };
     -- An onlyLatest package holding a build upstream has replaced.

@@ -62,8 +62,8 @@ let filteredProblems = (model: Model) => {
   List.filter(model.problems, (problem) => { severityEnabled(problem.severity, model) })
 };
 
-let count = (model) => { Int32.toReal64(List.length(filteredProblems(model))) };
-let totalCount = (model: Model) => { Int32.toReal64(List.length(model.problems)) };
+let count = (model) => { Int32.toReal64(List.length32(filteredProblems(model))) };
+let totalCount = (model: Model) => { Int32.toReal64(List.length32(model.problems)) };
 
 let changed = (model, errors, warnings, infos, hints) => {
   .{ ..model, selected = 0, top = 0, expanded = false, errors, warnings, infos, hints }
@@ -176,8 +176,8 @@ let rec visibleRows: (List<Problem>, Real64, Real64, Real64, Real64) -> List<Str
 
 let selectedProblem = (model) => {
   match(Int32.fromReal64(model.selected)) {
-    Some(index) => { List.at(filteredProblems(model), index) :> Result.toOption },
-    None => { None }
+    Ok(index) => { List.at32(filteredProblems(model), index) :> Result.toOption },
+    Err(_) => { None }
   }
 };
 
@@ -229,7 +229,7 @@ let detailHeight = (expanded, wanted, bodyHeight) => {
 let render = (_, model, size) => {
   let (body, footer) = Geometry.reserveBottom(Geometry.screen(size), 1);
   let detail = Draw.wrap(detailText(model), body.width);
-  let detailRows = detailHeight(model.expanded, Int32.toReal64(List.length(detail)), body.height);
+  let detailRows = detailHeight(model.expanded, Int32.toReal64(List.length32(detail)), body.height);
   let listRows = Geometry.nonNegative(body.height - detailRows - headerRows);
   let listArea = Geometry.rect(0, headerRows, body.width, listRows);
   let problems = filteredProblems(model);

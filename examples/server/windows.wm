@@ -14,7 +14,7 @@ from c.header("winsock2.h") import type { sockaddr_in };
 
 let cstr = str => Some(str :> Pointer.fromString);
 let size = Word64.fromReal64;
-let i32 = number => { let Some(value) = Int32.fromReal64(number); value };
+let i32 = number => { Int32.fromReal64(number) :> Result.debug };
 let withMemory = (allocation, action) => {
   match(allocation) {
     None => { Panic("malloc/calloc failed") },

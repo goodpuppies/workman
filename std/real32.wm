@@ -1,3 +1,4 @@
+from "basis/numeric.wm" import * as Numeric;
 from js.module("./js/float.js") import unsafe {
   float32Round as primFromReal64: Real64.Real -> Real32.Real,
   float32Round as primToReal64: Real32.Real -> Real64.Real,
@@ -18,3 +19,12 @@ let sub = float32Sub;
 let mul = float32Mul;
 let div = float32Div;
 let neg = float32Neg;
+
+
+/** Default arithmetic dictionary; bare Real32 in value position selects carrier. */
+let math: Numeric.Arithmetic<Real32.Real> = .{
+  zero = 0, one = 1,
+  add = (a: Real32.Real, b: Real32.Real) => a + b,
+  mul = (a: Real32.Real, b: Real32.Real) => a * b
+};
+let carrier = math;

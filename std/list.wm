@@ -1,5 +1,8 @@
 from "basis/order.wm" import { Less, Equal, Greater };
 from "basis/list.wm" import * as SubsetList;
+from "basis/monad.wm" import * as SubsetMonad;
+from "./primitive.wm" import { Consumer };
+from "basis/result.wm" import * as SubsetResult;
 
 // `List` is the SubsetML Basis `List` plus the additions below, which the Basis doesn't define.
 // A name the Basis exports is never redefined here (markdown/basis-authority-plan.md).
@@ -50,5 +53,102 @@ let rec compareWith = match(left, right, compare) => {
       Less => { Less },
       Greater => { Greater }
     }
+  }
+};
+
+// Sequence carrier-returning checks while retaining each original input.
+// Keep the carrier operations at separate instantiations: map2 decorates each answer,
+// andThen sequences the steps, and map reverses the completed list.
+let annotate = (items, domain, check) => {
+  let step = (item, wrapped) => {
+    wrapped :> SubsetMonad.andThen(domain, answers => {
+      domain.map2(check(item), domain.succeed(answers), (answer, previous) => {
+        [(item, answer), ..previous]
+      })
+    })
+  };
+  SubsetList.foldLeft(items, domain.succeed([]), step)
+    :> SubsetMonad.map(domain, SubsetList.reverse)
+};
+
+// Pure collection: each step emits zero or more elements, collected in input order.
+let concatMap = (items, emit) => {
+  SubsetList.foldLeft(items, [], (item, previous) => {
+    SubsetList.reverseAppend(emit(item), previous)
+  }) :> SubsetList.reverse
+};
+
+// A deferred traversal stores the carrier without running its checks. Its carrier
+// is instantiated for the consumer chosen by collect; use a fresh generator per consumer.
+record Generator<item, answer, state, checked, domain> = {
+  items: List<item>,
+  initial: state,
+  check: (item, state) -> checked,
+  advance: (state, answer) -> state,
+  domain: domain
+};
+
+let generate = (items, domain, check) => Generator{
+  items = items,
+  initial = void,
+  check = (item, _) => check(item),
+  advance = (_, _) => void,
+  domain = domain
+};
+
+// The check receives (item, previous state); its successful answer is the next state.
+let generateState = (items, domain, initial, check) => Generator{
+  items = items,
+  initial = initial,
+  check = check,
+  advance = (_, next) => next,
+  domain = domain
+};
+
+let collect = (source, consumer) => {
+  SubsetMonad.loop((source.items, source.initial, consumer.initial), source.domain, (rest, state, acc) => {
+    match(rest) {
+      [] => { source.domain.succeed(SubsetMonad.Stop(consumer.finish(acc))) },
+      [item, ..tail] => {
+        source.domain.map(source.check(item, state), answer => {
+          match(consumer.step(item, answer, acc)) {
+            SubsetMonad.Continue(next) => { SubsetMonad.Continue(tail, source.advance(state, answer), next) },
+            SubsetMonad.Stop(output) => { SubsetMonad.Stop(output) }
+          }
+        })
+      }
+    }
+  })
+};
+
+// @int64-counts
+// Collection counts and indices default to Int64. The shared Basis exports explicit Int32 variants.
+let length = items => SubsetList.lengthWith(items, (0: Int64.Int), count => count + 1);
+
+let repeat = (value, count: Int64.Int) => {
+  if (count < 0) { Err(InvalidCount) } else {
+    Ok(SubsetList.repeatWith(value, count, (n: Int64.Int) => n == 0, (n: Int64.Int) => n - 1))
+  }
+};
+
+let splitAt = (items, index: Int64.Int) => {
+  if (index < 0) { Err(InvalidIndex) } else {
+    SubsetList.splitAtWith(items, index, (n: Int64.Int) => n == 0, (n: Int64.Int) => n - 1)
+  }
+};
+
+let at = (items, index: Int64.Int) => {
+  SubsetResult.andThen(splitAt(items, index), (_, rest) => {
+    match(rest) { [] => Err(OutOfBounds), [value, .._] => Ok(value) }
+  })
+};
+
+let take = (items, count: Int64.Int) => SubsetResult.map(splitAt(items, count), (prefix, _) => prefix);
+let drop = (items, count: Int64.Int) => SubsetResult.map(splitAt(items, count), (_, rest) => rest);
+
+let tabulate = (count: Int64.Int, generate) => {
+  if (count < 0) { Err(InvalidCount) } else {
+    Ok(SubsetList.tabulateWith((0: Int64.Int), (n: Int64.Int) => n + 1,
+      (n: Int64.Int) => n >= count, generate))
   }
 };

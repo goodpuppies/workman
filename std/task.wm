@@ -1,4 +1,4 @@
-from "./monad.wm" import { Carrier };
+from "./monad.wm" import { Carrier, Continue, Stop };
 from js.module("./js/task.js") import unsafe {
   resolve as primResolve: result -> task,
   onSettled as primThen: (task, result -> next) -> settled,
@@ -117,6 +117,16 @@ let viaErr = (inject) => {
   }
 };
 
+// Task.andThen schedules each next iteration through the promise boundary.
+let rec loop = (state, advance) => {
+  advance(state) :> andThen(next => {
+    match(next) {
+      Stop(output) => { succeed(output) },
+      Continue(another) => { loop(another, advance) }
+    }
+  })
+};
+
 let carrier = .{
   via = via,
   viaErr = viaErr,
@@ -125,6 +135,7 @@ let carrier = .{
   mapErr = (task, f) => { mapErr(task, f) },
   map2 = (left, right, combine) => { map2(left, right, combine) },
   andThen = (task, f) => { andThen(task, f) },
+  loop = (state, advance) => { loop(state, advance) },
 };
 
 let fromCallback = (handle, register) => {

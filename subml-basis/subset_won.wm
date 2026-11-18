@@ -171,7 +171,7 @@ let index = (found, position) => {
       match(node.value) {
         SubsetWonValue.List(items) => {
           let path = indexStep(node.path, position);
-          match(SubsetList.at(items, position)) {
+          match(SubsetList.at32(items, position)) {
             SubsetResult.Ok(item) => { SubsetResult.Ok(SubsetWonValue.makeNode(path, item)) },
             SubsetResult.Err(_) => { SubsetResult.Err(SubsetWonValue.Missing(pathText(path))) }
           }

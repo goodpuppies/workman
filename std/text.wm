@@ -1,0 +1,22 @@
+from "basis/text.wm" import * as UnicodeText;
+from "basis/result.wm" import * as Results;
+from "./list.wm" import * as WideList;
+export from "basis/text.wm" import *;
+
+// @int64-counts
+// Unicode scalar counts and indices default to Int64; explicit 32 variants come from the Basis.
+let size = value => Results.map(UnicodeText.explode(value), WideList.length);
+
+let extract = (value, start: Int64.Int, count: Option<Int64.Int>) => {
+  Results.andThen(Results.mapErr(UnicodeText.explode(value), UnicodeText.UnicodeError), scalars => {
+    Results.andThen(Results.mapErr(WideList.drop(scalars, start), _ => UnicodeText.InvalidIndex), rest => {
+      let selected = match(count) {
+        None => Ok(rest),
+        Some(size) => Results.mapErr(WideList.take(rest, size), _ => UnicodeText.InvalidIndex)
+      };
+      Results.andThen(selected, chosen => Results.mapErr(UnicodeText.implode(chosen), UnicodeText.UnicodeError))
+    })
+  })
+};
+
+let substring = (value, start: Int64.Int, count: Int64.Int) => extract(value, start, Some(count));

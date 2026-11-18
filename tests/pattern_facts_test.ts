@@ -101,7 +101,7 @@ Deno.test("host patterns over compiler standard-library records retain field evi
         Real64.Real, Real64.Real, Real64.Real, Real64.Real,
         Real64.Real, Real64.Real, Real64.Real, Real64.Real,
         Real64.Real, Real64.Real, Real64.Real, Real64.Real,
-        Real64.Real, Real64.Real, Real64.Real
+        Real64.Real, Real64.Real, Real64.Real, Real64.Real
       >) => { via };`,
     ]]),
   );

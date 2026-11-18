@@ -102,7 +102,7 @@ structure BackendNames = struct
   val validate = fn (supply, owner, pos, Scope (values, types)) =>
     let
       val duplicate = fn bindings => SubsetList.find (bindings, fn Binding (source, _, _) =>
-        SubsetList.length (SubsetList.filter (bindings, fn Binding (other, _, _) => source = other)) > 1)
+        SubsetList.length32 (SubsetList.filter (bindings, fn Binding (other, _, _) => source = other)) > 1)
       val add = fn (supply, bindings) => case duplicate bindings of NONE => supply
         | SOME (Binding (source, _, _)) =>
             let val Supply (prefix, next, symbols) = supply

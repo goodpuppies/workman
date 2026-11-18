@@ -65,7 +65,7 @@ Deno.test("List is the Basis List plus getItem", async () => {
       "print(List.filterMap([1, 2, 3], (x) => { if (x == 2) { None } else { Some(x * 10) } }));",
       "print((List.find([1, 2, 3], (x) => { x > 1 }), List.find([1], (x) => { x > 1 })));",
       "print(List.partition([1, 2, 3, 4], (x) => { x % 2 == 0 }));",
-      "print((List.tabulate(3, (i) => { i * i }), List.tabulate(0, (i) => { i })));",
+      "print((List.tabulate32(3, (i) => { i * i }), List.tabulate32(0, (i) => { i })));",
     ]),
     [
       "(true, false)",

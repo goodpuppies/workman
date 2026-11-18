@@ -47,7 +47,7 @@ Deno.test("kernel entry points retain the prelude needed by an imported module",
     "/test/main.wm",
     new Map([
       ["/test/main.wm", '-- @no-prelude\nfrom "./dep.wm" import { count }; let answer = count;'],
-      ["/test/dep.wm", "let count = List.length([1, 2, 3]);"],
+      ["/test/dep.wm", "let count = List.length32([1, 2, 3]);"],
     ]),
   );
   const module = await import(`data:text/javascript;base64,${btoa(js)}`);

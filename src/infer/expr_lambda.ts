@@ -22,7 +22,8 @@ import { deriveInferContext, type InferContext, type TypingDialect } from "./con
 import { gpuTypingDialect } from "./gpu_dialect.ts";
 import { inferParam } from "./expr_flow.ts";
 import { patternBinders } from "./patterns.ts";
-import { constrainAt } from "./provenance.ts";
+import { constrainAt, sourceForExpr } from "./provenance.ts";
+import { resultExpr } from "./ast_utils.ts";
 import { callArg } from "./shared.ts";
 import {
   recordExpectedExprType,
@@ -79,7 +80,17 @@ export function inferLambdaTy(
         typeInfoById(typeEnv, target.id)?.recordFields
       ? annotated
       : undefined;
-    return inferParam(p, local, typeEnv, strEnv, adts, binders, facts, provenance, recordAnnotation);
+    return inferParam(
+      p,
+      local,
+      typeEnv,
+      strEnv,
+      adts,
+      binders,
+      facts,
+      provenance,
+      recordAnnotation,
+    );
   });
   paramHints?.forEach((hint, index) => {
     if (hint && index < params.length) {
@@ -191,20 +202,33 @@ export function inferLambdaTy(
     collectParamReplacements(param, signatureParams[index], replacements);
   });
   let signatureBody = replaceParamOccurrences(body, replacements);
+  const returned = resultExpr(expr.body);
   for (const annotation of returnAnnotations) {
     constrainAt(
       body,
       annotation.type,
-      expr,
+      returned,
       () => `type mismatch ${quoteType(annotation.type)}, got ${quoteType(body)}`,
       [],
       provenance,
       {
         message: "return annotation",
-        node: annotation.ast.node,
-        span: annotation.ast.node?.span,
+        node: returned.node,
+        span: returned.node?.span,
+        primary: true,
       },
       {
+        primarySource: "left",
+        sources: {
+          left: sourceForExpr(returned, "return expression"),
+          right: {
+            origin: {
+              message: "return annotation",
+              node: annotation.ast.node,
+              span: annotation.ast.node?.span,
+            },
+          },
+        },
         premise: {
           rule: "InferAnnotation.ReturnMatchesAnnotation",
           role: "lambda body matches return annotation",

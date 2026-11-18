@@ -30,7 +30,6 @@ export function checkExhaustive(
     [],
   );
   if (missing.length === 0) return undefined;
-  if (isShallowConstructorComplete(patterns, valueType, adts)) return undefined;
 
   const scrutinee = prune(valueType);
   if (scrutinee.tag === "named") {
@@ -59,55 +58,6 @@ export function checkExhaustive(
   return `non-exhaustive match: missing ${first.missing}`;
 }
 
-// The full witness finder above descends into constructor payloads, but its
-// early default-row shortcut can lose constructor-specific rows in a later
-// tuple column. This conservative second proof handles the common matrix where
-// every constructor payload is already irrefutable. It never suppresses a
-// warning for a literal or nested refutable payload.
-function isShallowConstructorComplete(
-  patterns: Pattern[],
-  valueType: Ty,
-  adts: Map<number, TypeDeclInfo>,
-): boolean {
-  const target = prune(valueType);
-  const rows = target.tag === "tuple"
-    ? patterns
-      .filter((pattern): pattern is Extract<Pattern, { kind: "PTuple" }> =>
-        pattern.kind === "PTuple" && pattern.items.length === target.items.length
-      )
-      .map((pattern) => pattern.items)
-    : patterns.map((pattern) => [pattern]);
-  const types = target.tag === "tuple" ? target.items : [target];
-  if (rows.length === 0) return false;
-  return shallowColumnsComplete(rows, types, adts);
-}
-
-function shallowColumnsComplete(
-  rows: Pattern[][],
-  types: Ty[],
-  adts: Map<number, TypeDeclInfo>,
-): boolean {
-  rows = rows.map((row) => row.length === 0 ? row : [withoutConstraint(row[0]), ...row.slice(1)]);
-  if (types.length === 0) return rows.length > 0;
-  const [headType, ...tailTypes] = types;
-  if (rows.every((row) => isIrrefutable(row[0]))) {
-    return shallowColumnsComplete(rows.map((row) => row.slice(1)), tailTypes, adts);
-  }
-  const head = prune(headType);
-  if (head.tag !== "named") return false;
-  const info = adts.get(head.id);
-  if (!info) return false;
-  return info.ctors.every((ctor) => {
-    const selected = rows.filter((row) => {
-      const pattern = row[0];
-      if (isIrrefutable(pattern)) return true;
-      return pattern.kind === "PCtor" && constructorPatternMatches(pattern.name, ctor.name) &&
-        pattern.args.every(isIrrefutable);
-    }).map((row) => row.slice(1));
-    return selected.length > 0 && shallowColumnsComplete(selected, tailTypes, adts);
-  });
-}
-
 export function isVectorExhaustive(
   rows: Pattern[][],
   types: Ty[],
@@ -130,18 +80,17 @@ function findMissingCases(
   const [headType, ...tailTypes] = types;
   const head = prune(headType);
 
-  if (rows.some((row) => isIrrefutable(row[0]))) {
-    const tails = rows.filter((row) => isIrrefutable(row[0])).map((row) => row.slice(1));
-    return findMissingCases(tails, tailTypes, typeEnv, adts, path);
+  if (rows.length > 0 && rows.every((row) => isIrrefutable(row[0]))) {
+    return findMissingCases(rows.map((row) => row.slice(1)), tailTypes, typeEnv, adts, path);
   }
 
   if (head.tag === "prim" && head.name === "Bool") {
-    const trueRows = rows.filter((row) => row[0].kind === "PBool" && row[0].value).map((row) =>
-      row.slice(1)
-    );
-    const falseRows = rows.filter((row) => row[0].kind === "PBool" && !row[0].value).map((row) =>
-      row.slice(1)
-    );
+    const trueRows = rows.filter((row) =>
+      isIrrefutable(row[0]) || row[0].kind === "PBool" && row[0].value
+    ).map((row) => row.slice(1));
+    const falseRows = rows.filter((row) =>
+      isIrrefutable(row[0]) || row[0].kind === "PBool" && !row[0].value
+    ).map((row) => row.slice(1));
     const missing: MissingCase[] = [];
     if (!isVectorExhaustive(trueRows, tailTypes, typeEnv, adts)) {
       // If no more types to check, the missing case is the literal itself
@@ -162,17 +111,19 @@ function findMissingCases(
   }
 
   if (head.tag === "prim" && head.name === "Void") {
-    const voidRows = rows.filter((row) => row[0].kind === "PVoid").map((row) => row.slice(1));
+    const voidRows = rows.filter((row) => isIrrefutable(row[0]) || row[0].kind === "PVoid").map((
+      row,
+    ) => row.slice(1));
     return findMissingCases(voidRows, tailTypes, typeEnv, adts, path);
   }
 
   if (head.tag === "tuple") {
-    const tupleRows = rows
-      .filter((row): row is [Extract<Pattern, { kind: "PTuple" }>, ...Pattern[]] =>
-        row[0].kind === "PTuple"
-      )
-      .filter((row) => row[0].items.length === head.items.length)
-      .map((row) => [...row[0].items, ...row.slice(1)]);
+    const tupleRows = rows.flatMap((row) => {
+      if (isIrrefutable(row[0])) return [[...wildcards(head.items.length), ...row.slice(1)]];
+      return row[0].kind === "PTuple" && row[0].items.length === head.items.length
+        ? [[...row[0].items, ...row.slice(1)]]
+        : [];
+    });
     if (tupleRows.length === 0) {
       return [{ path: [...path], missing: `(${head.items.map(() => "_").join(", ")})` }];
     }
@@ -184,17 +135,18 @@ function findMissingCases(
     const record = candidate?.recordFields ? candidate : undefined;
     if (record?.recordFields) {
       const fields = instantiateRecordFields(record, head.args);
-      const recordRows = rows
-        .filter((row): row is [Extract<Pattern, { kind: "PRecord" }>, ...Pattern[]] =>
-          row[0].kind === "PRecord"
-        )
-        .map((row) => [
+      const recordRows = rows.flatMap((row) => {
+        const pattern = row[0];
+        if (isIrrefutable(pattern)) return [[...wildcards(fields.length), ...row.slice(1)]];
+        if (pattern.kind !== "PRecord") return [];
+        return [[
           ...fields.map((field) =>
-            row[0].fields.find((item) => item.name === field.name)?.pattern ??
+            pattern.fields.find((item) => item.name === field.name)?.pattern ??
               { kind: "PWildcard" as const }
           ),
           ...row.slice(1),
-        ]);
+        ]];
+      });
       if (recordRows.length === 0) {
         return [{
           path: [...path],
@@ -211,16 +163,18 @@ function findMissingCases(
     }
 
     const info = adts.get(head.id);
-    if (!info) return [{ path: [...path], missing: "_" }];
+    if (!info) return findMissingCases(defaultRows(rows), tailTypes, typeEnv, adts, path);
 
     const missing: MissingCase[] = [];
     for (const ctor of info.ctors) {
-      const ctorRows = rows
-        .filter((row): row is [Extract<Pattern, { kind: "PCtor" }>, ...Pattern[]] =>
-          row[0].kind === "PCtor"
-        )
-        .filter((row) => constructorPatternMatches(row[0].name, ctor.name))
-        .map((row) => [...row[0].args, ...row.slice(1)]);
+      // Wildcard rows apply to every constructor. Keep them alongside specific
+      // rows, including their remaining tuple columns, during specialization.
+      const ctorRows = rows.flatMap((row) => {
+        if (isIrrefutable(row[0])) return [[...wildcards(ctor.args.length), ...row.slice(1)]];
+        return row[0].kind === "PCtor" && constructorPatternMatches(row[0].name, ctor.name)
+          ? [[...row[0].args, ...row.slice(1)]]
+          : [];
+      });
 
       if (ctorRows.length === 0) {
         // Entire constructor is missing
@@ -246,7 +200,15 @@ function findMissingCases(
     return missing;
   }
 
-  return [{ path: [...path], missing: "_" }];
+  return findMissingCases(defaultRows(rows), tailTypes, typeEnv, adts, path);
+}
+
+function wildcards(count: number): Pattern[] {
+  return Array.from({ length: count }, () => ({ kind: "PWildcard" }));
+}
+
+function defaultRows(rows: Pattern[][]): Pattern[][] {
+  return rows.filter((row) => isIrrefutable(row[0])).map((row) => row.slice(1));
 }
 
 export function mentionsLocalType(t: Ty, allowed: Set<number>, seen = new Set<Ty>()): boolean {

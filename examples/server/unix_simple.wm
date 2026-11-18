@@ -20,7 +20,7 @@ let httpPayload =
 let handleClient = (clientSock) => {
   let Some(buffer) = calloc(1, 1024) :> Option.map(Pointer.cast);
   let bytesReceived = recv(clientSock, Some(buffer), 1024, 0);
-  if (Int64.toReal64(bytesReceived) > 0) {
+  if (bytesReceived > (0: Int64)) {
     send(clientSock, cstr httpPayload, size(Pointer.byteLength(httpPayload)), 0);
   } else { void };
   free(Some(Pointer.cast(buffer)));

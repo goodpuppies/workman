@@ -4,7 +4,12 @@ import { posix } from "node:path";
 import { libraryJsSources, librarySources } from "./generated/assets.ts";
 import type { InferModuleOptions, InferResult, InitialImport } from "./infer.ts";
 import { analyzeModuleGraph, type StagedAnalysisOptions } from "./staged_analysis.ts";
-import { cloneTypeEnv, knownTypeInfos, markLibraryTypes } from "./types.ts";
+import {
+  cloneTypeEnv,
+  knownTypeInfos,
+  markLibraryTypes,
+  registerLibraryDiagnosticNames,
+} from "./types.ts";
 import { parseCompilerModule } from "./compiler_frontend.ts";
 import { type ModuleId, moduleId, type ModuleMap } from "./module_id.ts";
 import { BASIS_PROFILES, initialBasis } from "./initial_basis.ts";
@@ -312,6 +317,15 @@ async function analyzeLibraryModules(
     const result = results.get(moduleId(module.path));
     if (result) markLibraryTypes(knownTypeInfos(result.typeEnv));
   }
+  // Prefer public std re-exports over the underlying Basis module's implementation namespace.
+  for (
+    const module of [...modules].sort((a, b) =>
+      Number(b.path.startsWith("std/")) - Number(a.path.startsWith("std/"))
+    )
+  ) {
+    const result = results.get(moduleId(module.path));
+    if (result) registerLibraryDiagnosticNames(module.alias, result.exportedStructure.tyEnv);
+  }
   return modules.map((module) => {
     const id = moduleId(module.path);
     return composeInitialStructure({
@@ -363,7 +377,7 @@ function libraryGraph(modules: readonly StandardModule[]): ModuleGraph {
  */
 function composeInitialStructure(module: LoadedStandardModule): LoadedStandardModule {
   const source = withStandardValueIds(module.result.exportedStructure, module.path);
-  const host = isAutoOpened(module.path)
+  const host = (isAutoOpened(module.path) || module.path.startsWith("subml-basis/subset_"))
     ? initialBasis(BASIS_PROFILES.default).instantiate().environment.strEnv.get(module.alias)
     : undefined;
   const environment = host ? modifiedStaticEnv(host, source) : source;

@@ -15,7 +15,7 @@ from "./subset_result.wm" import * as SubsetResult;
 from "./subset_string.wm" import * as SubsetString;
 
 type Error = InvalidNatural | InvalidDivisor;
-let isValid = SubsetList.validCount;
+let isValid = SubsetList.validCount32;
 
 // Internal: nonnegative integer operands and a positive divisor.
 let split = (value: Int32.Int, base: Int32.Int) => { (Int32.div(value, base), Int32.mod(value, base)) };

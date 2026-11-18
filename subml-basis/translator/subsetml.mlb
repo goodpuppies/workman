@@ -3,6 +3,7 @@ subset_text_host.sml
 subset_option_value.sml
 subset_result_value.sml
 subset_bool.sml
+subset_numeric.sml
 subset_monad.sml
 subset_result.sml
 subset_host.sml

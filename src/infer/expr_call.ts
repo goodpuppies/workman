@@ -7,6 +7,7 @@ import {
   fresh,
   freshFfi,
   instantiateRecordFields,
+  isLibraryErrorType,
   JsBoundaryError,
   named,
   prune,
@@ -21,6 +22,7 @@ import {
 } from "../types.ts";
 import type { Ty as TyNode } from "../types.ts";
 import {
+  applicationResultSource,
   constrainAt,
   type EvidenceOrigin,
   fnSource,
@@ -34,6 +36,7 @@ import { callArg } from "./shared.ts";
 import { basisTypeIsHostOwned } from "../basis_manifest.ts";
 import type { InferContext } from "./context.ts";
 import { inferExpr } from "./expr.ts";
+import { lambdaTypingDialect } from "./expr_lambda.ts";
 import { lookupLongValue } from "./environment.ts";
 import {
   recordConsumedFfiUse,
@@ -50,6 +53,107 @@ export function inferCall(
 }
 
 export function inferApplication(invocation: InvocationPlan, context: InferContext): Ty {
+  try {
+    return inferApplicationInner(invocation, context);
+  } catch (error) {
+    if (error instanceof FrontendDiagnosticError) {
+      addConstructorPayloadHint(error, invocation, context);
+    }
+    throw error;
+  }
+}
+
+/** A nullary constructor used where a unary mapper is required may be missing its payload. */
+function addConstructorPayloadHint(
+  error: FrontendDiagnosticError,
+  invocation: InvocationPlan,
+  context: InferContext,
+): void {
+  const diagnostic = error.diagnostic;
+  const violation = diagnostic.failure.violation;
+  if (violation.kind !== "contradicted" || diagnostic.primary.kind !== "source") return;
+  const types = diagnostic.support.types;
+  const observed = [violation.observed.left, violation.observed.right]
+    .map((id) => types.find((type) => type.id === id));
+  const mapper = observed.find((type) =>
+    type?.shape.kind === "function" && type.shape.params.length === 1
+  );
+  const actual = observed.find((type) => type?.shape.kind === "named");
+  if (mapper?.shape.kind !== "function" || actual?.shape.kind !== "named") return;
+  const parameterId = mapper.shape.params[0];
+  if (invocation.occurrence.kind === "Pipe" && invocation.callee.kind === "Var") {
+    const callee = invocation.callee;
+    const path = pathOf(callee);
+    const binding = path.qualifiers.length > 0
+      ? lookupLongValue(context.strEnv, path)
+      : context.env.get(path.id);
+    const calleeType = context.types.get(callee);
+    const resolved = calleeType ? prune(calleeType) : undefined;
+    if (
+      binding?.status === "constructor" && resolved?.tag === "named" &&
+      resolved.id === actual.shape.typeId && callee.node
+    ) {
+      const parameter = types.find((type) => type.id === parameterId);
+      const concrete = parameter && parameter.shape.kind !== "anonymous-var" &&
+        parameter.shape.kind !== "named-var";
+      diagnostic.support.entries.push({
+        kind: "note",
+        id: `constructor-pipe-payload-${callee.node.span.start}`,
+        message:
+          `${callee.name} is declared without a payload, so it cannot accept a piped value.` +
+          (concrete ? ` Did you mean to declare ${callee.name}<${parameter.rendered}>?` : ""),
+        origin: { ...diagnostic.primary, span: callee.node.span },
+      });
+      return;
+    }
+  }
+  const actualTypeId = actual.shape.typeId;
+  const parameter = types.find((type) => type.id === parameterId);
+  if (
+    !parameter || parameter.shape.kind === "anonymous-var" || parameter.shape.kind === "named-var"
+  ) return;
+  const primary = diagnostic.primary;
+  const argument = invocation.args.find((argument) => {
+    if (argument.kind !== "Var" || !argument.node) return false;
+    const span = argument.node.span;
+    const atPrimary = primary.span.start >= span.start && primary.span.end <= span.end;
+    const hasObservedOrigin = diagnostic.support.entries.some((entry) =>
+      entry.kind === "claim" && entry.claim.kind === "has-type" &&
+      entry.claim.type === actual.id && entry.origin.kind === "source" &&
+      entry.origin.span.start === span.start && entry.origin.span.end === span.end
+    );
+    if (!atPrimary && !hasObservedOrigin) return false;
+    const path = pathOf(argument);
+    const binding = path.qualifiers.length > 0
+      ? lookupLongValue(context.strEnv, path)
+      : context.env.get(path.id);
+    const type = context.types.get(argument);
+    const resolved = type ? prune(type) : undefined;
+    return binding?.status === "constructor" && resolved?.tag === "named" &&
+      resolved.id === actualTypeId;
+  });
+  if (argument?.kind !== "Var") return;
+  let payload = parameter.rendered;
+  // Qualify the actual expected payload's nominal identity, not another type also named Error.
+  if (parameter.shape.kind === "named") {
+    const shape = parameter.shape;
+    const owner = [...context.strEnv].find(([, environment]) =>
+      environment.tyEnv.get(shape.name)?.id === shape.typeId
+    );
+    if (owner) payload = `${owner[0]}.${payload}`;
+  }
+  const noteId = `constructor-payload-${argument.node!.span.start}`;
+  if (diagnostic.support.entries.some((entry) => entry.id === noteId)) return;
+  diagnostic.support.entries.push({
+    kind: "note",
+    id: noteId,
+    message:
+      `Did you mean to declare ${argument.name} with a payload, as ${argument.name}<${payload}>?`,
+    origin: { ...primary, span: argument.node!.span },
+  });
+}
+
+function inferApplicationInner(invocation: InvocationPlan, context: InferContext): Ty {
   const expr = invocation.occurrence;
   const calleeExpr = invocation.callee;
   const args = [...invocation.args];
@@ -57,7 +161,21 @@ export function inferApplication(invocation: InvocationPlan, context: InferConte
   const { env, typeEnv, types, facts, provenance } = context;
   const result = fresh();
   const isPrintCall = calleeExpr.kind === "Var" && calleeExpr.name === "print";
-  const callee = inferExpr(calleeExpr, context);
+  // An inline pipe stage consumes a value whose type is already available. Establish
+  // that input before checking the stage body, so match payloads and nested failures
+  // retain the concrete type even when the body fails before the final pipe constraint.
+  const pipedInput = isPipe && args.length === 1 && calleeExpr.kind === "Lambda" &&
+      lambdaTypingDialect(calleeExpr, context.dialect).domain !== "gpu"
+    ? inferExpr(args[0], context)
+    : undefined;
+  const callee = inferExpr(
+    calleeExpr,
+    context,
+    undefined,
+    pipedInput && calleeExpr.kind === "Lambda"
+      ? contextualCallArguments(pipedInput, calleeExpr.params.length)
+      : undefined,
+  );
   const calleeProvenance = calleeExpr.kind === "Var"
     ? (env.get(calleeExpr.name)?.provenance ?? [])
     : [];
@@ -97,7 +215,9 @@ export function inferApplication(invocation: InvocationPlan, context: InferConte
     : [];
   const argTypes: Ty[] = [];
   for (const [index, argument] of args.entries()) {
-    const argumentType = inferExpr(argument, context, expectedArgs[index]);
+    const argumentType = index === 0 && pipedInput
+      ? pipedInput
+      : inferExpr(argument, context, expectedArgs[index]);
     recordConsumedFfiUse(facts, argumentType, {
       kind: isPipe && index === 0 ? "pipe" : "call",
       message: isPipe && index === 0
@@ -286,7 +406,14 @@ export function inferApplication(invocation: InvocationPlan, context: InferConte
           rightRole: "callee result",
         },
         sources: {
-          right: sourceAtPath(calleeSource, [{ kind: "fn-result" }]) ?? calleeSource,
+          right: hasConcreteLibraryError(calleeFn.result)
+            ? applicationResultSource(
+              expr,
+              calleeFn.result,
+              provenance,
+              sourceAtPath(calleeSource, [{ kind: "fn-result" }]) ?? calleeSource,
+            )
+            : sourceAtPath(calleeSource, [{ kind: "fn-result" }]) ?? calleeSource,
         },
       },
     );
@@ -370,6 +497,21 @@ function awaitsForeignCallee(type: Ty, facts: InferContext["facts"]): boolean {
     fact.status === "unresolved" &&
     fact.placeholder?.constraints?.some((constraint) => contains(constraint, new Set()))
   );
+}
+
+// A concrete library error is introduced at the API use. Generic result components
+// keep their existing provenance, including types supplied later by user annotations.
+function hasConcreteLibraryError(type: Ty, seen = new Set<Ty>()): boolean {
+  const value = prune(type);
+  if (seen.has(value)) return false;
+  seen.add(value);
+  if (value.tag === "named") {
+    return isLibraryErrorType(value.id) ||
+      value.args.some((arg) => hasConcreteLibraryError(arg, seen));
+  }
+  if (value.tag === "fn") return hasConcreteLibraryError(value.result, seen);
+  if (value.tag === "tuple") return value.items.some((item) => hasConcreteLibraryError(item, seen));
+  return false;
 }
 
 function contextualCallArguments(parameter: Ty, argumentCount: number): (Ty | undefined)[] {
@@ -655,6 +797,7 @@ export function maxCallDepth(origins: EvidenceOrigin[]): number {
 export function callCalleeRelated(callee: Expr, type: Ty): EvidenceOrigin[] {
   if (!callee.node) return [];
   return [{
+    signature: { name: callee.kind === "Var" ? callee.name : "callee", type },
     // Rendered only if a diagnostic reads it, which is rare, while every call builds this.
     get message() {
       return callee.kind === "Var"
@@ -677,6 +820,16 @@ function constrainPipe(
 ): Ty {
   const result = fresh();
   const expected = fn([argType], result);
+  const typedCalleeSource = sourceForTypedExpr(
+    callee,
+    calleeType,
+    provenance,
+    callee.kind === "Var" ? callee.name : "callee",
+  );
+  const calleeFn = prune(calleeType);
+  const calleeSource = argExprs.length > 1 || callee.kind !== "Var"
+    ? typedCalleeSource
+    : sourceForExpr(callee, callee.name);
   constrainAt(
     calleeType,
     expected,
@@ -704,14 +857,17 @@ function constrainPipe(
         rightRole: "pipe function",
       },
       sources: {
-        left: argExprs.length > 1
-          ? sourceForTypedExpr(
-            callee,
-            calleeType,
-            provenance,
-            callee.kind === "Var" ? callee.name : "callee",
-          )
-          : sourceForExpr(callee, callee.kind === "Var" ? callee.name : "callee"),
+        left: calleeFn.tag === "fn"
+          ? {
+            ...calleeSource,
+            fnResult: applicationResultSource(
+              expr,
+              calleeFn.result,
+              provenance,
+              sourceAtPath(typedCalleeSource, [{ kind: "fn-result" }]),
+            ),
+          }
+          : calleeSource,
         right: fnSource(
           [pipeArgSource(argExprs, argTypes, provenance)],
           sourceForExpr(expr, "pipe result"),

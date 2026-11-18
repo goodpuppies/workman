@@ -11,3 +11,9 @@ export const describe = (error, show) => {
   }
   return show(error);
 };
+
+export const fail = (message) => {
+  const error = new Error(message);
+  error.name = "ResultDebug";
+  throw error;
+};

@@ -213,6 +213,25 @@ export function knownTypeInfos(typeEnv: TypeEnv): TypeInfo[] {
 }
 
 const libraryTypeIds = new Set<number>();
+const libraryDiagnosticNames = new Map<number, string>();
+
+/** Public owners of library error types, keyed by nominal identity rather than spelling. */
+export function registerLibraryDiagnosticNames(namespace: string, types: TypeEnv): void {
+  for (const [name, info] of types) {
+    if (!/error$/i.test(name) || name.includes(".") || info.alias) continue;
+    if (!libraryDiagnosticNames.has(info.id)) {
+      libraryDiagnosticNames.set(info.id, `${namespace}.${name}`);
+    }
+  }
+}
+
+export function diagnosticTypeName(id: number, fallback: string): string {
+  return libraryDiagnosticNames.get(id) ?? fallback;
+}
+
+export function isLibraryErrorType(id: number): boolean {
+  return libraryDiagnosticNames.has(id);
+}
 
 /** Records the types the shipped library declares (`std/`, `subml-basis/`, `host/`). */
 export function markLibraryTypes(infos: Iterable<TypeInfo>): void {

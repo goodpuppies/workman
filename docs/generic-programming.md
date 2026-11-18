@@ -73,6 +73,7 @@ let carrier = .{
   mapErr = mapErr,
   map2 = map2,
   andThen = andThen,
+  loop = loop,
 };
 ```
 
@@ -656,3 +657,24 @@ programs.
 - Stageforgeman's historical `prior-experiments/interpreted_functions` prototype
   constructs the same heterogeneous function records in direct and forwarding
   modes.
+
+## Carrier-aware list callbacks
+
+When a list callback can fail or perform asynchronous work, generate a deferred traversal with
+that carrier and collect it with a pure consumer:
+
+```wm
+let kept = numbers :> List.generate(Result, hasIdenticalHalves) :> List.collect(Primitive.filter);
+let parsed = texts :> List.generate(Result, Int64.parseDecimal) :> List.collect(Primitive.map);
+```
+
+Checks take a plain element and return a carrier value. For Result filtering, the predicate is
+`Int64 -> Result<Bool, Error>`, rather than a `Monad.via Result` transformation expecting an
+already carried input. Checks run left to right, and the first failure (an `Err`, or a failed
+Task) stops collection before the next check. Regular `List.map` and `List.filter` are unchanged;
+their callbacks remain plain functions.
+
+`generate` and `collect` are ordinary functions over carrier records and work with Result, Task
+and other records satisfying the carrier operations. See
+[deferred generation](./carriers.md#deferred-generation-and-pure-consumers) for every consumer,
+stateful generation and custom consumers.

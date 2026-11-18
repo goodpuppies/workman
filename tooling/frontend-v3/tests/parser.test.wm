@@ -76,7 +76,7 @@ let tests = [
             R.Err(_) => {fail("materialized editor view failed")},
             R.Ok(second) => {
               checks([assertEqual(TextSource.toUnits(first.projection.text), TextSource.toUnits(second.projection.text)),
-                assertEqual(Lists.length(materialized.syntaxMarks), 0)])
+                assertEqual(Lists.length32(materialized.syntaxMarks), 0)])
             }
           }
         }

@@ -208,8 +208,10 @@ structure WmModuleScope = struct
   (* Unqualified library values in every module. Portable operations belong to the SubsetML
      Basis; std contributes only its extra facilities. *)
   val pervasives = SubsetList.concat [
+    namesOf ("std/list.wm", ["length"]),
+    namesOf ("subml-basis/subset_list.wm", ["length32"]),
     namesOf ("subml-basis/subset_list.wm",
-      ["map", "filter", "forEach", "foldLeft", "foldRight", "head", "tail", "length", "isEmpty",
+      ["map", "filter", "forEach", "foldLeft", "foldRight", "head", "tail", "isEmpty",
        "reverse", "concat"]),
     namesOf ("subml-basis/subset_option.wm", ["getOr", "isSome", "toResult"]),
     namesOf ("subml-basis/subset_bool.wm", ["not"]),
@@ -218,7 +220,8 @@ structure WmModuleScope = struct
      renamed ("subml-basis/subset_char.wm", "ord", "toCode"),
      renamed ("subml-basis/subset_string.wm", "explode", "fromNative"),
      renamed ("subml-basis/subset_string.wm", "implode", "toNative")],
-    namesOf ("subml-basis/subset_string.wm", ["size", "str"]),
+    namesOf ("std/string.wm", ["size"]),
+    namesOf ("subml-basis/subset_string.wm", ["size32", "str"]),
     namesOf ("std/general.wm", ["before", "ignore", "o"]),
     namesOf ("std/real64.wm", ["ceil", "floor", "round", "trunc"]),
     [renamed ("std/vector.wm", "vector", "fromList")],

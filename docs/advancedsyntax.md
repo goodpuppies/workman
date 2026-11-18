@@ -452,3 +452,22 @@ let unwrap = match {
 
 thing :> unwrap :> func
 ```
+
+A constructor arm can omit its payload binder when its body starts with `:>`:
+
+```wm
+match {
+  Ok(value) => value,
+  Err => :> match {
+    Message(text) => text,
+    Missing => "missing value",
+  },
+}
+```
+
+`Err => :> handle` expands to `Err(payload) => payload :> handle`, with a fresh
+internal binder. It consumes the payload immediately; it does not return another
+function. The constructor must have one payload. Qualified constructors work too,
+and the body can use `{ :> first :> second }` to continue with ordinary statements.
+Use the usual `Err(error) => error :> handle` form when naming or destructuring the
+payload is useful.

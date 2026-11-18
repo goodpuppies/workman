@@ -10,7 +10,9 @@ The SubsetML Basis owns its names. A std module named like a Basis module (`list
 `option.wm`, `result.wm`, `string.wm`, `list_pair.wm`, `int32.wm`) extends it: it starts with
 `export from "basis/x.wm" import *;` and only adds names the Basis module doesn't define.
 `tests/basis_conformance_test.ts` enforces this. Default pervasives project the shared Basis
-where it provides the operation.
+where it provides the operation. Count/index functions in the shared Basis have explicit `32`
+names; std supplies the unsuffixed Int64 defaults using shared traversal cores. This covers
+List, String, Text and StringCvt. See [collection widths](../docs/numbers.md#collection-count-and-index-widths).
 
 Implicit namespaces and explicit imports expose the same compiler and source members. For example,
 `from "std/int32.wm" import * as I;` retains `I.toReal64`, `I.checkedAdd` and the Basis parsers.
@@ -23,6 +25,17 @@ for contextual typing, GPU defaults and JS boundaries.
 pervasive `toList`. It composes shared Basis byte conversions and returns `[]` on any
 conversion error, including non-byte input. It uses no direct JS FFI.
 The checked portable byte conversion remains the Basis's `explode`.
+
+`List.generate(items, domain, check)` constructs a deferred traversal. Follow it with
+`List.collect(Primitive.filter)` to retain matching inputs, or use `Primitive.find`, `exists`,
+`all`, `takeWhile`, `map`, `filterMap`, `concatMap`, or `partition`. Consumers are ordinary pure
+records, and collection stops before another check on failure or a decisive answer. Result
+and Task provide the carrier's tail-recursive `loop` operation. The same source-only std
+pipeline translates to native SML. `List.generateState(items, domain, initial, check)` passes each successful state to the next
+check; `Primitive.lastOr(initial)` can collect a checked total. `List.annotate` retains the eager
+checked-pair operation;
+`List.concatMap` is pure list flattening. See
+[deferred generation and consumers](../docs/carriers.md#deferred-generation-and-pure-consumers).
 
 Use public library specifiers for shared dependencies: `"basis/list.wm"`,
 `"basis/string.wm"`, etc. The embedded library loader resolves the same `basis/`,

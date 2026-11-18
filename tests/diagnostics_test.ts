@@ -117,6 +117,200 @@ Deno.test("call mismatch produces an auditable diagnostic artifact", async () =>
   );
 });
 
+Deno.test("piping into a nullary constructor highlights the target and explains the missing payload", async () => {
+  const source = `type CErr = | SliceErr;
+let e: String.Slice_error = String.InvalidIndex;
+let bad = e :> SliceErr :> Err;`;
+  const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+  const rendered = formatDiagnostic(error.diagnostic, "day1.wm", source);
+  assertStringIncludes(rendered, "type error: SliceErr pipe target can't be both:");
+  assertStringIncludes(rendered, "  - CErr");
+  assertStringIncludes(rendered, "  - String.Slice_error -> T");
+  assertStringIncludes(rendered, "day1.wm:3:16");
+  assertStringIncludes(rendered, "piped value: String.Slice_error");
+  assertStringIncludes(rendered, "SliceErr is declared without a payload");
+  assertStringIncludes(rendered, "SliceErr<String.Slice_error>");
+  assertEquals(rendered.includes("pipe sides"), false);
+  const fixed = source.replace("| SliceErr;", "| SliceErr<String.Slice_error>;");
+  assertEquals((await checkSource(fixed)).diagnostics, []);
+});
+
+Deno.test("a nullary constructor pipe explains missing payloads before the input is inferred", async () => {
+  const source = "type CErr = | SliceErr; let f = e => e :> SliceErr :> Err;";
+  const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+  const rendered = formatDiagnostic(error.diagnostic, "day1.wm", source);
+  assertStringIncludes(rendered, "SliceErr pipe target");
+  assertStringIncludes(rendered, "SliceErr is declared without a payload");
+  assertStringIncludes(rendered, "piped value: T");
+  assertEquals(rendered.includes("SliceErr<T>"), false);
+});
+
+Deno.test("inline pipe matches establish error payloads before checking a failing arm", async () => {
+  const source = `type CErr = | SliceErr;
+let parse = tok => String.substring(tok, 0, 0) :> match {
+  Ok("L") => Ok(1: Int32),
+  Ok("R") => Ok(2: Int32),
+  Err(e) => e :> SliceErr,
+  Ok(_) => Panic "invalid direction"
+};`;
+  const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+  const rendered = formatDiagnostic(error.diagnostic, "day1.wm", source);
+  assertStringIncludes(rendered, "  - String.Slice_error -> T");
+  assertStringIncludes(rendered, "piped value: String.Slice_error");
+  assertStringIncludes(rendered, "SliceErr<String.Slice_error>");
+  assertEquals(rendered.includes("piped value: T"), false);
+});
+
+Deno.test("inline pipe lambdas establish nested and tuple input types before body errors", async () => {
+  for (
+    const source of [
+      `type Failure = | Wrapped;
+let bad = ((1: Int32), "text") :> ((number, text) => text :> Wrapped);`,
+      `type Failure = | Wrapped;
+let bad = Some(Err("error")) :> match {
+  Some(Err(error)) => error :> Wrapped,
+  _ => Panic "other"
+};`,
+    ]
+  ) {
+    const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+    const rendered = formatDiagnostic(error.diagnostic, "input.wm", source);
+    assertStringIncludes(rendered, "piped value: String");
+    assertStringIncludes(rendered, "Wrapped<String>");
+  }
+});
+
+Deno.test("non-constructor pipe targets do not receive a constructor repair", async () => {
+  const source = 'let target = "text"; let bad = (1: Int32) :> target;';
+  const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+  const rendered = formatDiagnostic(error.diagnostic, "target.wm", source);
+  assertStringIncludes(rendered, "target pipe target");
+  assertStringIncludes(rendered, "piped value: Int32.Int");
+  assertEquals(rendered.includes("without a payload"), false);
+});
+
+Deno.test("library error names identify their public module without qualifying user errors", async () => {
+  const source = `type Error = | LocalFailure;
+let dir = String.substring("L1",0,0) :> match {
+  Ok(x) => Err(LocalFailure),
+  Err(e) => Err(e)
+};`;
+  const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+  const rendered = formatDiagnostic(error.diagnostic, "day1.wm", source);
+  assertStringIncludes(rendered, "String.Slice_error");
+  assertStringIncludes(rendered, "LocalFailure: Error");
+  assertEquals(rendered.includes("LocalFailure: String.Error"), false);
+});
+
+Deno.test("unary call collisions highlight the argument and retain its authored producer", async () => {
+  for (const alias of [false, true]) {
+    const source = `let extracted = String.extract("R48", 1, None);
+${alias ? "let numStr = extracted;" : ""}
+let n = Int64.fromString(${alias ? "numStr" : "extracted"});`;
+    const argument = alias ? "numStr" : "extracted";
+    const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+    const primary = error.diagnostic.primary;
+    if (primary.kind !== "source") throw new Error("missing argument location");
+    assertEquals(primary.span.start, source.lastIndexOf(argument));
+    assertEquals(primary.span.end, source.lastIndexOf(argument) + argument.length);
+
+    const rendered = formatDiagnostic(error.diagnostic, "day1.wm", source);
+    assertStringIncludes(rendered, `type error: ${argument} can't be both:`);
+    const origins = rendered.split("-- Origins")[1];
+    assertStringIncludes(origins, 'let extracted = String.extract("R48", 1, None);');
+    assertStringIncludes(origins, "day1.wm:1:17");
+    assertStringIncludes(origins, "String.extract call result: Result<String, String.Slice_error>");
+    assertEquals(origins.includes("subml-basis/subset_result.wm:"), false);
+    assertEquals(origins.includes("subml-basis/subset_text_host.wm:"), false);
+    assertStringIncludes(
+      origins,
+      "Int64.fromString signature: String -> Result<Int64.Int, Int64.Error>",
+    );
+
+    // Inspection still exposes the implementation evidence behind the public call.
+    const detailed = formatDiagnosticInspection(error.diagnostic, "day1.wm", source);
+    assertStringIncludes(detailed, "subml-basis/subset_result.wm:");
+  }
+});
+
+Deno.test("signature origins shorten around the conflicting parameter at narrow widths", async () => {
+  const source =
+    'let numStr = String.extract("R48", 1, None);\nlet bad = Int64.fromString(numStr);';
+  const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+  const previousColumns = Deno.env.get("COLUMNS");
+  try {
+    Deno.env.set("COLUMNS", "40");
+    const rendered = formatDiagnostic(error.diagnostic, "day1.wm", source);
+    const origins = rendered.split("-- Origins")[1];
+    assertStringIncludes(origins, "Int64.fromString signature: String -> ..");
+    assertStringIncludes(origins, "String.extract call result: Result<String, String.Slice_error>");
+    assertEquals(origins.includes("subml-basis/"), false);
+    const document = formatDiagnosticDocument(error.diagnostic, "day1.wm", source);
+    assertEquals(
+      document.lines.some((line) =>
+        line.spans.some((part) => part.role === "type" && part.text === "String -> ..")
+      ),
+      true,
+    );
+  } finally {
+    if (previousColumns === undefined) Deno.env.delete("COLUMNS");
+    else Deno.env.set("COLUMNS", previousColumns);
+  }
+});
+
+Deno.test("call origins follow an imported user callback through List.map", async () => {
+  const entry = "/test/app/main.wm";
+  const producer = "/test/app/producer.wm";
+  const source = `from "./producer.wm" import { values };
+let accept = (x: List<String>) => x;
+let bad = accept(values);`;
+  const files = new Map([
+    [entry, source],
+    [
+      producer,
+      `let number: Int32 = 1;
+let values = List.map(["x"], _ => number);`,
+    ],
+  ]);
+  const error = await assertRejects(() => checkVirtual(entry, files), ModuleAnalysisError);
+  if (!(error.originalError instanceof FrontendDiagnosticError)) throw error.originalError;
+  const diagnostic = error.originalError.diagnostic;
+  const previousColumns = Deno.env.get("COLUMNS");
+  try {
+    for (const width of [120, 40]) {
+      Deno.env.set("COLUMNS", String(width));
+      const rendered = formatDiagnostic(diagnostic, entry, source);
+      const origins = rendered.split("-- Origins")[1];
+      assertStringIncludes(origins, "producer.wm:1:21");
+      assertStringIncludes(origins, "let number: Int32 = 1;");
+      assertEquals(origins.includes("subml-basis/"), false);
+      assertEquals(origins.includes("std/"), false);
+    }
+  } finally {
+    if (previousColumns === undefined) Deno.env.delete("COLUMNS");
+    else Deno.env.set("COLUMNS", previousColumns);
+  }
+});
+
+Deno.test("branch collisions show library calls in user code as origins", async () => {
+  for (
+    const expression of [
+      'if (true) { String.extract("R48", 1, None) } else { "x" }',
+      'match(true) { true => String.extract("R48", 1, None), false => "x" }',
+    ]
+  ) {
+    const source = `let bad = ${expression};`;
+    const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+    const rendered = formatDiagnostic(error.diagnostic, "branch.wm", source);
+    const origins = rendered.split("-- Origins")[1];
+    assertStringIncludes(origins, "String.extract");
+    assertStringIncludes(origins, "Result<String, String.Slice_error>");
+    assertStringIncludes(origins, "branch.wm:1:");
+    assertEquals(origins.includes("subml-basis/"), false);
+    assertEquals(origins.includes("std/"), false);
+  }
+});
+
 Deno.test("traversal callback collisions retain the library constraint and call-site head", async () => {
   const source = `record Pair = { first: Int32, second: Int32 };
 let parsePair = (s: String) => {
@@ -149,11 +343,11 @@ let bad = List.traverse(["1-2"], parsePair);`;
   assertEquals(rendered.includes("collision in callback"), false);
   const origins = rendered.split("-- Origins")[1].split("-- Provenance")[0];
   assertStringIncludes(origins, "Result<");
-  assertStringIncludes(origins, "SubsetResult.Err(error)");
+  assertStringIncludes(origins, "List.traverse callback result: Result<T, U>");
   assertStringIncludes(origins, "Result.debug");
   assertEquals(origins.includes("Ok(value) => { value }"), false);
-  assertEquals(origins.includes("List.traverse"), false);
-  assertStringIncludes(rendered, "subml-basis/subset_list.wm:");
+  assertStringIncludes(origins, "List.traverse");
+  assertEquals(rendered.includes("subml-basis/subset_list.wm:"), false);
   assertStringIncludes(rendered, "app/day2.wm:3:");
   assertEquals(origins.includes("std/result.wm:"), false);
   const detailed = formatDiagnosticInspection(error.diagnostic, "app/day2.wm", source);
@@ -185,7 +379,8 @@ let bad = List.traverse(["1-2"], parsePair);`;
   const origins = rendered.split("-- Origins")[1];
   assertStringIncludes(origins, "Result.debug(Ok(Pair(1, 2)))");
   assertStringIncludes(origins, "app/direct.wm:2:");
-  assertStringIncludes(origins, "SubsetResult.Err(error)");
+  assertStringIncludes(origins, "List.traverse callback result: Result<T, U>");
+  assertEquals(origins.includes("subml-basis/"), false);
   assertEquals(origins.includes("std/result.wm:"), false);
 });
 
@@ -203,8 +398,8 @@ let bad = Int32.fromString("12") :> Result.mapErr(ExpectedPair);`;
   assertStringIncludes(rendered, "ParseError");
   assertStringIncludes(rendered, "-> T");
   const origins = rendered.split("-- Origins")[1];
-  assertStringIncludes(origins, "Err(f(error))");
-  assertStringIncludes(origins, "subml-basis/subset_result.wm:");
+  assertStringIncludes(origins, "Result.mapErr");
+  assertEquals(origins.includes("subml-basis/subset_result.wm:"), false);
   assertStringIncludes(origins, "app/mapper.wm:2:");
   const detailed = formatDiagnosticInspection(error.diagnostic, "app/mapper.wm", source);
   assertEquals(detailed.includes("no source path was retained"), false);
@@ -308,6 +503,44 @@ let bad = String.length(value);`;
   const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
   const rendered = formatDiagnosticInspection(error.diagnostic, "intentional.wm", source);
   assertEquals(rendered.includes("Did you accidentally unwrap"), false);
+});
+
+Deno.test("return annotation mismatches point at the final expression and retain the annotation", async () => {
+  for (const trailing of [false, true]) {
+    const source = `type CErr = | Failed;
+record Spin = {distance: Int64};
+let parse = (str)${trailing ? "" : ": List<Spin>"} => {
+  let toks: Result<List<Spin>, CErr> = Ok([]);
+  toks
+}${trailing ? ": List<Spin>" : ""};`;
+    const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+    const primary = error.diagnostic.primary;
+    if (primary.kind !== "source") throw new Error("missing returning expression");
+    assertEquals(primary.span.start, source.lastIndexOf("toks"));
+    assertEquals(primary.span.end, source.lastIndexOf("toks") + 4);
+    const rendered = formatDiagnostic(error.diagnostic, "return.wm", source);
+    assertStringIncludes(rendered, "type error: toks can't be both:");
+    const origins = rendered.split("-- Origins")[1];
+    assertStringIncludes(origins, "return annotation: List<Spin>");
+    assertStringIncludes(origins, "return expression: Result<List<Spin>, CErr>");
+    assertStringIncludes(origins, `return.wm:${trailing ? "6:4" : "3:20"}`);
+    assertEquals(rendered.includes("parseASpi"), false);
+  }
+});
+
+Deno.test("return mismatches from a discarded expression point at its terminating semicolon", async () => {
+  const source = `let f = (): Int32 => {
+  let local: Int32 = 1;
+  local;
+};`;
+  const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+  const primary = error.diagnostic.primary;
+  if (primary.kind !== "source") throw new Error("missing return location");
+  assertEquals(primary.span.start, source.lastIndexOf("local;") + 5);
+  assertEquals(primary.span.end, primary.span.start + 1);
+  const rendered = formatDiagnostic(error.diagnostic, "void-return.wm", source);
+  assertStringIncludes(rendered, "return annotation: Int32.Int");
+  assertStringIncludes(rendered, "this trailing `;` makes the block result Void");
 });
 
 Deno.test("parameter annotation mismatch uses the authored collision renderer", async () => {
@@ -435,9 +668,9 @@ let main = () => {
   if (primary.kind !== "source") {
     throw new Error("expected source primary diagnostic");
   }
-  const expectedStart = source.indexOf("sin(time * 2)");
+  const expectedStart = source.indexOf("time * 2");
   assertEquals(primary.span.start, expectedStart);
-  assertEquals(primary.span.end, expectedStart + "sin(time * 2)".length);
+  assertEquals(primary.span.end, expectedStart + "time * 2".length);
 });
 
 Deno.test("call mismatch preserves the nested HM constraint origin through generalization", async () => {
@@ -555,6 +788,7 @@ Deno.test("pipe mismatch records a pipe step premise", async () => {
   assertEquals(constraintRoles(error.diagnostic), ["callee", "pipe function"]);
   assertEquals(claimSubjects(error.diagnostic), [
     "render",
+    "render call result",
     "piped value",
     "pipe result",
     "render pipe",
@@ -571,11 +805,11 @@ Deno.test("pipe mismatch uses the enhanced authored renderer", async () => {
   const rendered = formatDiagnostic(error.diagnostic, "Main.wm", source);
   assertStringIncludes(rendered, "Error: TYPE CHECKER[type.pipe-input-mismatch]");
   assertStringIncludes(rendered, "Main.wm");
-  assertStringIncludes(rendered, "type error: pipe sides can't be both:");
+  assertStringIncludes(rendered, "type error: render pipe input can't be both:");
   assertStringIncludes(rendered, 'let bad = "x"');
   assertStringIncludes(rendered, ": String");
   assertStringIncludes(rendered, 'let bad = "x" :> render');
-  assertStringIncludes(rendered, ": Real64.Real");
+  assertStringIncludes(rendered, "  - Real64.Real");
   assertStringIncludes(rendered, "-- Origins");
 });
 
@@ -698,8 +932,8 @@ let bad = JSON.stringify(JSON{ ok: true }) :> accept;`;
   assertStringIncludes(rendered, "Result<String, Js.Error>");
   assertStringIncludes(rendered, "String");
   const origins = rendered.split("-- Origins")[1];
-  assertStringIncludes(origins, "app/encode.wm:1:");
   assertStringIncludes(origins, "app/encode.wm:3:");
+  assertStringIncludes(origins, "pipe output: Result<String, Js.Error>");
   assertEquals(rendered.includes("unwrap the Result first"), false);
 });
 
@@ -976,7 +1210,7 @@ let main = () => {
   const rendered = formatDiagnostic(error.diagnostic, "indent.wm", source);
   assertStringIncludes(rendered, '3|   inc("no")');
   assertEquals(rendered.includes('3|                     inc("no")'), false);
-  assertStringIncludes(rendered, "indent.wm:3:21");
+  assertStringIncludes(rendered, "indent.wm:3:25");
 });
 
 Deno.test("binary operand mismatch records an operator premise", async () => {
@@ -1030,3 +1264,213 @@ function claimSubjects(diagnostic: FrontendDiagnostic): string[] {
     .filter((entry) => entry.kind === "claim")
     .map((entry) => entry.claim.subject);
 }
+
+Deno.test("pipe mismatches show the authored producer instead of a library implementation", async () => {
+  const source = `let add = (a: Int64, b: Int32) =>
+  (a, Int64.fromInt32(b)) :> Int64.checkedAdd :> Option.toResult :> Result.debug;
+let total = [1, 2] :> List.foldLeft((0: Int64), add);`;
+  const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+  const rendered = formatDiagnostic(error.diagnostic, "day2.wm", source);
+  assertStringIncludes(rendered, "type error: Option.toResult pipe input can't be both:");
+  assertStringIncludes(rendered, "  - Result<Int64.Int, Int64.Error>");
+  assertStringIncludes(rendered, "  - (Option<T>, U)");
+  assertStringIncludes(rendered, "Int64.checkedAdd :> Option.toResult");
+  assertStringIncludes(rendered, "day2.wm:2:");
+  assertEquals(rendered.includes("std/int64.wm:"), false);
+  assertEquals(rendered.includes("List.foldLeft((0: Int64), add){..}"), false);
+  const detailed = formatDiagnosticInspection(error.diagnostic, "day2.wm", source);
+  assertStringIncludes(detailed, "std/int64.wm:");
+  assertStringIncludes(detailed, "if ((b > 0 && a > maximum - b)");
+  assertEquals(detailed.includes("List.foldLeft((0: Int64), add){..}"), false);
+  const document = formatDiagnosticDocument(error.diagnostic, "day2.wm", source);
+  assertEquals(
+    document.lines.some((row) =>
+      row.spans.some((part) =>
+        part.role === "type" && part.text === "Result<Int64.Int, Int64.Error>"
+      )
+    ),
+    true,
+  );
+});
+
+Deno.test("pipe input mismatches show whole container types instead of only differing leaves", async () => {
+  const source = `let render = (values: List<String>) => values;
+let values: List<Int32> = [1, 2];
+let bad = values :> render;`;
+  const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+  const rendered = formatDiagnostic(error.diagnostic, "lists.wm", source);
+  assertStringIncludes(rendered, "  - List<Int32.Int>");
+  assertStringIncludes(rendered, "  - List<String>");
+});
+
+Deno.test("a pipe input mismatch excludes the fixed arguments from the expected input type", async () => {
+  const source = "let bad = (42: Int32) :> List.map(x => x);";
+  const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+  const rendered = formatDiagnostic(error.diagnostic, "map.wm", source);
+  assertStringIncludes(rendered, "  - Int32.Int");
+  assertStringIncludes(rendered, "  - List<T>");
+});
+
+Deno.test("authored pipe boundaries retain their types without source text and at narrow widths", async () => {
+  const source = "let bad = Int64.checkedAdd(1, 2) :> Option.toResult;";
+  const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+  const withoutSource = formatDiagnostic(error.diagnostic, "day2.wm", undefined);
+  assertStringIncludes(withoutSource, "type error: Option.toResult pipe input can't be both:");
+  assertStringIncludes(withoutSource, "  - Result<Int64.Int, Int64.Error>");
+  const previousColumns = Deno.env.get("COLUMNS");
+  try {
+    for (const columns of [120, 40]) {
+      Deno.env.set("COLUMNS", String(columns));
+      const rendered = formatDiagnostic(error.diagnostic, `${Deno.cwd()}/day2.wm`, source);
+      assertStringIncludes(rendered, "day2.wm:1:");
+      assertStringIncludes(rendered, "  - (Option<T>, U)");
+      assertEquals(rendered.includes("std/int64.wm:"), false);
+      assertEquals(rendered.includes(Deno.cwd()), false);
+    }
+  } finally {
+    if (previousColumns === undefined) Deno.env.delete("COLUMNS");
+    else Deno.env.set("COLUMNS", previousColumns);
+  }
+});
+
+Deno.test("carrier continuations retain the operation introducing their error type", async () => {
+  const source = `type CErr = | SliceErr<String.Slice_error>;
+let num = String.extract("12", 0, None)
+  :> Result.mapErr(SliceErr)
+  :> Monad.via Result =>
+  :> Int64.fromString;`;
+  const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+  const previousColumns = Deno.env.get("COLUMNS");
+  try {
+    for (const width of [120, 40]) {
+      Deno.env.set("COLUMNS", String(width));
+      const rendered = formatDiagnostic(error.diagnostic, "day1.wm", source);
+      assertStringIncludes(rendered, "  - Result<String, CErr>");
+      assertStringIncludes(rendered, "  - Result<String, Int64.Error>");
+      const origins = rendered.split("-- Origins")[1];
+      assertStringIncludes(origins, "SliceErr: CErr");
+      assertStringIncludes(origins, "Int64.fromString call result: Int64.Error");
+      assertStringIncludes(origins, "day1.wm:5:6");
+      assertEquals(origins.includes("next stage input"), false);
+      assertEquals(origins.includes("std/int64.wm:"), false);
+      assertEquals(origins.includes("subml-basis/"), false);
+    }
+  } finally {
+    if (previousColumns === undefined) Deno.env.delete("COLUMNS");
+    else Deno.env.set("COLUMNS", previousColumns);
+  }
+  const withoutSource = formatDiagnostic(error.diagnostic, "day1.wm", undefined);
+  assertStringIncludes(withoutSource, "Int64.fromString call result: Int64.Error");
+  assertStringIncludes(
+    formatDiagnosticInspection(error.diagnostic, "day1.wm", source),
+    "std/int64.wm:",
+  );
+});
+
+Deno.test("continuation error origins traverse a user helper across modules", async () => {
+  const entry = "/test/main.wm";
+  const source = `from "./parse.wm" import { parse };
+type CErr = | SliceErr<String.Slice_error>;
+let num = String.extract("12", 0, None)
+  :> Result.mapErr(SliceErr)
+  :> Monad.via Result =>
+  :> parse;`;
+  const error = await assertRejects(() =>
+    checkVirtual(
+      entry,
+      new Map([
+        [entry, source],
+        ["/test/parse.wm", "let parse = text => text :> Int64.fromString;"],
+      ]),
+    ), ModuleAnalysisError);
+  if (!(error.originalError instanceof FrontendDiagnosticError)) throw error.originalError;
+  const rendered = formatDiagnostic(error.originalError.diagnostic, entry, source);
+  const origins = rendered.split("-- Origins")[1];
+  assertStringIncludes(origins, "Int64.fromString call result: Int64.Error");
+  assertStringIncludes(origins, "parse.wm:1:");
+  assertEquals(origins.includes("std/int64.wm:"), false);
+});
+
+Deno.test("nested pipe error origins point to the predicate operation through a carrier traversal", async () => {
+  const source = `type ParseError = | InvalidInput;
+let parsed: Result<List<Int64>, ParseError> = Ok([11, 22]);
+let predicate = n => List.splitAt([n], 0) :> Result.map(_ => true);
+let filter = Monad.via Result items => Monad.traverse(items, Result, predicate);
+let mapped = parsed :> filter;`;
+  const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+  const previousColumns = Deno.env.get("COLUMNS");
+  try {
+    for (const width of [120, 40]) {
+      Deno.env.set("COLUMNS", String(width));
+      const rendered = formatDiagnostic(error.diagnostic, "filter.wm", source);
+      const origins = rendered.split("-- Origins")[1];
+      assertStringIncludes(origins, "filter.wm:3:");
+      assertStringIncludes(origins, "List.splitAt call result: List.Error");
+      assertEquals(origins.includes("next stage input: Result"), false);
+      assertEquals(rendered.includes("mapErr"), false);
+    }
+  } finally {
+    if (previousColumns === undefined) Deno.env.delete("COLUMNS");
+    else Deno.env.set("COLUMNS", previousColumns);
+  }
+});
+
+Deno.test("mapErr with a nullary constructor suggests a payload qualified by its owning module", async () => {
+  const source = `type ParseError = | TabErr;
+let bad = List.tabulate(3, i => i) :> Result.mapErr(TabErr);`;
+  const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+  const rendered = formatDiagnostic(error.diagnostic, "tabulate.wm", source);
+  const hint = "Did you mean to declare TabErr with a payload, as TabErr<List.Error>?";
+  assertStringIncludes(rendered, hint);
+  assertEquals(rendered.split(hint).length - 1, 1);
+  assertStringIncludes(formatDiagnosticInspection(error.diagnostic, "tabulate.wm", source), hint);
+  const document = formatDiagnosticDocument(error.diagnostic, "tabulate.wm", source);
+  assertEquals(
+    document.lines.some((row) =>
+      row.spans.some((part) => part.role === "hint" && part.text.includes(hint))
+    ),
+    true,
+  );
+});
+
+Deno.test("constructor payload hints work for other mapper functions and input types", async () => {
+  for (
+    const [source, expected] of [
+      [
+        `type Failure = | NumberFailed;
+let bad = Result.mapErr(Int64.parseDecimal("12"), NumberFailed);`,
+        "NumberFailed<Int64.Error>",
+      ],
+      [
+        `type Failure = | Wrapped;
+let accept = (mapper: String -> Failure) => mapper("value");
+let bad = accept(Wrapped);`,
+        "Wrapped<String>",
+      ],
+    ]
+  ) {
+    const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+    const rendered = formatDiagnostic(error.diagnostic, "mapper.wm", source);
+    assertStringIncludes(rendered, expected);
+    assertStringIncludes(rendered, "Did you mean to declare");
+  }
+});
+
+Deno.test("payload suggestions require a constructor and a concrete unary mapper input", async () => {
+  for (
+    const source of [
+      `let value = 42; let bad = List.tabulate(3, i => i) :> Result.mapErr(value);`,
+      `type Failure = | Wrapped;
+let bad = [] :> List.map(Wrapped);`,
+    ]
+  ) {
+    const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+    assertEquals(
+      formatDiagnostic(error.diagnostic, "mapper.wm", source).includes("Did you mean to declare"),
+      false,
+    );
+  }
+  const checked = await checkSource(`type Failure = | TabErr<List.Error>;
+let mapped = List.tabulate(3, i => i) :> Result.mapErr(TabErr);`);
+  assertEquals(checked.diagnostics, []);
+});

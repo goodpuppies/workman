@@ -64,7 +64,7 @@ Deno.test("emits only reachable standard-library modules", async () => {
   assertEquals(/let __wm_std_Option\b/.test(js), false);
   assertEquals(/let __wm_std_Task\b/.test(js), false);
   assertEquals(/let __wm_std_Traverse\b/.test(js), false);
-  assertStringIncludes(js, "const Text = {");
+  assertStringIncludes(js, "__wm_basis_Text.of");
   assertStringIncludes(js, "const Result = __wm_std_Result;");
   assertEquals(js.includes("...__wm_basis_Result"), false);
   assertEquals(js.includes("...__wm_std_Result"), false);

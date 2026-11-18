@@ -234,7 +234,7 @@ structure WmParse = struct
             | _ => expected ("a capture name", ts)
       in bind (separated (name, ",", "|", advance ts)) (fn names => fn rest =>
         if SubsetList.exists (names, fn name =>
-          SubsetList.length (SubsetList.filter (names, fn other => other = name)) > 1)
+          SubsetList.length32 (SubsetList.filter (names, fn other => other = name)) > 1)
         then Fail ("a capture is listed more than once", posOf ts)
         else bind (expect ("|", rest)) (fn _ => fn rest => Done ((), rest))) end
     else Done ((), ts))
@@ -453,7 +453,7 @@ structure WmParse = struct
         | _ => false
       val literalLayout = fn (variables, fields) =>
         let val occurrences = SmlList.concat (SmlList.map (fn (_, t) => variablesIn t) fields) in
-          SmlList.all (fn v => (SubsetList.length (SmlList.filter (fn n => n = v) occurrences) = 1)) variables
+          SmlList.all (fn v => (SubsetList.length32 (SmlList.filter (fn n => n = v) occurrences) = 1)) variables
           andalso SmlList.all (fn (_, t) =>
             SubsetList.isEmpty (variablesIn t) orelse
             (case t of TyVar _ => true | TyArrow (a, TyVar _) => argumentShape a | _ => false)) fields

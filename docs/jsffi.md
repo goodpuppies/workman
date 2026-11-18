@@ -109,6 +109,10 @@ is an ordinary Workman import clause: no `unsafe` and no type annotations. The m
 `bytes` (binary file IO through Deno) and `debug` (`Debug.errorMessage`). They are never in scope
 without the import.
 
+`Result.debug` uses the debug host to stop on `Err`. Its runtime diagnostic includes the error
+message and points to the nearest caller in your Workman code, including aliased calls and
+asynchronous callbacks. It reports `runtime.result-debug`, rather than a typed hole in the library.
+
 The FFI vocabulary needs no import whenever the target is JavaScript: the `Js.*` types,
 `Js.Array.toList`/`fromList` and `Json.assert`. The compiler writes those names into the types of
 JS imports itself (`Task<T, Js.Error>`, `Js.Array<T>`).

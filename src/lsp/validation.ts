@@ -24,6 +24,7 @@ import type { SemanticService } from "./semantic_service.ts";
 import { surfaceRecoveryDiagnostics } from "./surface_recovery.ts";
 import { resultDebugDiagnostics, unusedDiagnostics } from "./unused_diagnostics.ts";
 import { canonicalFilePath, fileUriToPath, pathToFileUri } from "./uri.ts";
+import { pipeConflictAnchors, returnAnnotationAnchors } from "../diagnostics/origin_selection.ts";
 
 export type ValidationResult = {
   uri: string;
@@ -208,8 +209,8 @@ async function validationResultsForFailure(
       uri: diagnosticUri,
       diagnostics: [
         ...errorDiagnostics(error.originalError, error.source, diagnosticUri),
-        ...error.diagnostics.map((diagnostic) =>
-          lspDiagnostic(diagnostic, error.source, diagnosticUri)
+        ...error.diagnostics.flatMap((diagnostic) =>
+          lspDiagnostics(diagnostic, error.source, diagnosticUri)
         ),
       ],
     };
@@ -366,7 +367,7 @@ function diagnosticsFor(
   source = "",
   uri = "",
 ): LspDiagnostic[] {
-  return diagnostics.map((diagnostic) => lspDiagnostic(diagnostic, source, uri));
+  return diagnostics.flatMap((diagnostic) => lspDiagnostics(diagnostic, source, uri));
 }
 
 function errorDiagnostic(error: unknown, source = "", uri = ""): LspDiagnostic {
@@ -377,11 +378,11 @@ function errorDiagnostics(error: unknown, source = "", uri = ""): LspDiagnostic[
   if (error instanceof FrontendDiagnosticBundleError) {
     return [
       ...errorDiagnostics(error.primary, source, uri),
-      ...error.diagnostics.map((diagnostic) => lspDiagnostic(diagnostic, source, uri)),
+      ...error.diagnostics.flatMap((diagnostic) => lspDiagnostics(diagnostic, source, uri)),
     ];
   }
   if (error instanceof FrontendDiagnosticError) {
-    return [lspDiagnostic(error.diagnostic, source, uri)];
+    return lspDiagnostics(error.diagnostic, source, uri);
   }
   const message = errorMessage(error);
   const span = errorSpan(error);
@@ -392,6 +393,55 @@ function errorDiagnostics(error: unknown, source = "", uri = ""): LspDiagnostic[
     source: "wm",
     message,
   }];
+}
+
+function lspDiagnostics(diagnostic: FrontendDiagnostic, source = "", uri = ""): LspDiagnostic[] {
+  const base = lspDiagnostic(diagnostic, source, uri);
+  const returnMismatch =
+    diagnostic.failure.frame.rule === "InferAnnotation.ReturnMatchesAnnotation";
+  if ((diagnostic.code !== "type.pipe-input-mismatch" && !returnMismatch) || !source) return [base];
+  const notes = diagnosticNotes(diagnostic);
+  const anchors = returnMismatch
+    ? returnAnnotationAnchors(diagnostic)
+    : pipeConflictAnchors(diagnostic);
+  const highlights = anchors.flatMap((anchor, index) => {
+    if (anchor.kind !== "source") return [];
+    if (anchor.filePath && pathToFileUri(anchor.filePath) !== uri) return [];
+    if (anchor.span.start < 0 || anchor.span.start >= source.length) return [];
+    // Match the terminal excerpt's underline, rather than marking the entire continuation.
+    const lineEnd = source.indexOf("\n", anchor.span.start);
+    const span = {
+      ...anchor.span,
+      end: Math.min(anchor.span.end, lineEnd < 0 ? source.length : lineEnd),
+    };
+    const note = notes.find((note) =>
+      note.anchor.kind === "source" && note.anchor.filePath === anchor.filePath &&
+      note.anchor.span.start === anchor.span.start && note.anchor.span.end === anchor.span.end
+    );
+    return [{
+      location: { uri, range: spanRange(source, span) },
+      message: index === 0
+        ? returnMismatch ? "Return type conflict" : "Pipe type conflict"
+        : `Conflicting origin: ${note?.message ?? "type"}`,
+    }];
+  }).filter((highlight, index, all) =>
+    all.findIndex((other) =>
+      other.location.range.start.line === highlight.location.range.start.line &&
+      other.location.range.start.character === highlight.location.range.start.character &&
+      other.location.range.end.line === highlight.location.range.end.line &&
+      other.location.range.end.character === highlight.location.range.end.character
+    ) === index
+  );
+  if (!highlights.length) return [base];
+  return highlights.map((highlight, index) => ({
+    ...base,
+    range: highlight.location.range,
+    message: index === 0 ? base.message : `${highlight.message}\n\n${base.message}`,
+    relatedInformation: [
+      ...highlights.filter((other) => other !== highlight),
+      ...(base.relatedInformation ?? []),
+    ],
+  }));
 }
 
 function lspDiagnostic(diagnostic: FrontendDiagnostic, source = "", uri = ""): LspDiagnostic {

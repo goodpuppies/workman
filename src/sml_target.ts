@@ -54,7 +54,9 @@ export async function smlCommand(args: string[]): Promise<number> {
     }
     // Stage source-only std extensions in dependency order. JS-backed extensions retain
     // the reader's source Basis namespace until a native adapter is available for them.
-    const portable = new Set(Object.keys(librarySources).filter((path) => path.startsWith("subml-basis/")));
+    const portable = new Set(
+      Object.keys(librarySources).filter((path) => path.startsWith("subml-basis/")),
+    );
     const adapters: string[] = [];
     for (const [path, name, structure] of WM_HOST_MODULES) {
       const checker = join(basis, path);
@@ -67,17 +69,27 @@ export async function smlCommand(args: string[]): Promise<number> {
     }
     for (const module of await discoverStandardModules()) {
       if (!module.path.startsWith("std/")) continue;
-      if (module.module.decls.some((decl) =>
-        decl.kind === "JsImportDecl" ||
-        (decl.kind === "ImportDecl" && !portable.has(
-          libraryImport(decl.path)?.path ?? posix.normalize(posix.join(posix.dirname(module.path), decl.path)),
-        ))
-      )) continue;
+      if (
+        module.module.decls.some((decl) =>
+          decl.kind === "JsImportDecl" ||
+          (decl.kind === "ImportDecl" && !portable.has(
+            libraryImport(decl.path)?.path ??
+              posix.normalize(posix.join(posix.dirname(module.path), decl.path)),
+          ))
+        )
+      ) continue;
       portable.add(module.path);
       await Deno.mkdir(join(basis, "std"), { recursive: true });
-      await Deno.writeTextFile(join(basis, module.path), module.source);
+      // The current native reader supports Int32 only. Keep the portable 32-bit exports and
+      // std additions, but leave Int64 entry points unsupported until the target implements them.
+      const wideCounts = module.source.indexOf("// @int64-counts");
+      const source = wideCounts < 0 ? module.source : module.source.slice(0, wideCounts);
+      await Deno.writeTextFile(join(basis, module.path), source);
     }
-    await Deno.writeTextFile(join(basis, "module-scope.paths"), [...portable].sort().join("\n") + "\n");
+    await Deno.writeTextFile(
+      join(basis, "module-scope.paths"),
+      [...portable].sort().join("\n") + "\n",
+    );
     for (const [name, structure] of HOST_MODULES) {
       const checker = join(basis, `${name}.wm`);
       const native = join(out, `${name}_native.sml`);
@@ -87,11 +99,22 @@ export async function smlCommand(args: string[]): Promise<number> {
     }
 
     const translatorArgs = ["sml-entry", out, "--basis", basis, ...adapters, entry];
-    const nativeBinary = Deno.env.get("WM_SML_TRANSLATOR") === "js" ? undefined : await nativeTranslator();
+    const nativeBinary = Deno.env.get("WM_SML_TRANSLATOR") === "js"
+      ? undefined
+      : await nativeTranslator();
     const translated = nativeBinary
-      ? await new Deno.Command(nativeBinary, { args: translatorArgs, stdout: "inherit", stderr: "inherit" }).output()
+      ? await new Deno.Command(nativeBinary, {
+        args: translatorArgs,
+        stdout: "inherit",
+        stderr: "inherit",
+      }).output()
       : await new Deno.Command(Deno.env.get("WORKMAN_DENO_PATH") || Deno.execPath(), {
-        args: ["run", "-A", new URL("./generated/subsetml.js", import.meta.url).href, ...translatorArgs],
+        args: [
+          "run",
+          "-A",
+          new URL("./generated/subsetml.js", import.meta.url).href,
+          ...translatorArgs,
+        ],
         stdout: "inherit",
         stderr: "inherit",
       }).output();
@@ -141,7 +164,9 @@ async function nativeTranslator(): Promise<string | undefined> {
     "SHA-256",
     new TextEncoder().encode(JSON.stringify(files)),
   );
-  const key = [...new Uint8Array(digest)].slice(0, 12).map((byte) => byte.toString(16).padStart(2, "0"))
+  const key = [...new Uint8Array(digest)].slice(0, 12).map((byte) =>
+    byte.toString(16).padStart(2, "0")
+  )
     .join("");
   const cache = join(workmanCache(), "subsetml");
   const binary = join(cache, `subsetml-${key}${Deno.build.os === "windows" ? ".exe" : ""}`);

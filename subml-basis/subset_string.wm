@@ -91,7 +91,7 @@ let toNative = (bytes) => {
 };
 
 // Checked byte-string helpers share the extraction/reconstruction boundaries.
-let size = (value) => { SubsetResult.map(fromNative(value), SubsetList.length) };
+let size32 = (value) => { SubsetResult.map(fromNative(value), SubsetList.length32) };
 let str = (c) => { toNative([c]) };
 // A one-character native string. Total: a character is always a host text unit.
 let fromChar = (c) => { SubsetTextHost.fromCodes([SubsetTextHost.charCode(c)]) };
@@ -140,17 +140,17 @@ let tokens = (value, delimiter) => {
 
 /* Range errors are separate from the existing byte-conversion error type.
    Successive checked drops/takes avoid overflowing start + count. */
-let extract = (value, start, count) => {
+let extract32 = (value, start, count) => {
   SubsetResult.andThen(
     SubsetResult.mapErr(fromNative(value), StringError),
     (bytes) => {
       SubsetResult.andThen(
-        SubsetResult.mapErr(SubsetList.drop(bytes, start), (error) => { InvalidIndex }),
+        SubsetResult.mapErr(SubsetList.drop32(bytes, start), (error) => { InvalidIndex }),
         (rest) => {
           let selected = match(count) {
             SubsetOptionValue.None => { SubsetResult.Ok(rest) },
-            SubsetOptionValue.Some(size) => {
-              SubsetResult.mapErr(SubsetList.take(rest, size), (error) => { InvalidIndex })
+            SubsetOptionValue.Some(size32) => {
+              SubsetResult.mapErr(SubsetList.take32(rest, size32), (error) => { InvalidIndex })
             }
           };
           SubsetResult.andThen(selected, (chosen) => { SubsetResult.mapErr(toNative(chosen), StringError) })
@@ -159,7 +159,7 @@ let extract = (value, start, count) => {
     }
   )
 };
-let substring = (value, start, count) => { extract(value, start, SubsetOptionValue.Some(count)) };
+let substring32 = (value, start, count) => { extract32(value, start, SubsetOptionValue.Some(count)) };
 
 let map = (value, transform) => {
   SubsetResult.andThen(fromNative(value), (bytes) => { toNative(SubsetList.map(bytes, transform)) })

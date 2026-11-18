@@ -17,7 +17,6 @@ import {
   instantiate,
   knownTypeInfos,
   named,
-  withGpuArithmetic,
   prune,
   Real64Ty,
   StringTy,
@@ -27,6 +26,7 @@ import {
   typeInfoById,
   typeInfoByName,
   VoidTy,
+  withGpuArithmetic,
 } from "../types.ts";
 import { assertJsonCompatible, jsonValueTy } from "./json.ts";
 import type { InferContext } from "./context.ts";
@@ -76,18 +76,29 @@ function nominalRecordExpectation(expected: Ty | undefined, typeEnv: TypeEnv): T
 // Literals written directly under unary minus, so `-2147483648` is range-checked as one value.
 const negatedLiterals = new WeakSet<Expr>();
 
-export function inferExpr(expr: Expr, context: InferContext, expected?: Ty): Ty {
+export function inferExpr(
+  expr: Expr,
+  context: InferContext,
+  expected?: Ty,
+  // Actual inputs of an immediately applied lambda, rather than a speculative expected type.
+  lambdaParamHints?: (Ty | undefined)[],
+): Ty {
   try {
     return withGpuArithmetic(
       context.dialect.domain === "gpu",
-      () => inferExprInner(expr, context, expected),
+      () => inferExprInner(expr, context, expected, lambdaParamHints),
     );
   } catch (error) {
     throw diagnosticError(error, expr.node);
   }
 }
 
-function inferExprInner(expr: Expr, context: InferContext, expected?: Ty): Ty {
+function inferExprInner(
+  expr: Expr,
+  context: InferContext,
+  expected?: Ty,
+  lambdaParamHints?: (Ty | undefined)[],
+): Ty {
   const { env, typeEnv, types, facts, warnings, diagnostics, provenance } = context;
   let t: Ty;
   switch (expr.kind) {
@@ -337,7 +348,7 @@ function inferExprInner(expr: Expr, context: InferContext, expected?: Ty): Ty {
       t = inferLambdaTy(
         expr,
         context,
-        contextualLambdaParams(expr, expected, context),
+        lambdaParamHints ?? contextualLambdaParams(expr, expected, context),
       );
       break;
     case "Call":

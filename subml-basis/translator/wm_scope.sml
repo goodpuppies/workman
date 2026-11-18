@@ -139,10 +139,10 @@ structure WmScope = struct
               namespaces, stack, NONE, found)
         | (WmLexer.WKey "type", _) :: (WmLexer.WName [name], _) :: rest =>
             scan (rest, put (WmParse.decapitalize name, NONE, records), namespaces, stack,
-              SOME (SubsetList.length stack), found)
+              SOME (SubsetList.length32 stack), found)
         | (WmLexer.WKey "and", _) :: (WmLexer.WName [name], _) :: rest =>
             scan (rest, case typeGroup of SOME depth =>
-              if depth = SubsetList.length stack then put (WmParse.decapitalize name, NONE, records) else records
+              if depth = SubsetList.length32 stack then put (WmParse.decapitalize name, NONE, records) else records
               | NONE => records, namespaces, stack, typeGroup, found)
         | (WmLexer.WName path, p) :: (WmLexer.WKey "{", q) :: rest =>
             scan ((WmLexer.WKey "{", q) :: rest, records, namespaces, stack, typeGroup,

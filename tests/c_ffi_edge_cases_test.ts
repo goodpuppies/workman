@@ -46,7 +46,7 @@ Deno.test({
       let main = () => {
         print(Int64.toString(llabs(-9223372036854775807)));
         print(Libc.llabs(-1) == (1: Int64.Int));
-        print(authoredAbs(Int64.fromReal64(-7)) == (7: Int64.Int));
+        print(authoredAbs(Int64.fromReal64(-7) :> Result.debug) == (7: Int64.Int));
         print(strtoull(Some(Pointer.fromString("18446744073709551615")), None, 10));
         print(parse(Some(Pointer.cast(Pointer.fromString("1"))), None, 10) == (1: Word64.Word));
       };
@@ -106,7 +106,7 @@ Deno.test("C aggregate literals initialize nested structs and unions in zero-fil
       print(Pointer.getU32(named.pointer, offsetOfEdgeNested_inner + 4));
       let empty = EdgeNested{};
       print(getEdgeNested_prefix(empty.pointer));
-      let wide = EdgeWide{ signed_value = Int64.fromString("-9223372036854775807") };
+      let wide = EdgeWide{ signed_value = Int64.fromString("-9223372036854775807") :> Result.debug };
       print(getEdgeWide_value(wide.pointer));
       print(Int64.toString(getEdgeWide_signed_value(wide.pointer)));
       {
@@ -473,7 +473,7 @@ Deno.test({
       from c.header("stdlib.h") import unsafe { _abs64, _strtoui64 };
       from "host/c/pointer.wm" import * as Pointer;
       let main = () => {
-        print(Int64.toString(_abs64(Int64.fromString("-9223372036854775807"))));
+        print(Int64.toString(_abs64(Int64.fromString("-9223372036854775807") :> Result.debug)));
         print(_strtoui64(Some(Pointer.fromString("18446744073709551615")), None, 10));
       };
     `,

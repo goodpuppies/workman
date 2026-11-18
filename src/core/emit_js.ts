@@ -58,6 +58,9 @@ export function emitCoreProgram(program: CoreProgram, options: CoreEmitOptions =
   directFns = collectProgramDirectFns(program);
   const target = options.target ?? "executable";
   const standardIds = new Set(program.standardNamespaces?.map((item) => item.id) ?? []);
+  runtimeLibrarySources = new Set(
+    [...standardIds].map((moduleId) => program.modules.get(moduleId)!).filter(Boolean),
+  );
   const requiredStandardIds = collectRequiredStandardModules(program, standardIds);
   emittedNamespaceNames = new Set(
     (program.standardNamespaces ?? []).filter((namespace) =>
@@ -109,8 +112,9 @@ export function emitCoreProgram(program: CoreProgram, options: CoreEmitOptions =
   return materializeRuntimeCallSites(emitted);
 }
 
-type RuntimeCallSite = { path: string; line: number; col: number; text: string };
+type RuntimeCallSite = { path: string; line: number; col: number; text: string; library: boolean };
 let runtimeSource: CoreModuleArtifact | undefined;
+let runtimeLibrarySources = new Set<CoreModuleArtifact>();
 let runtimeCallSites: RuntimeCallSite[] = [];
 let runtimeSourceLines = new WeakMap<CoreModuleArtifact, string[]>();
 
@@ -128,6 +132,7 @@ function markRuntimeCall(expr: Extract<CoreExpr, { kind: "CoreApp" }>, call: str
     line,
     col,
     text: lines[line - 1] ?? "",
+    library: runtimeLibrarySources.has(runtimeSource),
   });
   // Literal tabs are escaped inside emitted JS strings, so source text cannot masquerade as a marker.
   return `/*\t__wm_call_start_${index}__*/${call}/*\t__wm_call_end_${index}__*/`;
@@ -199,8 +204,9 @@ function emitStackOverflowSites(
 const __wm_source_call_sites = /*__wm_source_call_table__*/[];
 const __wm_typed_hole_message = (error) => {
   const sites = [];
+  const sourceSites = [];
   const seen = new Set();
-  for (const frame of String(error.stack ?? "").split("\\n")) {
+  for (const frame of globalThis.String(error.stack ?? "").split("\\n")) {
     if (!frame.includes(import.meta.url)) continue;
     const location = /:(\\d+):(\\d+)\\)?$/.exec(frame);
     if (!location) continue;
@@ -211,13 +217,23 @@ const __wm_typed_hole_message = (error) => {
       (a[2] === a[0] ? a[3] - a[1] : -a[0]) - (b[2] === b[0] ? b[3] - b[1] : -b[0]));
     const site = matches[0] && __wm_source_call_sites[matches[0][4]];
     if (!site) continue;
+    if (error.name === "ResultDebug" && site.library) continue;
     const key = site.path + ":" + site.line + ":" + site.col;
     if (seen.has(key)) continue;
     seen.add(key);
+    sourceSites.push(site);
     const gutter = site.line + "| ";
     sites.push("  " + site.path + ":" + site.line + ":" + (site.col + 1) + "\\n" +
       "  " + gutter + site.text + "\\n" + " ".repeat(2 + gutter.length + site.col) + "^");
     if (sites.length >= 8) break;
+  }
+  if (error.name === "ResultDebug") {
+    const site = sourceSites[0];
+    const location = site ? " " + site.path + ":" + site.line + ":" + (site.col + 1) : "";
+    const gutter = site ? site.line + "| " : "";
+    return "error[runtime.result-debug" + location + "]: Result.debug failed: " + error.message +
+      (site ? "\\n" + gutter + site.text + "\\n" + " ".repeat(gutter.length + site.col) + "^" : "") +
+      (sites.length > 1 ? "\\nReached from:\\n" + sites.slice(1).join("\\n") : "");
   }
   return error.message + (sites.length ? "\\nReached from:\\n" + sites.join("\\n") : "");
 };
@@ -227,7 +243,7 @@ const __wm_stack_function_sites = ${JSON.stringify(compactFrames)};
 if (typeof Error.stackTraceLimit === "number") Error.stackTraceLimit = Math.max(Error.stackTraceLimit, 100);
 const __wm_report_stack_overflow = (error) => {
   if (!(error instanceof RangeError) || !/Maximum call stack size exceeded/i.test(error.message)) return false;
-  const stack = String(error.stack ?? "");
+  const stack = globalThis.String(error.stack ?? "");
   const site = Object.entries(__wm_stack_overflow_sites)
     .find(([name]) => stack.split("\\n").some((line) => line.trimStart().startsWith("at " + name + " ") || line.trimStart().startsWith("at " + name + "(")));
   if (site) {
@@ -264,7 +280,7 @@ if (typeof globalThis.addEventListener === "function") {
   globalThis.addEventListener("unhandledrejection", (event) => {
     ${
     terminateOnUnhandled
-      ? `if (event.reason instanceof Error && event.reason.name === "TypedHole") {
+      ? `if (event.reason instanceof Error && ["TypedHole", "ResultDebug"].includes(event.reason.name)) {
       console.error(__wm_typed_hole_message(event.reason));
       event.preventDefault();
       if (globalThis.Deno) Deno.exit(1);
@@ -352,6 +368,15 @@ function collectRequiredStandardModules(
         expr.fields.forEach((field) => visitExpr(field.value));
         return;
       case "CoreRecordAccess":
+        // A compiler-owned member (Text.of, Int32.div, ...) does not require the source
+        // extension of its namespace. valueRefName falls back to the initial-basis object.
+        if (expr.record.kind === "CoreVar" && expr.record.bindingId === undefined) {
+          const namespaceName = expr.record.name;
+          const namespace = program.standardNamespaces?.find((item) =>
+            !item.importOnly && item.publicName === namespaceName
+          );
+          if (namespace?.basisMembers.includes(expr.field)) return;
+        }
         visitExpr(expr.record);
         return;
       case "CoreFn":
@@ -942,9 +967,13 @@ const __wm_gpu_validate_render_target = (args) => __wm_gpu_result(() => {
 function emitReplRuntimeCatch(): string {
   return `} catch (__wm_repl_error) {
   const __wm_repl_error_name = __wm_repl_error instanceof Error ? __wm_repl_error.name : "Error";
-  const __wm_repl_error_message = String(__wm_repl_error instanceof Error ? __wm_repl_error.message : __wm_repl_error)
-    .replace(/\\s+/g, " ").slice(0, 300);
-  console.error("runtime[" + __wm_repl_error_name + "]: " + __wm_repl_error_message);
+  if (__wm_repl_error_name === "ResultDebug") {
+    console.error(__wm_typed_hole_message(__wm_repl_error));
+  } else {
+    const __wm_repl_error_message = globalThis.String(__wm_repl_error instanceof Error ? __wm_repl_error.message : __wm_repl_error)
+      .replace(/\\s+/g, " ").slice(0, 300);
+    console.error("runtime[" + __wm_repl_error_name + "]: " + __wm_repl_error_message);
+  }
   Deno.exitCode = 1;
 }`;
 }
@@ -954,7 +983,7 @@ function emitExecutableRuntimeCatch(): string {
   if (__wm_report_stack_overflow(__wm_runtime_error)) {
     if (globalThis.Deno) Deno.exit(1);
     else throw __wm_runtime_error;
-  } else if (!(__wm_runtime_error instanceof Error) || __wm_runtime_error.name !== "TypedHole") {
+  } else if (!(__wm_runtime_error instanceof Error) || !["TypedHole", "ResultDebug"].includes(__wm_runtime_error.name)) {
     throw __wm_runtime_error;
   } else {
     console.error(__wm_typed_hole_message(__wm_runtime_error));
@@ -1121,6 +1150,7 @@ function ctorLayout(ctorId: CtorId | undefined): CtorLayout | undefined {
 
 function resetEmitterState(): void {
   runtimeSource = undefined;
+  runtimeLibrarySources.clear();
   runtimeCallSites = [];
   runtimeSourceLines = new WeakMap();
   needsGpuRuntime = false;
@@ -1541,7 +1571,9 @@ function tupleFunctionArity(expr: CoreExpr): number | undefined {
   const first = arms[0]?.pattern;
   if (first?.kind !== "CorePTuple" || first.items.length < 2) return;
   const arity = first.items.length;
-  return arms.every((arm) => arm.pattern.kind === "CorePTuple" && arm.pattern.items.length === arity)
+  return arms.every((arm) =>
+      arm.pattern.kind === "CorePTuple" && arm.pattern.items.length === arity
+    )
     ? arity
     : undefined;
 }
@@ -1557,7 +1589,9 @@ function directEntry(
   const items = tupleFunctionParameters(fn);
   const message = "pattern match failure in function";
   const params = items
-    ? items.map((item, index) => item.kind === "CorePVar" ? patternBindingName(item) : `__wm_unused_${index}`)
+    ? items.map((item, index) =>
+      item.kind === "CorePVar" ? patternBindingName(item) : `__wm_unused_${index}`
+    )
     : scalarTupleValueNames(arity);
   const arms = argumentArms(fn);
   const tail = bindingId !== undefined && arms.some((arm) => hasSelfTailCall(arm.body, bindingId));
@@ -1817,7 +1851,7 @@ function emitExpr(expr: CoreExpr): string {
     case "CoreInt":
       return integerSource(expr);
     case "CoreFloat":
-      return String(expr.value);
+      return globalThis.String(expr.value);
     case "CoreString":
       return JSON.stringify(expr.value);
     case "CoreBool":
@@ -1990,7 +2024,8 @@ function emitLongList(expr: Extract<CoreExpr, { kind: "CoreApp" }>): string | un
   const items: CoreExpr[] = [];
   let tail: CoreExpr = expr;
   while (
-    tail.kind === "CoreApp" && tail.callee.kind === "CoreVar" && tail.callee.bindingId === undefined &&
+    tail.kind === "CoreApp" && tail.callee.kind === "CoreVar" &&
+    tail.callee.bindingId === undefined &&
     tail.callee.ctorId === basisCtorId("Cons") && tail.arg.kind === "CoreTuple" &&
     tail.arg.items.length === 2
   ) {
@@ -1998,9 +2033,10 @@ function emitLongList(expr: Extract<CoreExpr, { kind: "CoreApp" }>): string | un
     tail = tail.arg.items[1];
   }
   if (items.length < LONG_LIST) return undefined;
-  const rest = tail.kind === "CoreVar" && tail.bindingId === undefined && tail.ctorId === basisCtorId("Nil")
-    ? ""
-    : `, ${emitExpr(tail)}`;
+  const rest =
+    tail.kind === "CoreVar" && tail.bindingId === undefined && tail.ctorId === basisCtorId("Nil")
+      ? ""
+      : `, ${emitExpr(tail)}`;
   return `__wm_array_to_list([${items.map(emitExpr).join(", ")}]${rest})`;
 }
 

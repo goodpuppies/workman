@@ -1,5 +1,5 @@
 import type { AstNode, SourceSpan } from "./source.ts";
-import { prune, type Ty } from "./types.ts";
+import { diagnosticTypeName, prune, type Ty } from "./types.ts";
 import type { DiffPath } from "./type_diff.ts";
 
 export type EvidenceId = string;
@@ -319,7 +319,7 @@ function snapshotShape(type: Ty, writer: DiagnosticWriter): TypeSnapshotShape {
       return {
         kind: "named",
         typeId: resolved.id,
-        name: resolved.name,
+        name: diagnosticTypeName(resolved.id, resolved.name),
         args: resolved.args.map((arg) => writer.snapshotType(arg)),
       };
   }

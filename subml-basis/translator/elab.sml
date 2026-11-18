@@ -118,9 +118,9 @@ structure Elab = struct
         (case Env.tycon (env, id) of
            NONE => Err ("unbound type constructor " ^ longName id, pos)
          | SOME (TyStr (arity, body, _)) =>
-             if (arity <> SubsetList.length args) then
+             if (arity <> SubsetList.length32 args) then
                Err ("type constructor " ^ longName id ^ " takes " ^ CompilerText.natural arity ^ " argument(s), given "
-                    ^ CompilerText.natural (SubsetList.length args), pos)
+                    ^ CompilerText.natural (SubsetList.length32 args), pos)
              else
                bind (mapRes (fn (a, st) => elabTy (env, tyvar, pos, a, st), args, st)) (fn args' => fn st =>
                  Ok (substGen (args', body), st)))
@@ -469,7 +469,7 @@ structure Elab = struct
                   val State (_, _, _, rs, sites) = st
                   val labels = SmlList.map (fn (l, _) => l) fields
                   val same = fn declared =>
-                    SubsetList.length declared = SubsetList.length labels andalso
+                    SubsetList.length32 declared = SubsetList.length32 labels andalso
                     SmlList.all (fn l => SmlList.exists (fn m => m = l) declared) labels
                   (* Reading Workman, a record literal is the one declared record type with
                      exactly its fields, as Workman infers `.{ x = 1, y = 2 }`; its fields take
@@ -648,7 +648,7 @@ structure Elab = struct
       val Env (_, hiddenTypes, _) = private
       val Env (_, visibleTypes, visibleValues) = visible
       val sameLabels = fn (a, b) =>
-        SubsetList.length a = SubsetList.length b andalso SmlList.all (fn l => SmlList.exists (fn m => m = l) b) a
+        SubsetList.length32 a = SubsetList.length32 b andalso SmlList.all (fn l => SmlList.exists (fn m => m = l) b) a
       val datatypes = SmlList.mapPartial (fn (n, TyStr (_, t, cons)) =>
         case (t, cons) of (TCon (name, _), _ :: _) =>
           if stampOf name >= first then SOME (n, name) else NONE
@@ -741,7 +741,7 @@ structure Elab = struct
      generalized. *)
   and closeValBindings = fn (level, explicit, pos, results, st) =>
     let val names = concatMap (fn (vars, _) => SmlList.map (fn (x, _) => x) vars, results) in
-      case (SmlList.find (fn x => SubsetList.length (SmlList.filter (fn y => y = x) names) > 1) names,
+      case (SmlList.find (fn x => SubsetList.length32 (SmlList.filter (fn y => y = x) names) > 1) names,
             SmlList.find (fn x => member (x, unbindable)) names) of
         (SOME x, _) => Err ("`" ^ x ^ "` is bound twice in this declaration", pos)
       | (_, SOME x) => Err ("`" ^ x ^ "` cannot be rebound", pos)
@@ -799,7 +799,7 @@ structure Elab = struct
               (* Only where SML would give up: a receiver this declaration must decide. *)
               SmlList.find (fn (_, _, r, lab, _) => case prune (st, r) of
                   TVar v => (case lookup (st, v) of Free (_, l) => l > level | Bound _ => false) andalso
-                    SubsetList.length (SmlList.filter (fn (labels, _, _) =>
+                    SubsetList.length32 (SmlList.filter (fn (labels, _, _) =>
                       SmlList.exists (fn m => m = lab) labels) rs) = 1
                 | _ => false) pending
         end
@@ -909,7 +909,7 @@ structure Elab = struct
   and typeDec = fn ((env, _, _), pos, binds, st) =>
     let
       val names = SmlList.map (fn (_, name, _) => name) binds
-      val dup = SmlList.find (fn n => SubsetList.length (SmlList.filter (fn m => m = n) names) > 1) names
+      val dup = SmlList.find (fn n => SubsetList.length32 (SmlList.filter (fn m => m = n) names) > 1) names
     in
       case dup of
         SOME n => Err ("type " ^ n ^ " is bound twice", pos)
@@ -918,16 +918,16 @@ structure Elab = struct
                            bind (paramScope (pos, params, st)) (fn tyvar => fn st =>
                              bind (elabTy (env, tyvar, pos, t, st)) (fn body => fn st =>
                                bind (case t of
-                                       TyRecord _ => recordDeclared (pos, SubsetList.length params, body, st)
+                                       TyRecord _ => recordDeclared (pos, SubsetList.length32 params, body, st)
                                      | _ => Ok ((), st)) (fn _ => fn st =>
-                                 Ok (SubsetList.append (acc, [(name, TyStr (SubsetList.length params, body, []))]), st)))),
+                                 Ok (SubsetList.append (acc, [(name, TyStr (SubsetList.length32 params, body, []))]), st)))),
                          [], binds, st))
             (fn tys => fn st => Ok (withTypes tys, st))
     end
 
   (* Maps a declaration's type parameters to TGen. *)
   and paramScope = fn (pos, params, st) =>
-    case SmlList.find (fn v => SubsetList.length (SmlList.filter (fn w => w = v) params) > 1) params of
+    case SmlList.find (fn v => SubsetList.length32 (SmlList.filter (fn w => w = v) params) > 1) params of
       SOME v => Err ("type parameter " ^ v ^ " appears twice", pos)
     | NONE =>
         let
@@ -956,12 +956,12 @@ structure Elab = struct
     let
       val names = SmlList.map (fn (_, name, _) => name) binds
       val cons = concatMap (fn (_, _, cs) => SmlList.map (fn (_, c, _) => c) cs, binds)
-      val dupIn = fn xs => SmlList.find (fn n => SubsetList.length (SmlList.filter (fn m => m = n) xs) > 1) xs
+      val dupIn = fn xs => SmlList.find (fn n => SubsetList.length32 (SmlList.filter (fn m => m = n) xs) > 1) xs
       (* Fresh type names, first assuming every one admits equality. *)
       val (stamps, st1) =
         SmlList.foldl (fn (_, (acc, st)) => let val (s, st') = freshStamp st in (SubsetList.append (acc, [s]), st') end) ([], st) binds
-      val nameFor = fn (eqs, (params, name, _), s) => (s, name, SubsetList.length params, memberInt (s, eqs))
-      val tyFor = fn tn => let val SubsetResult.Ok args = SubsetList.tabulate (arityOf tn, TGen) in TCon (tn, args) end
+      val nameFor = fn (eqs, (params, name, _), s) => (s, name, SubsetList.length32 params, memberInt (s, eqs))
+      val tyFor = fn tn => let val SubsetResult.Ok args = SubsetList.tabulate32 (arityOf tn, TGen) in TCon (tn, args) end
       (* The constructors' argument types, with the group's names given the equality flags. *)
       val elabCons = fn (eqs, st) =>
         let
@@ -997,7 +997,7 @@ structure Elab = struct
                                                                                           | SOME t => admits (eqs, t)) cs)
                                group) eqs
           in
-            if (SubsetList.length eqs' = SubsetList.length eqs) then Ok (group, st) else fixpoint (eqs', st)
+            if (SubsetList.length32 eqs' = SubsetList.length32 eqs) then Ok (group, st) else fixpoint (eqs', st)
           end)
     in
       case (dupIn names, dupIn cons, SmlList.find (fn c => member (c, unbindable) orelse c = "it") cons) of
@@ -1010,7 +1010,7 @@ structure Elab = struct
               val conEntries =
                 concatMap (fn (tn, cs) =>
                              SmlList.map (fn (c, arg) =>
-                                         let val SubsetResult.Ok kinds = SubsetList.tabulate (arityOf tn, fn _ => KPlain) in
+                                         let val SubsetResult.Ok kinds = SubsetList.tabulate32 (arityOf tn, fn _ => KPlain) in
                                            case arg of
                                              NONE => (c, ((kinds, tyFor tn), SCon))
                                            | SOME t => (c, ((kinds, TArrow (t, tyFor tn)), SCon))

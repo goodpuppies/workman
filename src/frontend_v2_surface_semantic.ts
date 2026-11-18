@@ -48,6 +48,12 @@ export type FrontendV2SemanticAdapterDiagnostic = {
   span?: SourceSpan;
 };
 
+class MatchArmPipelineError extends Error {
+  constructor(readonly span: SourceSpan) {
+    super("a match-arm pipeline requires a constructor without an explicit payload pattern");
+  }
+}
+
 export type FrontendV2SurfaceModuleProjection = Readonly<{
   module: Module;
   diagnostics: readonly FrontendV2SemanticAdapterDiagnostic[];
@@ -137,7 +143,9 @@ export function surfaceProgramToModule(
         code: "frontend-v2.unsupported-decl",
         structuralId: index,
         message: error instanceof Error ? error.message : String(error),
-        ...(error instanceof WonLiteralError ? { span: error.span } : {}),
+        ...(error instanceof WonLiteralError || error instanceof MatchArmPipelineError
+          ? { span: error.span }
+          : {}),
       });
     }
   });
@@ -886,6 +894,9 @@ function projectExpr(node: WmVariant, context: Context): Expr {
           : { kind: "FfiGet", receiver: left, path, node: pipeNode };
       }
       const stage = projectExpr(right, context);
+      if (stage.kind === "Var" && stage.name === "Panic" && !stage.path?.qualifiers.length) {
+        return { kind: "Panic", message: left, node: pipeNode };
+      }
       return pipeIntoFieldAccess(left, stage, pipeNode) ?? {
         kind: "Pipe",
         left,
@@ -1151,9 +1162,18 @@ function projectMatchArms(value: unknown, context: Context) {
   return list(value).map((armValue) => {
     const arm = variant(armValue, "MatchArmNode");
     const [patternNode, , bodyNode] = fields(arm);
+    let pattern = projectPattern(variant(patternNode), context);
+    const body = projectExpr(variant(bodyNode), context);
+    const input = pipelineLambdaParams(body)[0];
+    if (input) {
+      if (pattern.kind !== "PCtor" || pattern.args.length !== 0) {
+        throw new MatchArmPipelineError(pattern.node?.span ?? spanOf(arm));
+      }
+      pattern = { ...pattern, args: [input.pattern] };
+    }
     return {
-      pattern: projectPattern(variant(patternNode), context),
-      body: projectExpr(variant(bodyNode), context),
+      pattern,
+      body,
       node: nodeFor(context, spanOf(arm)),
     };
   });
@@ -1333,6 +1353,7 @@ function pipelineLambdaParams(body: Expr): Param[] {
       input = first;
     } else if (input.kind === "Pipe" || input.kind === "Binary") input = input.left;
     else if (input.kind === "If") input = input.cond;
+    else if (input.kind === "Panic") input = input.message;
     else if (input.kind === "FfiCall" || input.kind === "FfiGet") input = input.receiver;
     else if (input.kind === "Ascribed") input = input.value;
     else break;

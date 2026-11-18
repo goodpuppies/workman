@@ -31,7 +31,7 @@ Deno.test("library pervasives project their defining schemes without exporting t
   `);
   expectBinding(checked.env, "numbers", { type: "List<Int32.Int>", vars: 0 });
   expectBinding(checked.env, "texts", { type: "List<String>", vars: 0 });
-  expectBinding(checked.env, "count", { type: "Int32.Int", vars: 0 });
+  expectBinding(checked.env, "count", { type: "Int64.Int", vars: 0 });
   expectBinding(checked.env, "left", { type: "String", vars: 0 });
   expectBinding(checked.env, "right", { type: "String", vars: 0 });
   await assertRejects(() => checkSource("let value = forEach([1], (n) => { n });"));
@@ -69,7 +69,9 @@ Deno.test("pervasive Order preserves shared type and constructor identity in pat
   assertStrictEquals(runtime.bare, runtime.qualified);
   assertEquals(runtime.ranks, [-1, 0, 1]);
   assertEquals(runtime.real, true);
-  await assertRejects(() => checkSource("-- @no-prelude\nlet rank: Order -> Real64.Real = _ => 0;"));
+  await assertRejects(() =>
+    checkSource("-- @no-prelude\nlet rank: Order -> Real64.Real = _ => 0;")
+  );
   const unused = await compile("let value: Option<Order> = None;");
   assertEquals(/let __wm_std_Order\b/.test(unused), false);
   const patternsOnly = await compileLibraryVirtual(
@@ -129,7 +131,7 @@ Deno.test("bare library pervasives retain Basis behavior through code generation
     let checks = (
       values == [2, 4, 6], selected == [4, 6], flattened == [1, 2, 3],
       reverse(flattened) == [3, 2, 1], isEmpty([]), !isEmpty(values),
-      length(values) == (3: Int32.Int),
+      length(values) == (3: Int64.Int),
       head(values) == Ok(2),
       tail(values) == Ok([4, 6]),
       match(head([])) { Err(_) => { true }, Ok(_) => { false } },
@@ -202,7 +204,7 @@ Deno.test("pervasives respect import and local shadowing without pulling unused 
   assertEquals(main.exportedStructure.valEnv.has("map"), false);
   const code = await compileLibraryVirtual("/test/main.wm", files);
   const runtime = await import(`data:text/javascript;base64,${btoa(code)}`);
-  assertEquals([runtime.earlier, runtime.imported, runtime.local], [1, 12, 3]);
+  assertEquals([runtime.earlier, runtime.imported, runtime.local], [1n, 12, 3]);
   assertEquals(runtime.nested((n: number) => n * 2), 4);
   const shadowed = await compile("let map = (n) => { n + 1 }; let answer = map(1);");
   assertEquals(shadowed.includes("__wm_lib_subml_basis_subset_list"), false);
@@ -271,8 +273,8 @@ Deno.test("string, character, boolean and option pervasives preserve checked bou
       match(chr(256: Int32.Int)) { Err(Chars.InvalidCode) => { true }, _ => { false } },
       match(ord('\u00ff')) { Ok(n) => { n == (255: Int32.Int) }, Err(_) => { false } },
       match(ord('\u0100')) { Err(Chars.NonByteCharacter) => { true }, _ => { false } },
-      match(size("")) { Ok(n) => { n == (0: Int32.Int) }, Err(_) => { false } },
-      match(size("a\u0000\u00ff")) { Ok(n) => { n == (3: Int32.Int) }, Err(_) => { false } },
+      match(size("")) { Ok(n) => { n == (0: Int64.Int) }, Err(_) => { false } },
+      match(size("a\u0000\u00ff")) { Ok(n) => { n == (3: Int64.Int) }, Err(_) => { false } },
       match(size("a\u0100")) {
         Err(Strings.NonByte(offset)) => { offset == (1: Int32.Int) }, _ => { false }
       },

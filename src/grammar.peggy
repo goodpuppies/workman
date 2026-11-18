@@ -10,6 +10,7 @@
       if (input.kind === "Block") input = input.items[0] ?? input.result;
       else if (input.kind === "Pipe" || input.kind === "Binary") input = input.left;
       else if (input.kind === "If") input = input.cond;
+      else if (input.kind === "Panic") input = input.message;
       else if (input.kind === "FfiCall" || input.kind === "FfiGet") input = input.receiver;
       else if (input.kind === "Ascribed") input = input.value;
       else break;
@@ -17,6 +18,15 @@
     return input?.kind === "Var" && input.name.startsWith("$wm_pipe_")
       ? [{ pattern: { kind: "PVar", name: input.name, node: input.node }, node: input.node }]
       : [];
+  }
+  // A match-arm pipeline (`Ctor => :> f`) binds the constructor payload as the pipe input.
+  function matchArmPattern(pattern, body) {
+    const input = pipelineLambdaParams(body)[0];
+    if (!input) return pattern;
+    if (pattern.kind !== "PCtor" || pattern.args.length !== 0) {
+      error("a match-arm pipeline requires a constructor without an explicit payload pattern");
+    }
+    return { ...pattern, args: [input.pattern] };
   }
   function decodeLiteralBody(body) {
     const simple = { a: "\x07", b: "\b", t: "\t", n: "\n", v: "\v", f: "\f", r: "\r",
@@ -408,7 +418,9 @@ MatchFnParams = first:Identifier rest:(_ "," _ n:Identifier { return n; })* _ ",
 
 MatchArmList = first:MatchArm rest:(_ "," _ a:MatchArm { return a; })* _ ","? { return [first, ...rest]; }
 BareMatchArmList = first:MatchArm rest:(_ "," _ a:MatchArm { return a; })* { return [first, ...rest]; }
-MatchArm = pattern:Pattern _ "=>" _ body:Expr { return at({ pattern, body }, location()); }
+MatchArm = pattern:Pattern _ "=>" _ body:(parsed:PipelineLambdaBlock { return parsed.body; } / PipelineExpression / Expr) {
+  return at({ pattern: matchArmPattern(pattern, body), body }, location());
+}
 
 Lambda
   = params:ParamList returnAnnotation:LambdaReturnAnnotation? captureClause:CaptureClause? _ arrow:"=>" _ parsed:LambdaBody
@@ -522,6 +534,9 @@ PipelinePipe = left:PipelineInput rest:(_ ":>" _ right:(PipeConditional / PipeMe
           ? atSpan({ kind: "FfiGet", receiver: left, path: right.path }, exprSpan)
           : atSpan({ kind: "FfiCall", receiver: left, path: right.path, args: right.args }, exprSpan);
       }
+      if (right.kind === "Var" && right.name === "Panic" && !right.path?.qualifiers.length) {
+        return atSpan({ kind: "Panic", message: left }, exprSpan);
+      }
       return atSpan({ kind: "Pipe", left, right }, exprSpan);
     }, left);
   }
@@ -573,6 +588,9 @@ Pipe = left:Postfix rest:(_ ":>" _ right:(PipeConditional / PipeMember / Postfix
         return right.args === undefined
           ? atSpan({ kind: "FfiGet", receiver: left, path: right.path }, exprSpan)
           : atSpan({ kind: "FfiCall", receiver: left, path: right.path, args: right.args }, exprSpan);
+      }
+      if (right.kind === "Var" && right.name === "Panic" && !right.path?.qualifiers.length) {
+        return atSpan({ kind: "Panic", message: left }, exprSpan);
       }
       return atSpan({ kind: "Pipe", left, right }, exprSpan);
     }, left);

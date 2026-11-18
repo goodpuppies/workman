@@ -320,7 +320,7 @@ structure Unify = struct
         SmlList.filter (fn v => case lookup (st, v) of Free (_, l) => l > level | Bound _ => false)
           (freeVars (st, t'))
       val kinds = SmlList.map (fn v => case lookup (st, v) of Free (k, _) => k | Bound _ => KPlain) vars
-      val count = SubsetList.length vars
+      val count = SubsetList.length32 vars
       (* The position of x in a list, by the given equality. *)
       val indexIn = fn (same, x, xs) =>
         let

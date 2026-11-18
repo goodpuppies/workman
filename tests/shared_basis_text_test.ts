@@ -44,14 +44,14 @@ Deno.test("shared Basis text helpers preserve Unicode and validate before matchi
     let editChecks =
       same(T.explode("a🦊é"), [(97: Int32.Int), (129418: Int32.Int), (233: Int32.Int)])
       && same(T.implode([(97: Int32.Int), (129418: Int32.Int), (233: Int32.Int)]), "a🦊é")
-      && same(T.substring("a🦊é", (1: Int32.Int), (1: Int32.Int)), "🦊")
-      && same(T.extract("a🦊é", (1: Int32.Int), None), "🦊é")
-      && same(T.extract("a🦊é", (1: Int32.Int), Some((1: Int32.Int))), "🦊")
-      && same(T.extract("a🦊é", (3: Int32.Int), None), "")
+      && same(T.substring32("a🦊é", (1: Int32.Int), (1: Int32.Int)), "🦊")
+      && same(T.extract32("a🦊é", (1: Int32.Int), None), "🦊é")
+      && same(T.extract32("a🦊é", (1: Int32.Int), Some((1: Int32.Int))), "🦊")
+      && same(T.extract32("a🦊é", (3: Int32.Int), None), "")
       && same(T.map("a🦊é", (c) => { if (c == (129418: Int32.Int)) { (47: Int32.Int) } else { c } }), "a/é")
       && same(T.translate("a🦊é", (c) => { if (c == (129418: Int32.Int)) { "XY" } else { "" } }), "XY")
-      && same(S.substring("abc", (1: Int32.Int), (1: Int32.Int)), "b")
-      && same(S.extract("abc", (3: Int32.Int), None), "")
+      && same(S.substring32("abc", (1: Int32.Int), (1: Int32.Int)), "b")
+      && same(S.extract32("abc", (3: Int32.Int), None), "")
       && same(S.map("a|b", (c) => { if (c == '|') { '/' } else { c } }), "a/b")
       && same(S.translate("a|b||", (c) => { if (c == '|') { "::" } else { "" } }), "::::::");
     let textMapOkay = (value: String, f) => { R.isOk(T.map(value, f)) };
@@ -59,12 +59,12 @@ Deno.test("shared Basis text helpers preserve Unicode and validate before matchi
     let byteMapOkay = (value: String, f) => { R.isOk(S.map(value, f)) };
     let byteTranslateOkay = (value: String, f) => { R.isOk(S.translate(value, f)) };
     let rejectsSlices = (value: String) => {
-      !R.isOk(T.substring(value, (0: Int32.Int), (0: Int32.Int)))
-      && !R.isOk(T.extract(value, (0: Int32.Int), None))
+      !R.isOk(T.substring32(value, (0: Int32.Int), (0: Int32.Int)))
+      && !R.isOk(T.extract32(value, (0: Int32.Int), None))
     };
     let rejectsByteSlices = (value: String) => {
-      !R.isOk(S.substring(value, (0: Int32.Int), (0: Int32.Int)))
-      && !R.isOk(S.extract(value, (0: Int32.Int), None))
+      !R.isOk(S.substring32(value, (0: Int32.Int), (0: Int32.Int)))
+      && !R.isOk(S.extract32(value, (0: Int32.Int), None))
     };
   `;
   const compiled = await compileLibraryVirtual(filename, new Map([[filename, source]]));

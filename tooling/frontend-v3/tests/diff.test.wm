@@ -66,10 +66,10 @@ let tests = [
     // Independent recursive edit-distance oracle, limited to these tiny strings.
     let rec distance = (left, right) => {
       match(left) {
-        [] => {Lists.length(right)},
+        [] => {Lists.length32(right)},
         [a, ..xs] => {
           match(right) {
-            [] => {Lists.length(left)},
+            [] => {Lists.length32(left)},
             [b, ..ys] => {
               if (a == b) {distance(xs, ys)} else {
                 let deletion = distance(xs, right);
@@ -109,7 +109,7 @@ let tests = [
   test("holes and adjacent punctuation are separate ordered inlays", () => {
     withDiff("let thing = ", "let thing = ?;", (value: Diff.Difference) => {
       checks([reconstructs(value), previewEquals(value, "let thing = *?**;*", true),
-        assertEqual(Lists.length(Inlays.additions(value)), 2)])
+        assertEqual(Lists.length32(Inlays.additions(value)), 2)])
     })
   }),
   test("brace before comma order emerges from projected text", () => {

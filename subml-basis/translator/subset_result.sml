@@ -44,6 +44,12 @@ structure SubsetResult = struct
     | (Err error, _) => Err error
     | (_, Err error) => Err error
 
+  (* Direct tail recursion is portable to SML and compiles to a loop on JS. *)
+  val rec loop = fn (state, advance) => case advance state of
+      Err error => Err error
+    | Ok (SubsetMonad.Stop output) => Ok output
+    | Ok (SubsetMonad.Continue next) => loop (next, advance)
+
   (* Result's carrier record, the value a bare `Result` stands for in Workman value position, a
      `SubsetMonad.carrier`. *)
   val carrier : (
@@ -53,9 +59,10 @@ structure SubsetResult = struct
       ('j, 'k) result, 'j -> 'l, ('l, 'k) result,
       ('m, 'n) result, ('o, 'n) result, 'm * 'o -> 'p, ('p, 'n) result,
       ('q, 'r) result, 'q -> ('s, 'r) result, ('s, 'r) result,
-      ('t, 'u) result, 'u -> 'v, ('t, 'v) result) SubsetMonad.carrier = {
+      ('t, 'u) result, 'u -> 'v, ('t, 'v) result,
+      'state * ('state -> (('state, 'output) SubsetMonad.step, 'loopError) result) -> ('output, 'loopError) result) SubsetMonad.carrier = {
     via = via, viaErr = viaErr, succeed = succeed, map = map, map2 = map2,
-    andThen = andThen, mapErr = mapErr
+    andThen = andThen, mapErr = mapErr, loop = loop
   }
   end
 

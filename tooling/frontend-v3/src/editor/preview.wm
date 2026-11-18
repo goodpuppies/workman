@@ -97,7 +97,7 @@ let render = (source, insertions, markInserted: Bool) => {
             let content = Text.toUnits(insertion.content);
             // CLI markers identify each insertion separately, including shared anchors.
             let label = if (markInserted) {Lists.append([42, ..content], [42])} else {content};
-            let end = start + Lists.length(label);
+            let end = start + Lists.length32(label);
             let placement = Placement(insertion, position, start, end);
             overlay(rest, afterGap, position, end,
               Lists.reverseAppend(label, withGap), [placement, ..placementsRev])

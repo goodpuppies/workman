@@ -1,5 +1,6 @@
 from js.module("./js/debug.js") import unsafe {
-  describe: (e, e -> String) -> String
+  describe: (e, e -> String) -> String,
+  fail: String -> a
 };
 
 // Import with `from js.host("debug") import * as Debug;`.
@@ -8,8 +9,5 @@ from js.module("./js/debug.js") import unsafe {
 // message, and anything else as `Text.of` prints it.
 let errorMessage = (error) => { describe(error, Text.of) };
 
-// Print the error's message and stop at a hole: `Result.debug`'s failure path.
-let abort = (error) => {
-  print(errorMessage(error));
-  ?
-};
+// The runtime reports this failure at the nearest authored caller.
+let abort = (error) => { fail(errorMessage(error)) };
