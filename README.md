@@ -6,7 +6,7 @@ Workman is a truly simple functional programming language for application, serve
 
 So let's get right into the hello world! Here are the steps:
 
-- install [Deno🦕](https://deno.com/)
+- install [Node.js](https://nodejs.org/)
 - create a hello.wm
 ```ts
 // as you can see workman syntax looks a lot like js
@@ -14,10 +14,17 @@ let main = () => {
   print("arf~")
 };
 ```
-- run the program `deno x -A jsr:@goodpuppies/workman run hello.wm`
+- run the program `npx @goodpuppies/workman run hello.wm`
 
 ## Install
 To install the wm cli simply run
+```
+npm install -g @goodpuppies/workman
+```
+The npm package brings its own runtime, so nothing else needs installing.
+
+Programs that import npm or JSR packages, and `wm compile --executable`, currently need the
+[Deno](https://deno.com/) installation of wm instead:
 ```
 deno install -g -A --name wm jsr:@goodpuppies/workman
 ```
@@ -50,7 +57,7 @@ gives you the language server; other editors can start it with `wm lsp`
 (see [`editors`](https://github.com/goodpuppies/workman/blob/main/editors/README.md)). The `wm` command also has:
 
 - `wm repl` and `wm watch` for interactive sessions and re-running on save ([REPL guide](https://github.com/goodpuppies/workman/blob/main/docs/repl.md))
-- `wm compile hello.wm --executable -o hello` for standalone executables
+- `wm compile hello.wm --executable -o hello` for standalone executables (Deno installation)
 - `wm test`, `wm problems` and `wm pakman` ([command-line tools](https://github.com/goodpuppies/workman/blob/main/docs/cli.md))
 - `wm sml` to compile a program to Standard ML for MLton ([SML target](https://github.com/goodpuppies/workman/blob/main/docs/sml-target.md))
 

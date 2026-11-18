@@ -6,7 +6,7 @@ highlighting, indentation, and text objects.
 Install the Workman CLI before enabling language-server support:
 
 ```sh
-deno install -g -A --name wm jsr:@goodpuppies/workman
+npm install -g @goodpuppies/workman
 ```
 
 ## Install the grammar and queries

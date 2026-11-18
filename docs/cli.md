@@ -6,6 +6,10 @@ manages packages. The interactive session and watch mode are described in
 
 ## Standalone executables
 
+Building an executable needs the Deno installation of wm
+(`deno install -g -A --name wm jsr:@goodpuppies/workman`); the npm package cannot run Deno's
+compile toolchain.
+
 ```sh
 wm compile hello.wm --executable -o hello
 ./hello

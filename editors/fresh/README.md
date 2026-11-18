@@ -9,11 +9,10 @@ when removing a binding’s annotations infers a different type.
 ## Prerequisites
 
 - Fresh 0.4.6 or newer
-- `deno` available on `PATH`
 - The `wm` command installed and available on `PATH`:
 
   ```sh
-  deno install -g -A --name wm jsr:@goodpuppies/workman
+  npm install -g @goodpuppies/workman
   ```
 
 C header reflection uses the native binaries bundled with the `wm` toolchain
@@ -51,7 +50,7 @@ and LSP are installed separately. Updating the pack does not upgrade `wm`. Updat
 the toolchain with:
 
 ```sh
-deno install -g -A --force --name wm jsr:@goodpuppies/workman
+npm install -g @goodpuppies/workman@latest
 ```
 
 ## Install from this checkout
