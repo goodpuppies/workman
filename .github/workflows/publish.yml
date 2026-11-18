@@ -26,5 +26,10 @@ jobs:
           deno task c-header:check
           deno task generate-assets
           test -z "$(git status --porcelain -- src/generated)"
+      # JSR packages are limited to 20 MiB. Minify after the check above, so the published code is
+      # the verified generated code, only compacted; scripts/minify_publish.ts lists what it leaves.
+      - name: Minify generated JavaScript
+        run: deno run -A scripts/minify_publish.ts
       - name: Publish package
-        run: deno publish
+        # The only uncommitted changes are the minified files from the previous step.
+        run: deno publish --allow-dirty
