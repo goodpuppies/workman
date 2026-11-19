@@ -159,6 +159,8 @@ export async function stageRelease(output: string, targets: readonly string[], b
       name: `${config.name}-${target.name}`,
       version,
       license: config.license,
+      // npm provenance checks this against the repository that built the package.
+      repository: { type: "git", url: "git+https://github.com/goodpuppies/workman.git" },
       os: [target.os],
       cpu: [target.cpu],
       ...(target.os === "linux" ? { libc: ["glibc"] } : {}),
