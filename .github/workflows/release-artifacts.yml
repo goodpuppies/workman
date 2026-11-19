@@ -1,7 +1,16 @@
 name: Prepare experimental release artifacts
 
 on:
+  # A version tag builds, tests and publishes the npm packages; publish.yml publishes JSR from the
+  # same tag. A manual run builds and tests only, unless asked to publish.
+  push:
+    tags: ["[0-9]*.[0-9]*.[0-9]*"]
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the built packages to npm
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -69,3 +78,27 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
+
+  npm:
+    needs: binaries
+    if: github.event_name == 'push' || inputs.publish
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      # npm trusted publishing: npm exchanges the workflow's OIDC token for a one-off publish token,
+      # so the repository holds no npm credentials. Each package names this workflow on npmjs.com.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+          registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm 11.5.1 or later.
+      - run: npm install -g npm@^11.5.1
+      - uses: actions/download-artifact@v7
+        with:
+          path: artifacts
+      - name: Publish platform packages, then the main package
+        run: node scripts/npm_publish.mjs artifacts

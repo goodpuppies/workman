@@ -71,35 +71,29 @@ The packed-install smoke test checks a pure-WM module, positional JS exports, fr
 and the installed Vite integration with external Deno absent from PATH. It also copies the executable
 out of the package and tests that standalone download shape.
 
-## CI candidate artifacts
+## CI release workflow
 
-`.github/workflows/release-artifacts.yml` is manual (`workflow_dispatch`). It validates source code,
-then builds and tests on six native runner configurations. The native jobs move checkout source and
-library directories aside before testing the packed installation, so source-path dependencies cannot
-pass unnoticed. Each target produces an Actions artifact containing the main npm tarball, its
-platform tarball, a standalone archive, and checksum metadata. Nothing in this workflow publishes to
-npm, JSR, or GitHub Releases.
+`.github/workflows/release-artifacts.yml` validates source code, then builds and tests on six native
+runner configurations. The native jobs move checkout source and library directories aside before
+testing the packed installation, so source-path dependencies cannot pass unnoticed. Each target
+produces an Actions artifact containing the main npm tarball, its platform tarball, a standalone
+archive, and checksum metadata.
 
-The existing `publish.yml` still publishes JSR on matching version tags. Do not push a release tag
-until the release and its source revision have been approved. Changes to CI are not run remotely
-until committed/pushed and the workflow is invoked.
+Pushing a version tag runs both release workflows. `publish.yml` publishes JSR, and
+`release-artifacts.yml` publishes npm once all six native builds pass: `scripts/npm_publish.mjs`
+checks that the tag matches the package version, verifies each tarball against its runner's
+`SHA256SUMS`, and publishes the platform packages before the main package. Versions already on npm
+are skipped, so rerunning failed jobs finishes a partial publish. A manual run builds and tests
+only, unless its `publish` input is set.
 
-## First publication and account setup
+npm publishing uses trusted publishing: npm accepts the workflow's GitHub OIDC token instead of a
+stored token, so the repository has no npm secret and no one-time password is needed. Each of the
+seven packages must list a trusted publisher on npmjs.com (package Settings, Trusted publisher,
+GitHub Actions) with organization `goodpuppies`, repository `workman` and workflow filename
+`release-artifacts.yml`. Releases published this way carry npm provenance.
 
-Before publishing 0.7.0:
-
-1. Run the candidate workflow and review all six native smoke checks and artifact manifests.
-2. Confirm npm access to `@goodpuppies/workman` and its six platform package names.
-3. Provide npm publishing authorization for the initial packages. Never put credentials in this
-   repository or send them through chat. Configure npm trusted publishing for the eventual
-   publishing workflow when the packages/settings support it.
-4. Publish platform packages first, then the main package referencing them. Keep one exact version
-   across registries and artifacts; registry publishing is not atomic.
-5. Publish JSR and standalone release downloads from the same tested source revision.
-
-Publishing, pushing tags, uploading release assets, and changing account settings remain explicit
-release actions. The preparation scripts do none of them. A publishing workflow is intentionally not
-enabled by this initial setup.
+Registry publishing is not atomic. Do not push a release tag until the release and its source
+revision have been approved.
 
 The first binaries are experimental and unsigned. macOS signing/notarization and Windows signing are
 separate release improvements. The Deno runtime is embedded once per platform binary; the initial
