@@ -161,5 +161,9 @@ try {
     `Passed packed-package smoke checks: ${metadata.name}@${metadata.version} (${target}); Deno absent from PATH`,
   );
 } finally {
-  await rm(directory, { recursive: true, force: true });
+  // Windows can keep the copied wm.exe locked briefly after its last run (EBUSY). The checks are
+  // done by now, so retry, and leave the temp directory behind rather than fail the job.
+  await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 }).catch(
+    (error) => console.warn(`Could not remove ${directory}: ${error.message}`),
+  );
 }
