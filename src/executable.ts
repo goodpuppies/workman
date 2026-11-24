@@ -1,5 +1,6 @@
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveDenoCliPath } from "./child_runtime.ts";
 import type { CompileArtifact } from "./compiler.ts";
 import { runtimeFlagsForJavaScript } from "./runtime_flags.ts";
 
@@ -30,6 +31,12 @@ export async function compileExecutable(
   artifacts: CompileArtifact[],
   output: string,
 ): Promise<number> {
+  const denoCli = resolveDenoCliPath();
+  if (!denoCli) {
+    throw new Error(
+      "cannot create executables without a Deno CLI on PATH (or WORKMAN_DENO_PATH)",
+    );
+  }
   const destination = resolve(output);
   await Deno.mkdir(dirname(destination), { recursive: true });
   const work = await Deno.makeTempDir({ dir: dirname(destination), prefix: ".wm-compile-" });
@@ -51,7 +58,7 @@ export async function compileExecutable(
       await Deno.writeTextFile(target, code);
     }
     const binary = join(work, Deno.build.os === "windows" ? "program.exe" : "program");
-    const status = await new Deno.Command(Deno.env.get("WORKMAN_DENO_PATH") || Deno.execPath(), {
+    const status = await new Deno.Command(denoCli, {
       args: [
         "compile",
         "-A",

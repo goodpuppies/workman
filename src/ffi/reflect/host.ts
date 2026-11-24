@@ -36,7 +36,7 @@ import { dirname, extname, isAbsolute, join, normalize } from "node:path";
 import { isBuiltin } from "node:module";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { isStandaloneBinary } from "../../child_runtime.ts";
+import { isStandaloneBinary, resolveDenoCliPath } from "../../child_runtime.ts";
 import { runtime } from "../../io.ts";
 import { createTsrsApi } from "./tsrs_sync_channel.ts";
 
@@ -648,15 +648,15 @@ function denoReflectionGraphs(source: string): DenoModuleGraph[] {
 }
 
 function denoModuleGraph(specifier: string, cwd: string): DenoModuleGraph | undefined {
-  // In a standalone binary without Deno CLI:
-  // - Scheme-based Deno imports (`npm:`, `jsr:`, `https://`) genuinely require Deno CLI.
+  // Without a Deno CLI:
+  // - Scheme-based Deno imports (`npm:`, `jsr:`, `https://`) require a Deno CLI.
   // - Bare package specifiers (`"zod"`, `"@scope/pkg"`) and relative/absolute files are
-  //   resolved directly from `node_modules` / disk by tsrs without needing Deno CLI.
-  if (withoutDenoCli()) {
+  //   resolved directly from `node_modules` / disk by tsrs.
+  const denoCli = resolveDenoCliPath();
+  if (!denoCli) {
     if (mustResolveWithDeno(specifier) || specifier.startsWith("npm:")) {
       throw new Error(
-        `package imports such as ${specifier} are not supported by this wm build yet; ` +
-          "use the Deno/JSR installation of wm for programs that import packages",
+        `package imports such as ${specifier} are not supported without a Deno CLI on PATH (or WORKMAN_DENO_PATH)`,
       );
     }
     return undefined;
@@ -665,7 +665,7 @@ function denoModuleGraph(specifier: string, cwd: string): DenoModuleGraph | unde
   const cached = denoModuleGraphs.get(cacheKey);
   if (cached) return cached;
   const started = reflectionProfileSink ? performance.now() : 0;
-  const output = runtime.runSync(denoCliPath(), [
+  const output = runtime.runSync(denoCli, [
     "info",
     "--json",
     "--no-lock",
@@ -789,7 +789,13 @@ function nodeTypesReferencePath(): string {
     const path = fileURLToPath(specifier);
     nodeTypesPath = path.endsWith(".d.ts") ? path : join(dirname(path), "index.d.ts");
   } else {
-    const output = runtime.runSync(denoCliPath(), [
+    const denoCli = resolveDenoCliPath();
+    if (!denoCli) {
+      throw new Error(
+        "cannot resolve WM's Node declarations without a Deno CLI on PATH (or WORKMAN_DENO_PATH)",
+      );
+    }
+    const output = runtime.runSync(denoCli, [
       "info",
       "--json",
       "--no-config",
@@ -1012,7 +1018,7 @@ function resolveDenoSpecifier(
   const knownFound = searchModules(knownDenoModules.values());
   if (knownFound !== undefined) return knownFound;
 
-  if (!discoverImporter || withoutDenoCli()) return undefined;
+  if (!discoverImporter || !resolveDenoCliPath()) return undefined;
   if (
     !normalizedDir.startsWith(denoCacheVirtualPrefix) &&
     !graphedImporters.has(`${normalizedDir}\0${moduleName}`)
@@ -1170,23 +1176,18 @@ function generatedDenoTypes(): string | undefined {
 }
 
 function denoCliTypes(): string {
-  const output = runtime.runSync(denoCliPath(), ["types"]);
+  const denoCli = resolveDenoCliPath();
+  if (!denoCli) {
+    throw new Error(
+      "cannot load Deno type declarations without a Deno CLI on PATH (or WORKMAN_DENO_PATH)",
+    );
+  }
+  const output = runtime.runSync(denoCli, ["types"]);
   if (!output.success) {
     const message = output.stderr.trim();
     throw new Error(`cannot load Deno type declarations${message ? `: ${message}` : ""}`);
   }
   return output.stdout;
-}
-
-/** A compiled wm binary has no Deno CLI for `deno info`, unless `WORKMAN_DENO_PATH` names one. */
-function withoutDenoCli(): boolean {
-  const build = (globalThis as { Deno?: { build?: { standalone?: boolean } } }).Deno?.build;
-  const deno = runtime.env("WORKMAN_DENO_PATH")?.trim();
-  return build?.standalone === true && !(deno && existsSync(deno));
-}
-
-function denoCliPath(): string {
-  return runtime.env("WORKMAN_DENO_PATH")?.trim() || "deno";
 }
 
 function reflectionFileName(source: string): string | undefined {

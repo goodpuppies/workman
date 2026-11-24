@@ -26,7 +26,11 @@ exports.resolveBinary = function () {
   const platform = JSON.parse(fs.readFileSync(metadata, "utf8"));
   if (platform.version !== manifest.version) {
     throw new Error(
-      `Workman binary version mismatch: expected ${manifest.version}, found ${platform.version}`,
+      `Workman binary version mismatch: expected ${manifest.version}, found ${platform.version} at ${metadata}.\n` +
+        `Your package manager left an older optional dependency installed. Fix with:\n` +
+        `  bun install -g ${name}@${manifest.version}\n` +
+        `or:\n` +
+        `  npm install -g ${manifest.name}@${manifest.version}`,
     );
   }
   return path.join(path.dirname(metadata), "bin", process.platform === "win32" ? "wm.exe" : "wm");

@@ -1,6 +1,6 @@
 {
   "name": "@goodpuppies/workman",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "private": true,
   "type": "module",
   "description": "Workman language tools and experimental TypeScript content mapper",

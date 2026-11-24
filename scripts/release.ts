@@ -123,7 +123,7 @@ export async function stageRelease(output: string, targets: readonly string[], b
   await Deno.copyFile(join(root, "LICENSE"), join(main, "LICENSE"));
   await Deno.writeTextFile(
     join(main, "README.md"),
-    `# Workman\n\nWorkman ${version}: the compiler, language server, REPL, test runner, TypeScript 7.1 content mapper and Vite/Bun integrations.\n\nInstall optional dependencies to obtain the platform binary, which embeds the Deno runtime, tsrs (TypeScript 7.1 reflection), and esbuild (for running programs that import \`node_modules\` packages); no separate Deno installation is needed. Node is required for the CLI and mapper launcher; Bun can use the integration directly.\n\nThis build supports local \`node_modules\` package imports (via \`package.json\`). Deno-specific \`npm:\`, \`jsr:\`, and remote URL specifiers, as well as building standalone executables with \`--executable\`, require the Deno/JSR installation.\n`,
+    `# Workman\n\nWorkman ${version}: the compiler, language server, REPL, test runner, TypeScript 7.1 content mapper and Vite/Bun integrations.\n\nInstall optional dependencies to obtain the platform binary, which embeds the Deno runtime, tsrs (TypeScript 7.1 reflection), and esbuild (for running programs that import \`node_modules\` packages); no separate Deno installation is needed. Node is required for the CLI and mapper launcher; Bun can use the integration directly.\n\nLocal \`node_modules\` package imports (via \`package.json\`) work out of the box. Deno-specific features (\`npm:\`, \`jsr:\`, remote URL specifiers, and \`--executable\`) are enabled automatically whenever \`deno\` is available on \`PATH\` (or \`WORKMAN_DENO_PATH\`).\n`,
   );
   await writeJson(join(main, "package.json"), {
     name: config.name,

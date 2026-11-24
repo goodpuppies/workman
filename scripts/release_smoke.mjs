@@ -132,7 +132,7 @@ try {
     join(directory, "package.wm"),
     'from js.module("npm:left-pad@1.3.0") import unsafe { default as pad };\n',
   );
-  rejected(["check", "package.wm"], "not supported by this wm build");
+  rejected(["check", "package.wm"], "not supported without a Deno CLI");
   rejected(["compile", "hello.wm", "--executable", "-o", "hello"], "cannot create executables");
   const compiled = JSON.parse(
     run(process.execPath, [launcher, "compile-library-json", join(directory, "math.wm")], { env }),

@@ -1,3 +1,5 @@
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -64,6 +66,30 @@ const SCRIPT_VARIABLE = "WM_RUN_SCRIPT";
 /** True in a `deno compile`d binary, where `Deno.execPath()` is that binary, not the Deno CLI. */
 export const isStandaloneBinary: boolean =
   (Deno.build as { standalone?: boolean }).standalone === true;
+
+let cachedPathDeno: string | null | undefined;
+
+/**
+ * Automatically detects an available Deno CLI executable:
+ * 1. `WORKMAN_DENO_PATH` if explicitly set (returns `undefined` if set to a missing path).
+ * 2. `Deno.execPath()` when running directly under the Deno CLI (not a compiled binary).
+ * 3. `deno` on `PATH` if installed and runnable.
+ */
+export function resolveDenoCliPath(): string | undefined {
+  const configured = Deno.env.get("WORKMAN_DENO_PATH")?.trim();
+  if (configured !== undefined && configured.length > 0) {
+    return existsSync(configured) ? configured : undefined;
+  }
+  if (!isStandaloneBinary) return Deno.execPath();
+  if (cachedPathDeno === undefined) {
+    const probe = spawnSync("deno", ["--version"], {
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    cachedPathDeno = !probe.error && probe.status === 0 ? "deno" : null;
+  }
+  return cachedPathDeno ?? undefined;
+}
 
 /**
  * The command that runs `script` with `scriptArgs` in a child process.
