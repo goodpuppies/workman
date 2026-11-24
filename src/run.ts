@@ -4,11 +4,13 @@ import { runtimeFlagsForJavaScript } from "./runtime_flags.ts";
 import { createProgressReporter } from "./progress.ts";
 import {
   denoConfigArgs,
+  isStandaloneBinary,
   linkProjectPackages,
   relayTerminationSignals,
   scriptCommand,
   terminateChild,
 } from "./child_runtime.ts";
+import { bundleJavaScriptEntry } from "./bundle.ts";
 import { createTemporaryDirectory, type TemporaryDirectory } from "./temporary_directory.ts";
 
 export type RunOptions = CompileOptions & {
@@ -21,6 +23,8 @@ export type RunOptions = CompileOptions & {
   signal?: AbortSignal;
   /** Force compile progress on or off; defaults to on when stderr is a TTY. */
   progress?: boolean;
+  /** Bundle emitted JavaScript and `node_modules` imports with esbuild before execution. */
+  bundle?: boolean;
 };
 
 export type RunResult = {
@@ -55,8 +59,14 @@ export async function runFile(input: string, options: RunOptions = {}): Promise<
     for (const artifact of artifacts) {
       await Deno.writeTextFile(`${dir}/${artifact.path}`, artifact.code);
     }
+    let entryScript = `${dir}/${entry.path}`;
+    if (isStandaloneBinary || options.bundle) {
+      const bundled = `${dir}/__wm_bundled_entry.mjs`;
+      await bundleJavaScriptEntry(entryScript, bundled, { projectDirectory });
+      entryScript = bundled;
+    }
     progress.finish();
-    const program = scriptCommand(`${dir}/${entry.path}`, options.args ?? [], [
+    const program = scriptCommand(entryScript, options.args ?? [], [
       "-A",
       ...denoConfigArgs(projectDirectory),
       ...runtimeFlagsForJavaScript(entry.code),

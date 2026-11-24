@@ -8,6 +8,7 @@
     "npm:@webgpu/types@0.1.64": "0.1.64",
     "npm:esbuild@0.25.12": "0.25.12",
     "npm:peggy@^5.0.6": "5.1.0",
+    "npm:tsrs@7.1.0-beta.tsrs5": "7.1.0-beta.tsrs5",
     "npm:typescript@7.1.0-beta": "7.1.0-beta"
   },
   "npm": {
@@ -157,6 +158,46 @@
       "dependencies": [
         "semver"
       ]
+    },
+    "@tsrs/darwin-arm64@7.1.0-beta.tsrs5": {
+      "integrity": "sha512-wRLJq3IDZjdLrh+lsipipCfYPpFjNW/0zjeM9azNLjA33OWjOIxT2THiKExf7bjkbr6SGCrrjDR+ZZyXYz4Rjg==",
+      "os": ["darwin"],
+      "cpu": ["arm64"]
+    },
+    "@tsrs/darwin-x64@7.1.0-beta.tsrs5": {
+      "integrity": "sha512-jTZgFXcnDbkDZwq121fhcZv8YaoJCzSWshJJYRnfc2QqagI31Fn9Vjbiz/GgfoAvw32vK8OZrNCDzN2Cu9UkDQ==",
+      "os": ["darwin"],
+      "cpu": ["x64"]
+    },
+    "@tsrs/linux-arm64-gnu@7.1.0-beta.tsrs5": {
+      "integrity": "sha512-o0ofV8Yw5IbaXR7wjIHaqBv9YddJ6Weot+IpYWfUNqG3YpAe4N5G0dU9vsCLX7eNNYx1mMyIZK0eyMV1r6qg2g==",
+      "os": ["linux"],
+      "cpu": ["arm64"]
+    },
+    "@tsrs/linux-arm64-musl@7.1.0-beta.tsrs5": {
+      "integrity": "sha512-Nki4kxNnp8qO+/8MtZeO0cAt8ifGHPbC9R0BepVlLuDdvR2cqfzym+l75zXtvnwW1nekmKwbNpHqsuHXoITYGQ==",
+      "os": ["linux"],
+      "cpu": ["arm64"]
+    },
+    "@tsrs/linux-x64-gnu@7.1.0-beta.tsrs5": {
+      "integrity": "sha512-hyg70btCCaMT3RvFYU0KEibFyQjFUUfrqk4zTl7rf/7G3HPO3X6sEs8J/AHYUvJB0cA+dXgU/adkiZf1XJI/XA==",
+      "os": ["linux"],
+      "cpu": ["x64"]
+    },
+    "@tsrs/linux-x64-musl@7.1.0-beta.tsrs5": {
+      "integrity": "sha512-5RI2Ziy8eSkvUi/oeQbrCSzJC/AP7DCtn9IEOWS74BhuQK7WUr1op5ozQMsn4kA6DfuCAuYSQZygTk2Zv3Ib+g==",
+      "os": ["linux"],
+      "cpu": ["x64"]
+    },
+    "@tsrs/win32-arm64@7.1.0-beta.tsrs5": {
+      "integrity": "sha512-RqvW3yaksYl8h8m+aHGfWT9He6AwgvhJ38+8rcuE+Mz12DxVLeRVvWco5k1DZ3nMT056Erohyuwuv4F3A5Tnww==",
+      "os": ["win32"],
+      "cpu": ["arm64"]
+    },
+    "@tsrs/win32-x64@7.1.0-beta.tsrs5": {
+      "integrity": "sha512-ZTEC3ITNsWH54a/0CtlRhNNfstVFHeg40sUjuQMYIlLiLxRFOXOPjFL/eyjZAS/1fNM+DGtz+6RY6AAMdqyoXw==",
+      "os": ["win32"],
+      "cpu": ["x64"]
     },
     "@types/deno@2.7.0": {
       "integrity": "sha512-Y6fWcV8KpYeO3Lik/RiYnUxtr/LWqoeACciU0CA+dr1U/45tGgaX3HWQQAPCNN53raN4Rr4Fht4y6qsUH57fDA=="
@@ -334,6 +375,20 @@
     "source-map-generator@2.0.6": {
       "integrity": "sha512-IlassDs1Ve8nV6uyQZXF9kdkJpVKnMte2JZQXu13M0A5zwc+vu6+LNHfmxsHBMDtoZE21RHiKI0/xvpecZRCNg=="
     },
+    "tsrs@7.1.0-beta.tsrs5": {
+      "integrity": "sha512-z+hNizBykB1mv/XxMnMYMSGuwnYEk6S708LGEEaTmdLu6eaH4NOtVemySycbEiW/SCjMeYMk+SZfVdRJwEmYXA==",
+      "optionalDependencies": [
+        "@tsrs/darwin-arm64",
+        "@tsrs/darwin-x64",
+        "@tsrs/linux-arm64-gnu",
+        "@tsrs/linux-arm64-musl",
+        "@tsrs/linux-x64-gnu",
+        "@tsrs/linux-x64-musl",
+        "@tsrs/win32-arm64",
+        "@tsrs/win32-x64"
+      ],
+      "bin": true
+    },
     "typescript@6.0.3": {
       "integrity": "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==",
       "bin": true
@@ -379,6 +434,7 @@
         "npm:@webgpu/types@0.1.64",
         "npm:esbuild@0.25.12",
         "npm:peggy@^5.0.6",
+        "npm:tsrs@7.1.0-beta.tsrs5",
         "npm:typescript@7.1.0-beta"
       ]
     }

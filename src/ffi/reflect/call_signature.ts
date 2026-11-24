@@ -1,19 +1,29 @@
-import ts from "typescript-api";
+import {
+  type Checker,
+  IndexKind,
+  ObjectFlags,
+  type Signature,
+  type TupleType,
+  type Type,
+  type TypeReference,
+} from "tsrs/sync";
+import type { CallExpression, Expression, SignatureDeclaration } from "tsrs/ast";
+import { isArrowFunction } from "tsrs/ast/is";
 import type { TypeExpr } from "../../ast.ts";
 import { type JsCallArgHint } from "./type_refs.ts";
 import { typeExprFromTsType } from "./type_mapping.ts";
-import { typeOfSymbol } from "./host.ts";
+import { resolveSignatureDeclaration, typeOfSymbol } from "./host.ts";
 import { tsTypeFromTypeExpr } from "./ts_type_expr.ts";
 import { fn, name } from "../type_expr.ts";
 
 export function functionTypeFromCall(
-  checker: ts.TypeChecker,
-  call: ts.CallExpression,
-  signature: ts.Signature,
+  checker: Checker,
+  call: CallExpression,
+  signature: Signature,
   args: JsCallArgHint[],
 ): TypeExpr | undefined {
   const signatureParams = signature.getParameters();
-  const declaration = signature.getDeclaration();
+  const declaration = resolveSignatureDeclaration(signature);
   let invalidArguments = false;
   const params = call.arguments.map((arg, index) => {
     const lastParameterIndex = signatureParams.length - 1;
@@ -56,29 +66,30 @@ export function functionTypeFromCall(
 }
 
 function suppliedParameterType(
-  checker: ts.TypeChecker,
-  type: ts.Type,
-  declaration: ts.SignatureDeclaration | undefined,
+  checker: Checker,
+  type: Type,
+  declaration: SignatureDeclaration | undefined,
   declarationIndex: number,
   argumentIndex: number,
-): ts.Type {
+): Type {
   const parameter = declaration?.parameters[declarationIndex];
   if (!parameter?.dotDotDotToken) return type;
-  const ref = type as ts.TypeReference;
-  const target = ref.target as (ts.TupleType & ts.ObjectType) | undefined;
-  if (target && target.objectFlags & ts.ObjectFlags.Tuple) {
-    const elements = checker.getTypeArguments(ref);
-    return elements[argumentIndex - declarationIndex] ?? type;
+  if (type.isTypeReference()) {
+    const target = type.getTarget() as TupleType | undefined;
+    if (target && target.objectFlags & ObjectFlags.Tuple) {
+      const elements = checker.getTypeArguments(type as TypeReference);
+      return elements[argumentIndex - declarationIndex] ?? type;
+    }
   }
-  return checker.getIndexTypeOfType(type, ts.IndexKind.Number) ?? type;
+  return checker.getIndexTypeOfType(type, IndexKind.Number) ?? type;
 }
 
 function syntheticCallbackTypeFromArg(
-  checker: ts.TypeChecker,
-  arg: ts.Expression,
+  checker: Checker,
+  arg: Expression,
   hint: Extract<JsCallArgHint, { kind: "function" }>,
 ): TypeExpr {
-  if (!ts.isArrowFunction(arg)) {
+  if (!isArrowFunction(arg)) {
     return fn([name("Js.Value")], hint.resultType ?? name("Js.Value"));
   }
   return fn(
@@ -97,7 +108,7 @@ function syntheticCallbackTypeFromArg(
 
 function stripSuppliedOptionalParam(
   type: TypeExpr,
-  declaration: ts.SignatureDeclaration | undefined,
+  declaration: SignatureDeclaration | undefined,
   index: number,
 ): TypeExpr {
   const param = declaration?.parameters[index];

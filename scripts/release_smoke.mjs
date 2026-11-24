@@ -93,6 +93,32 @@ try {
     'from "testman/test.wm" import *;\nlet tests = [ test("adds", () => assertEqual(1 + 1, 2)) ];\n',
   );
   assert(wm(["test", "math.test.wm"]).includes("1 passed"));
+  // Bare `node_modules` package imports work end-to-end (tsrs reflection + embedded esbuild).
+  const demoPkgDir = join(directory, "node_modules", "demo-pkg");
+  await mkdir(demoPkgDir, { recursive: true });
+  await writeFile(
+    join(demoPkgDir, "package.json"),
+    JSON.stringify({
+      name: "demo-pkg",
+      version: "1.0.0",
+      type: "module",
+      exports: { ".": { types: "./index.d.ts", import: "./index.mjs" } },
+    }),
+  );
+  await writeFile(
+    join(demoPkgDir, "index.d.ts"),
+    "export declare function greet(name: string): string;\n",
+  );
+  await writeFile(
+    join(demoPkgDir, "index.mjs"),
+    'export function greet(name) { return `hello, ${name}!`; }\n',
+  );
+  await writeFile(
+    join(directory, "pkg_user.wm"),
+    'from js.module("demo-pkg") import { greet };\n' +
+      'let main = () => { print(greet("workman") :> Result.debug) };\n',
+  );
+  assert.equal(wm(["run", "pkg_user.wm"]), "hello, workman!\n");
   const rejected = (args, message) => {
     const child = spawnSync(process.execPath, [launcher, ...args], {
       cwd: directory,

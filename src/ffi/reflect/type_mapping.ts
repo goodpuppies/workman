@@ -1,6 +1,34 @@
-import ts from "typescript-api";
+import {
+  type Checker,
+  type ConditionalType,
+  ElementFlags,
+  IndexKind,
+  type ObjectType,
+  ObjectFlags,
+  type Signature,
+  type TupleType,
+  type Type,
+  TypeFlags,
+  TypeFormatFlags,
+  type TypeReference,
+  type UnionType,
+} from "tsrs/sync";
+import type { CallExpression } from "tsrs/ast";
+import {
+  isArrowFunction,
+  isClassDeclaration,
+  isEnumDeclaration,
+  isInterfaceDeclaration,
+  isStringLiteralLikeNode,
+  isTupleTypeNode,
+  isTypeAliasDeclaration,
+} from "tsrs/ast/is";
 import type { TypeExpr } from "../../ast.ts";
-import { typeOfSymbol } from "./host.ts";
+import {
+  resolveSignatureDeclaration,
+  resolveSymbolDeclarations,
+  typeOfSymbol,
+} from "./host.ts";
 import type {
   JsCallableVariant,
   JsCallArgHint,
@@ -21,15 +49,15 @@ type ReflectedParam = {
 };
 
 export function jsMemberTypeFromTsType(
-  checker: ts.TypeChecker,
-  type: ts.Type,
-  resultRef?: (index: number, signature: ts.Signature) => JsTypeRef | undefined,
+  checker: Checker,
+  type: Type,
+  resultRef?: (index: number, signature: Signature) => JsTypeRef | undefined,
   callbackParamRef?: (
     signatureIndex: number,
     paramIndex: number,
     callbackParamIndex: number,
-    callbackParamType: ts.Type,
-    signature: ts.Signature,
+    callbackParamType: Type,
+    signature: Signature,
   ) => JsTypeRef | undefined,
 ): Omit<JsMemberType, "name"> | undefined {
   const variants = dedupeVariants(
@@ -64,9 +92,9 @@ export function jsMemberTypeFromTsType(
 function resultRefWithType(
   ref: JsTypeRef | undefined,
   type: TypeExpr,
-  checker: ts.TypeChecker,
-  foreign: ts.Type,
-  signature: ts.Signature,
+  checker: Checker,
+  foreign: Type,
+  signature: Signature,
 ): JsTypeRef | undefined {
   const generic = type.kind === "TName" && type.name === nominalObjectTypeName(checker, foreign)
     ? nominalGenericConstructor(checker, foreign)
@@ -76,8 +104,6 @@ function resultRefWithType(
       ...ref,
       generic,
       type,
-      // A generic named only by a parameter needs its arity declared too. Other parameter types
-      // keep the identity they get where they are imported.
       nestedTypeRefs: [
         ...nestedForeignTypeRefs(checker, foreign, ref.source),
         ...signature.getParameters().flatMap((symbol) => {
@@ -98,8 +124,8 @@ function returnTypeOfVariant(type: TypeExpr): TypeExpr {
 }
 
 export function typeExprFromTsType(
-  checker: ts.TypeChecker,
-  type: ts.Type,
+  checker: Checker,
+  type: Type,
   position: "param" | "result" = "result",
 ): TypeExpr | undefined {
   if (
@@ -110,20 +136,13 @@ export function typeExprFromTsType(
   if (position === "param" && checker.typeToString(type) === "ArrayBuffer") {
     return name("ArrayBuffer");
   }
-  // Buffer-source parameters (ArrayBuffer/BufferSource/AllowSharedBufferSource/typed-array
-  // views, including `| null` unions which TS flattens to several members) become an
-  // array-like obligation rather than an opaque Js.Object. The concrete array-like type is
-  // chosen from the call argument during FFI materialization, so the boundary stays type-safe.
-  // A nullable buffer source keeps Workman's `T | null` => Option modelling as
-  // Option<Js.ArrayLike>. Checked before the generic nullish/union handling because that path
-  // collapses multi-member unions to Js.Value.
   if (position === "param") {
     const bufferSource = bufferSourceParamExpr(checker, type);
     if (bufferSource) return bufferSource;
   }
   if (isAnyOrUnknown(type)) return name("Js.Value");
-  if (type.flags & ts.TypeFlags.Never) return name("JsNever");
-  if (type.flags & ts.TypeFlags.Conditional) return name("Js.Value");
+  if (type.flags & TypeFlags.Never) return name("JsNever");
+  if (type.flags & TypeFlags.Conditional) return name("Js.Value");
   if (isTsType(checker, type, "number")) return name("Real64.Real");
   if (isTsType(checker, type, "string")) return name("String");
   if (isTsType(checker, type, "boolean")) return name("Bool");
@@ -140,11 +159,12 @@ export function typeExprFromTsType(
     if (nullish.values?.every(isObjectLike)) return option(name("Js.Object"));
     return position === "param" ? option(name("Js.Value")) : undefined;
   }
-  if (type.isUnion()) {
+  if (type.isUnionType()) {
+    const unionTypes = type.getTypes();
     const promisedUnion = promisedOrValueUnionType(checker, type, position);
     if (promisedUnion) return promisedUnion;
-    if (type.types.some(isObjectLike)) {
-      return position === "param" && type.types.some(isStringLike) && type.types
+    if (unionTypes.some(isObjectLike)) {
+      return position === "param" && unionTypes.some(isStringLike) && unionTypes
           .filter(isObjectLike)
           .every((item) => checker.typeToString(item) === "URL")
         ? name("String")
@@ -152,23 +172,18 @@ export function typeExprFromTsType(
         ? name("Js.Value")
         : undefined;
     }
-    if (position === "param" && type.types.some(isStringLike)) return name("String");
-    const mapped = type.types.map((item) => typeExprFromTsType(checker, item, position));
+    if (position === "param" && unionTypes.some(isStringLike)) return name("String");
+    const mapped = unionTypes.map((item) => typeExprFromTsType(checker, item, position));
     if (mapped.some((item) => !item)) return undefined;
     const first = mapped[0];
     if (first && mapped.every((item) => typeKey(item!) === typeKey(first))) return first;
-    // A value TS declares as one of several Workman types (number | string | boolean) is dynamic
-    // to Workman: read it as Js.Value and state the expected type with Json.assert.
     return position === "result" ? name("Js.Value") : undefined;
   }
   const signature = type.getCallSignatures()[0];
   const callable = position === "result" ? foreignCallableIdentity(checker, type) : undefined;
   if (callable) return name(callable.name);
   if (signature) return functionTypeFromSignature(checker, signature);
-  if (type.flags & ts.TypeFlags.TypeParameter) {
-    // Polymorphic `this` returns (for example Ora.start(): this) are represented by
-    // TypeScript as type parameters whose symbol still points at the owning interface/class.
-    // Preserve that nominal receiver instead of collapsing it to Js.Value.
+  if (type.flags & TypeFlags.TypeParameter) {
     const receiverType = nominalTypeParameterObjectName(type);
     if (position === "result" && receiverType) return name(receiverType);
     const constraint = checker.getBaseConstraintOfType(type);
@@ -180,27 +195,20 @@ export function typeExprFromTsType(
     }
     return name("Js.Value");
   }
-  if (type.flags & ts.TypeFlags.StringLiteral) return name("String");
-  if (type.flags & ts.TypeFlags.NumberLiteral) return name("Real64.Real");
-  if (type.flags & ts.TypeFlags.BooleanLiteral) return name("Bool");
-  if (type.flags & (ts.TypeFlags.Void | ts.TypeFlags.Undefined)) return name("Void");
+  if (type.flags & TypeFlags.StringLiteral) return name("String");
+  if (type.flags & TypeFlags.NumberLiteral) return name("Real64.Real");
+  if (type.flags & TypeFlags.BooleanLiteral) return name("Bool");
+  if (type.flags & (TypeFlags.Void | TypeFlags.Undefined)) return name("Void");
   const promised = promiseElementType(checker, type, position);
   if (promised) {
     return { kind: "TName", name: "Task", args: [promised, name("Js.Error")], ffiPromise: true };
   }
   if (position === "param" && isNumericTypedArray(checker, type)) {
-    // Typed arrays carry their own storage and host identity. Erasing one to
-    // Js.Array<Real64.Real> leaks that discovery type into ordinary WM helpers,
-    // which can no longer accept the actual view returned by another module.
     const nominal = nominalObjectTypeName(checker, type);
     if (nominal) return name(nominal);
   }
   const arrayElement = arrayElementType(checker, type, position);
   if (arrayElement) return { kind: "TName", name: "Js.Array", args: [arrayElement] };
-  /* if (/^(?:Deno\.)?DynamicLibrary<.+>$/.test(checker.typeToString(type))) {
-    return name("Js.Object");
-  } */
-  // Only values read from JS: a dictionary parameter accepts JSON{...} object literals.
   const dictionary = position === "result" ? dictionaryTypeExpr(checker, type, position) : undefined;
   if (dictionary) return dictionary;
   const nominal = nominalObjectTypeName(checker, type);
@@ -208,15 +216,10 @@ export function typeExprFromTsType(
   if (nominal) {
     const generic = nominalGenericConstructor(checker, type);
     if (generic) {
-      // Written without arguments, a parameter names no instantiation to preserve. It accepts
-      // subclasses as a non-generic class parameter does, and the concrete call is checked by
-      // TypeScript when it is resolved.
       if (position === "param" && usesOnlyDefaultTypeArguments(checker, type)) {
         return name("Js.Value");
       }
-      // Uninstantiated declaration signatures are discovery seeds only. Concrete
-      // calls are resolved again with HM arguments before these slots escape.
-      const args = checker.getTypeArguments(type as ts.TypeReference).slice(0, generic.arity)
+      const args = checker.getTypeArguments(type as TypeReference).slice(0, generic.arity)
         .map((arg) =>
           containsTypeParameter(arg)
             ? name("Js.Value")
@@ -234,10 +237,6 @@ export function typeExprFromTsType(
   if (isExplicitDynamicObject(checker, type)) {
     return position === "param" ? name("Js.Value") : name("Js.Object");
   }
-  // Anonymous inline object literals (no nominal identity, e.g. `{ enabled; type }`) have no
-  // honest named Workman representation and cannot be asserted back into a foreign type, so a
-  // `Js.Object` recovery is acceptable here. Named static types keep their nominal ref and are
-  // left unresolved rather than silently collapsed to opaque (ffi-principles.md #7).
   if (
     position === "result" &&
     isObjectLike(type) &&
@@ -249,51 +248,48 @@ export function typeExprFromTsType(
   return position === "param" ? name("Js.Value") : undefined;
 }
 
-/**
- * A pure string-keyed dictionary (`Record<string, V>`, `{ [key: string]: V }`) is a plain object,
- * which is exactly Js.Dict's representation. Explicitly dynamic dictionaries keep their
- * Js.Object/Js.Value treatment, and an unrepresentable value type leaves the access unresolved.
- */
 function dictionaryTypeExpr(
-  checker: ts.TypeChecker,
-  type: ts.Type,
+  checker: Checker,
+  type: Type,
   position: "param" | "result",
 ): TypeExpr | undefined {
   if (!isObjectLike(type) || isExplicitDynamicObject(checker, type)) return undefined;
   if (type.getCallSignatures().length || type.getConstructSignatures().length) return undefined;
   if (checker.getPropertiesOfType(type).length) return undefined;
   const infos = checker.getIndexInfosOfType(type);
-  if (infos.length !== 1 || !(infos[0].keyType.flags & ts.TypeFlags.String)) return undefined;
-  const value = typeExprFromTsType(checker, infos[0].type, position);
+  if (infos.length !== 1 || !(infos[0].keyType.flags & TypeFlags.String)) return undefined;
+  const value = typeExprFromTsType(checker, infos[0].valueType, position);
   return value ? { kind: "TName", name: "Js.Dict", args: [value] } : undefined;
 }
 
-function nominalTypeParameterObjectName(type: ts.Type): string | undefined {
+function nominalTypeParameterObjectName(type: Type): string | undefined {
   const symbol = type.getSymbol();
-  const typeName = symbol?.getName();
+  const typeName = symbol?.name;
   if (!symbol || !typeName || !/^[A-Za-z_$][\w$]*$/.test(typeName)) return undefined;
-  return symbol.declarations?.some((declaration) =>
-      ts.isClassDeclaration(declaration) || ts.isInterfaceDeclaration(declaration)
+  return resolveSymbolDeclarations(symbol).some((declaration) =>
+      isClassDeclaration(declaration) || isInterfaceDeclaration(declaration)
     )
     ? typeName
     : undefined;
 }
 
-function opaqueTupleAliasTypeName(type: ts.Type): string | undefined {
-  const symbol = type.aliasSymbol;
-  const declaration = symbol?.declarations?.find(ts.isTypeAliasDeclaration);
-  if (!declaration || !ts.isTupleTypeNode(declaration.type)) return undefined;
-  const typeName = symbol?.getName();
+function opaqueTupleAliasTypeName(type: Type): string | undefined {
+  const symbol = type.getAliasSymbol();
+  if (!symbol) return undefined;
+  const declaration = resolveSymbolDeclarations(symbol).find(isTypeAliasDeclaration);
+  if (!declaration || !isTupleTypeNode(declaration.type)) return undefined;
+  const typeName = symbol.name;
   return typeName && /^[A-Za-z_$][\w$]*$/.test(typeName) ? typeName : undefined;
 }
 
-function enumTypeExpr(type: ts.Type): TypeExpr | undefined {
-  const symbol = type.aliasSymbol ?? type.getSymbol();
-  const declaration = symbol?.declarations?.find(ts.isEnumDeclaration);
+function enumTypeExpr(type: Type): TypeExpr | undefined {
+  const symbol = type.getAliasSymbol() ?? type.getSymbol();
+  if (!symbol) return undefined;
+  const declaration = resolveSymbolDeclarations(symbol).find(isEnumDeclaration);
   if (!declaration) return undefined;
   const kinds = new Set(
     declaration.members.map((member) =>
-      member.initializer && ts.isStringLiteralLike(member.initializer) ? "string" : "number"
+      member.initializer && isStringLiteralLikeNode(member.initializer) ? "string" : "number"
     ),
   );
   if (kinds.size !== 1) return undefined;
@@ -301,15 +297,16 @@ function enumTypeExpr(type: ts.Type): TypeExpr | undefined {
 }
 
 function promisedOrValueUnionType(
-  checker: ts.TypeChecker,
-  type: ts.UnionType,
+  checker: Checker,
+  type: UnionType,
   position: "param" | "result",
 ): TypeExpr | undefined {
-  if (position !== "result" || type.types.length !== 2) return undefined;
-  const promised = type.types.find((item) =>
+  const members = type.getTypes();
+  if (position !== "result" || members.length !== 2) return undefined;
+  const promised = members.find((item) =>
     /\bPromise(?:Like)?</.test(checker.typeToString(item))
   );
-  const value = type.types.find((item) => item !== promised);
+  const value = members.find((item) => item !== promised);
   if (!promised || !value) return undefined;
   const promisedValue = promiseElementType(checker, promised, position);
   const directValue = typeExprFromTsType(checker, value, position);
@@ -319,16 +316,17 @@ function promisedOrValueUnionType(
   return { kind: "TName", name: "Task", args: [directValue, name("Js.Error")], ffiPromise: true };
 }
 
-export function nominalObjectTypeName(checker: ts.TypeChecker, type: ts.Type): string | undefined {
-  if (!(type.flags & ts.TypeFlags.Object)) return undefined;
-  const symbol = type.aliasSymbol ?? type.getSymbol();
-  const typeName = symbol?.getName();
+export function nominalObjectTypeName(checker: Checker, type: Type): string | undefined {
+  if (!(type.flags & TypeFlags.Object)) return undefined;
+  const symbol = type.getAliasSymbol() ?? type.getSymbol();
+  const typeName = symbol?.name;
   if (!typeName || typeName === "__type" || typeName === "Object") return undefined;
   if (!/^[A-Za-z_$][\w$]*$/.test(typeName)) return undefined;
   if (isNumericTypedArrayName(typeName)) return typeName;
   if (
-    symbol?.declarations?.some((decl) =>
-      ts.isClassDeclaration(decl) || ts.isInterfaceDeclaration(decl)
+    symbol &&
+    resolveSymbolDeclarations(symbol).some((decl) =>
+      isClassDeclaration(decl) || isInterfaceDeclaration(decl)
     )
   ) {
     return typeName;
@@ -339,52 +337,54 @@ export function nominalObjectTypeName(checker: ts.TypeChecker, type: ts.Type): s
 }
 
 export function nominalGenericConstructor(
-  checker: ts.TypeChecker,
-  type: ts.Type,
+  checker: Checker,
+  type: Type,
 ): JsTypeRef["generic"] {
-  if (!(type.flags & ts.TypeFlags.Object)) return undefined;
-  if (!((type as ts.ObjectType).objectFlags & ts.ObjectFlags.Reference)) return undefined;
-  const symbol = type.aliasSymbol ?? type.getSymbol();
-  const declaration = symbol?.declarations?.find((decl) =>
-    ts.isClassDeclaration(decl) || ts.isInterfaceDeclaration(decl)
+  if (!(type.flags & TypeFlags.Object)) return undefined;
+  if (!((type as ObjectType).objectFlags & ObjectFlags.Reference)) return undefined;
+  const symbol = type.getAliasSymbol() ?? type.getSymbol();
+  if (!symbol) return undefined;
+  const declaration = resolveSymbolDeclarations(symbol).find((decl) =>
+    isClassDeclaration(decl) || isInterfaceDeclaration(decl)
   );
-  if (!declaration || !symbol) return undefined;
+  if (!declaration) return undefined;
   const arity = declaration.typeParameters?.length ?? 0;
-  if (!arity || isNumericTypedArrayName(symbol.getName())) return undefined;
+  if (!arity || isNumericTypedArrayName(symbol.name)) return undefined;
   const qualified = checker.getFullyQualifiedName(symbol);
   const expression = qualified.replace(/^("(?:[^"\\]|\\.)+")\./, "import($1).")
     .replace(/^global\./, "");
-  const requiredArity = declaration.typeParameters!.filter((param) => !param.default).length;
+  const requiredArity = declaration.typeParameters!.filter((param) => !param.defaultType).length;
   return { key: `generic-type:${expression}`, expression, arity, requiredArity };
 }
 
-function usesOnlyDefaultTypeArguments(checker: ts.TypeChecker, type: ts.Type): boolean {
-  const reference = type as ts.TypeReference;
-  const parameters = reference.target.typeParameters ?? [];
-  const args = checker.getTypeArguments(reference);
+function usesOnlyDefaultTypeArguments(checker: Checker, type: Type): boolean {
+  if (!type.isTypeReference()) return false;
+  const target = type.getTarget();
+  const parameters = target.getTypeParameters() ?? [];
+  const args = checker.getTypeArguments(type);
   return parameters.length > 0 && parameters.every((parameter, index) => {
     const declared = checker.getDefaultFromTypeParameter(parameter);
-    return declared !== undefined && args[index] === declared;
+    return declared !== undefined && args[index]?.id === declared.id;
   });
 }
 
-function containsTypeParameter(type: ts.Type): boolean {
-  if (type.flags & ts.TypeFlags.TypeParameter) return true;
-  if (type.isUnionOrIntersection()) return type.types.some(containsTypeParameter);
-  if (type.flags & ts.TypeFlags.Conditional) {
-    const conditional = type as ts.ConditionalType;
-    return containsTypeParameter(conditional.checkType) ||
-      containsTypeParameter(conditional.extendsType);
+function containsTypeParameter(type: Type): boolean {
+  if (type.flags & TypeFlags.TypeParameter) return true;
+  if (type.isUnionType() || type.isIntersectionType()) {
+    return type.getTypes().some(containsTypeParameter);
+  }
+  if (type.flags & TypeFlags.Conditional) {
+    const conditional = type as ConditionalType;
+    return containsTypeParameter(conditional.getCheckType()) ||
+      containsTypeParameter(conditional.getExtendsType());
   }
   return false;
 }
 
 /** A global type has one identity however it is reached, so it uses the key its import gets. */
-function nestedNominalKey(checker: ts.TypeChecker, type: ts.Type, expression: string): string {
-  // A module's type prints as `import("…").Name`; its symbol's qualified name may still be bare,
-  // as for a default-exported class, which must not be mistaken for a global.
+function nestedNominalKey(checker: Checker, type: Type, expression: string): string {
   if (expression.startsWith("import(")) return `nominal-type:${expression}`;
-  const symbol = type.aliasSymbol ?? type.getSymbol();
+  const symbol = type.getAliasSymbol() ?? type.getSymbol();
   const qualified = symbol && checker.getFullyQualifiedName(symbol).replace(/^global\./, "");
   return qualified && !qualified.startsWith('"')
     ? `global-type:${qualified}`
@@ -393,19 +393,18 @@ function nestedNominalKey(checker: ts.TypeChecker, type: ts.Type, expression: st
 
 /** Nominal identities below a generic result (for example an Effect's error). */
 export function nestedForeignTypeRefs(
-  checker: ts.TypeChecker,
-  type: ts.Type,
+  checker: Checker,
+  type: Type,
   source: string,
   includeType = false,
   rootExpression?: string,
 ): JsTypeRef[] {
   const refs: JsTypeRef[] = [];
-  const seen = new Set<ts.Type>();
-  const visit = (current: ts.Type, expression?: string) => {
-    if (seen.has(current)) return;
-    seen.add(current);
-    // `Object3D | null`, as an optional parameter reads.
-    if (current.isUnion()) return current.types.forEach((item) => visit(item));
+  const seen = new Set<number>();
+  const visit = (current: Type, expression?: string) => {
+    if (seen.has(current.id)) return;
+    seen.add(current.id);
+    if (current.isUnionType()) return current.getTypes().forEach((item) => visit(item));
     const callable = foreignCallableIdentity(checker, current);
     if (callable) {
       const expr = `__wm_nested_callable_${refs.length}`;
@@ -413,7 +412,7 @@ export function nestedForeignTypeRefs(
         checker.typeToString(
           current,
           undefined,
-          ts.TypeFormatFlags.NoTruncation | ts.TypeFormatFlags.UseFullyQualifiedType,
+          TypeFormatFlags.NoTruncation | TypeFormatFlags.UseFullyQualifiedType,
         );
       refs.push({
         key: callable.key,
@@ -430,7 +429,7 @@ export function nestedForeignTypeRefs(
       const expression = checker.typeToString(
         current,
         undefined,
-        ts.TypeFormatFlags.UseFullyQualifiedType,
+        TypeFormatFlags.UseFullyQualifiedType,
       );
       const expr = `__wm_nested_type_${refs.length}`;
       refs.push({
@@ -441,17 +440,16 @@ export function nestedForeignTypeRefs(
         type: mapped,
       });
     }
-    // Dictionary values (Record<string, Layer>) project to Js.Dict<Layer>.
     if (dictionaryTypeExpr(checker, current, "result")) {
-      const value = checker.getIndexInfosOfType(current)[0].type;
+      const value = checker.getIndexInfosOfType(current)[0].valueType;
       visit(value, expression ? `${expression}[string]` : undefined);
     }
     if (
-      current.flags & ts.TypeFlags.Object &&
-      (current as ts.ObjectType).objectFlags & ts.ObjectFlags.Reference
+      current.flags & TypeFlags.Object &&
+      (current as ObjectType).objectFlags & ObjectFlags.Reference
     ) {
-      const tuple = checker.isTupleType(current);
-      checker.getTypeArguments(current as ts.TypeReference).forEach((item, index) =>
+      const tuple = current.isTupleType();
+      checker.getTypeArguments(current as TypeReference).forEach((item, index) =>
         visit(item, expression && tuple ? `${expression}[${index}]` : undefined)
       );
     }
@@ -459,59 +457,58 @@ export function nestedForeignTypeRefs(
   if (includeType) {
     visit(type, rootExpression);
   } else if (
-    type.flags & ts.TypeFlags.Object &&
-    (type as ts.ObjectType).objectFlags & ts.ObjectFlags.Reference
+    type.flags & TypeFlags.Object &&
+    (type as ObjectType).objectFlags & ObjectFlags.Reference
   ) {
-    const tuple = checker.isTupleType(type);
-    checker.getTypeArguments(type as ts.TypeReference).forEach((item, index) =>
+    const tuple = type.isTupleType();
+    checker.getTypeArguments(type as TypeReference).forEach((item, index) =>
       visit(item, rootExpression && tuple ? `${rootExpression}[${index}]` : undefined)
     );
   } else if (foreignCallableIdentity(checker, type)) {
     visit(type, rootExpression);
   } else if (dictionaryTypeExpr(checker, type, "result")) {
-    const value = checker.getIndexInfosOfType(type)[0].type;
+    const value = checker.getIndexInfosOfType(type)[0].valueType;
     visit(value, rootExpression ? `${rootExpression}[string]` : undefined);
   }
   return refs;
 }
 
 function awaitedTypeArgument(
-  checker: ts.TypeChecker,
-  type: ts.Type,
+  checker: Checker,
+  type: Type,
   position: "param" | "result",
 ): TypeExpr | undefined {
   const text = checker.typeToString(type);
   if (/^Awaited<.+>$/.test(text)) {
-    const awaited = (checker as { getAwaitedType?: (type: ts.Type) => ts.Type | undefined })
-      .getAwaitedType?.(type);
-    if (awaited && awaited !== type) {
+    const awaited = checker.getAwaitedType(type);
+    if (awaited && awaited.id !== type.id) {
       return typeExprFromTsType(checker, awaited, position);
     }
   }
   const match = /^Awaited<([A-Za-z_][A-Za-z0-9_]*)>$/.exec(text);
   if (match) return undefined;
   if (!/^Awaited<.+>$/.test(text)) return undefined;
-  const ref = type as ts.TypeReference;
-  const arg = ref.typeArguments?.[0] ?? checker.getTypeArguments(ref)[0];
+  const arg = type.isTypeReference() ? checker.getTypeArguments(type)[0] : undefined;
   return arg ? typeExprFromTsType(checker, arg, position) : undefined;
 }
 
 function nullishUnionParts(
-  type: ts.Type,
-): { value?: ts.Type; values?: ts.Type[] } | undefined {
-  if (!type.isUnion()) return undefined;
-  const valueTypes = type.types.filter((item) => !isNullish(item));
-  if (valueTypes.length === type.types.length) return undefined;
+  type: Type,
+): { value?: Type; values?: Type[] } | undefined {
+  if (!type.isUnionType()) return undefined;
+  const members = type.getTypes();
+  const valueTypes = members.filter((item) => !isNullish(item));
+  if (valueTypes.length === members.length) return undefined;
   if (valueTypes.length === 0) return {};
   if (valueTypes.length === 1) return { value: valueTypes[0] };
   return { values: valueTypes };
 }
 
-function isNullish(type: ts.Type): boolean {
-  return !!(type.flags & ts.TypeFlags.Null) || !!(type.flags & ts.TypeFlags.Undefined);
+function isNullish(type: Type): boolean {
+  return !!(type.flags & TypeFlags.Null) || !!(type.flags & TypeFlags.Undefined);
 }
 
-function denoPointerTypeExpr(checker: ts.TypeChecker, type: ts.Type): TypeExpr | undefined {
+function denoPointerTypeExpr(checker: Checker, type: Type): TypeExpr | undefined {
   const text = checker.typeToString(type);
   if (/^(?:Deno\.)?PointerValue(?:<.*>)?$/.test(text)) return option(name("Js.Object"));
   if (/^(?:Deno\.)?PointerObject(?:<.*>)?$/.test(text)) return name("Js.Object");
@@ -527,14 +524,8 @@ const bufferSourceTypeNames = new Set([
   "SharedArrayBuffer",
 ]);
 
-// Maps a buffer-source parameter type to an array-like obligation, preserving nullability as
-// Option. Returns undefined for anything that is not (entirely) a buffer source. A union is a
-// buffer source only when every non-null member is one of the buffer type names; this
-// deliberately excludes unions that merely mention a buffer alongside other shapes (e.g.
-// `ArrayLike<number> | ArrayBuffer` on the Uint8Array constructor), which keep their broader
-// mapping.
-function bufferSourceParamExpr(checker: ts.TypeChecker, type: ts.Type): TypeExpr | undefined {
-  const members = type.isUnion() ? type.types : [type];
+function bufferSourceParamExpr(checker: Checker, type: Type): TypeExpr | undefined {
+  const members = type.isUnionType() ? type.getTypes() : [type];
   const nonNull = members.filter((item) => !isNullish(item));
   if (nonNull.length === 0 || !nonNull.every((item) => isBufferSourceLeaf(checker, item))) {
     return undefined;
@@ -543,52 +534,47 @@ function bufferSourceParamExpr(checker: ts.TypeChecker, type: ts.Type): TypeExpr
   return nonNull.length === members.length ? obligation : option(obligation);
 }
 
-function isBufferSourceLeaf(checker: ts.TypeChecker, type: ts.Type): boolean {
+function isBufferSourceLeaf(checker: Checker, type: Type): boolean {
   const own = bufferSourceTypeName(checker, type);
   if (own && bufferSourceTypeNames.has(own)) return true;
-  if (type.isUnion()) {
-    return type.types.every((item) => isNullish(item) || isBufferSourceLeaf(checker, item));
+  if (type.isUnionType()) {
+    return type.getTypes().every((item) => isNullish(item) || isBufferSourceLeaf(checker, item));
   }
   return false;
 }
 
-function bufferSourceTypeName(checker: ts.TypeChecker, type: ts.Type): string | undefined {
-  const alias = type.aliasSymbol?.getName();
+function bufferSourceTypeName(checker: Checker, type: Type): string | undefined {
+  const alias = type.getAliasSymbol()?.name;
   if (alias) return alias;
-  const symbol = type.getSymbol()?.getName();
+  const symbol = type.getSymbol()?.name;
   if (symbol && symbol !== "__type") return symbol;
   const text = checker.typeToString(type);
   return /^[A-Za-z_$][\w$]*$/.test(text) ? text : undefined;
 }
 
 function functionTypeFromSignature(
-  checker: ts.TypeChecker,
-  signature: ts.Signature,
+  checker: Checker,
+  signature: Signature,
 ): TypeExpr | undefined {
   return functionVariantsFromSignature(checker, signature)[0]?.type;
 }
 
 export function functionVariantsFromSignature(
-  checker: ts.TypeChecker,
-  signature: ts.Signature,
+  checker: Checker,
+  signature: Signature,
   callbackParamRef?: (
     paramIndex: number,
     callbackParamIndex: number,
-    callbackParamType: ts.Type,
+    callbackParamType: Type,
   ) => JsTypeRef | undefined,
 ): JsCallableVariant[] {
-  const declaration = signature.getDeclaration();
+  const declaration = resolveSignatureDeclaration(signature);
   const parameters: ReflectedParam[] = signature
     .getParameters()
     .flatMap((symbol, index): ReflectedParam[] => {
       const declarationParam = declaration?.parameters[index];
       const type = typeOfSymbol(checker, symbol) ?? checker.getAnyType();
       if (declarationParam?.dotDotDotToken) {
-        // A rest parameter typed as a fixed-length tuple (e.g. Deno FFI symbols typed as
-        // `(...args: ToNativeParameterTypes<T["parameters"]>) => ...`) is really a fixed
-        // sequence of positional arguments. `getParameters()` keeps it as a single `args`
-        // symbol, so expand the tuple here to recover the real per-parameter types instead
-        // of fabricating uniform overloads from a single element type.
         const tuple = tupleRestParams(checker, type, index, callbackParamRef);
         if (tuple) return tuple;
         const element = restElementType(checker, type) ?? checker.getAnyType();
@@ -648,14 +634,14 @@ export function functionVariantsFromSignature(
 }
 
 function callbackRefsForParam(
-  checker: ts.TypeChecker,
-  type: ts.Type,
+  checker: Checker,
+  type: Type,
   paramIndex: number,
   callbackParamRef:
     | ((
       paramIndex: number,
       callbackParamIndex: number,
-      callbackParamType: ts.Type,
+      callbackParamType: Type,
     ) => JsTypeRef | undefined)
     | undefined,
 ): JsTypeRef[] | undefined {
@@ -682,14 +668,14 @@ function callbackParamRefsForArity(
 }
 
 export function callbackParamRefsFromCall(
-  checker: ts.TypeChecker,
-  call: ts.CallExpression,
+  checker: Checker,
+  call: CallExpression,
   args: JsCallArgHint[],
-  typeRefFromTsType: (key: string, checker: ts.TypeChecker, type: ts.Type) => JsTypeRef,
+  typeRefFromTsType: (key: string, checker: Checker, type: Type) => JsTypeRef,
   keyPrefix = `call:${call.getStart()}`,
 ): JsCallbackParamRefs[] | undefined {
   const refs = call.arguments.map((arg, argIndex) => {
-    if (args[argIndex]?.kind !== "function" || !ts.isArrowFunction(arg)) return undefined;
+    if (args[argIndex]?.kind !== "function" || !isArrowFunction(arg)) return undefined;
     const params = arg.parameters.map((param, callbackParamIndex) => {
       const key = `${keyPrefix}:callback:${argIndex}:${callbackParamIndex}`;
       return typeRefFromTsType(key, checker, checker.getTypeAtLocation(param));
@@ -700,8 +686,8 @@ export function callbackParamRefsFromCall(
 }
 
 function paramTypeExpr(
-  checker: ts.TypeChecker,
-  type: ts.Type,
+  checker: Checker,
+  type: Type,
   index: number,
   callbackRefs?: JsTypeRef[],
 ): TypeExpr {
@@ -718,8 +704,8 @@ function paramTypeExpr(
 }
 
 function callbackFunctionTypeFromSignature(
-  checker: ts.TypeChecker,
-  signature: ts.Signature,
+  checker: Checker,
+  signature: Signature,
   callbackRefs?: JsTypeRef[],
 ): TypeExpr {
   const params = signature.getParameters().map((symbol, index) => {
@@ -731,7 +717,7 @@ function callbackFunctionTypeFromSignature(
   return fn(params, result);
 }
 
-function callbackParamTypeExpr(checker: ts.TypeChecker, type: ts.Type, index: number): TypeExpr {
+function callbackParamTypeExpr(checker: Checker, type: Type, _index: number): TypeExpr {
   if (isAnyOrUnknown(type)) return name("Js.Value");
   if (isObjectLike(type)) return name("Js.Object");
   return typeExprFromTsType(checker, type, "param") ?? name("Js.Value");
@@ -778,30 +764,27 @@ function typeKey(type: TypeExpr): string {
 }
 
 function tupleRestParams(
-  checker: ts.TypeChecker,
-  type: ts.Type,
+  checker: Checker,
+  type: Type,
   baseIndex: number,
   callbackParamRef?: (
     paramIndex: number,
     callbackParamIndex: number,
-    callbackParamType: ts.Type,
+    callbackParamType: Type,
   ) => JsTypeRef | undefined,
 ): ReflectedParam[] | undefined {
-  if (!(type.flags & ts.TypeFlags.Object)) return undefined;
-  const ref = type as ts.TypeReference;
-  const target = ref.target as (ts.TupleType & ts.ObjectType) | undefined;
-  if (!target || !(target.objectFlags & ts.ObjectFlags.Tuple)) return undefined;
-  const elements = checker.getTypeArguments(ref);
+  if (!type.isTypeReference()) return undefined;
+  const target = type.getTarget() as TupleType | undefined;
+  if (!target || !(target.objectFlags & ObjectFlags.Tuple)) return undefined;
+  const elements = checker.getTypeArguments(type);
   const flags = target.elementFlags ?? [];
-  // Only expand pure fixed/optional tuples; a nested rest/variadic element is still
-  // unbounded, so fall back to the rest-overload handling for those.
   if (
-    elements.some((_, index) => flags[index] & (ts.ElementFlags.Rest | ts.ElementFlags.Variadic))
+    elements.some((_, index) => flags[index] & (ElementFlags.Rest | ElementFlags.Variadic))
   ) {
     return undefined;
   }
   return elements.map((elementType, elementIndex) => {
-    const optional = !!(flags[elementIndex] & ts.ElementFlags.Optional);
+    const optional = !!(flags[elementIndex] & ElementFlags.Optional);
     const callbackRefs = callbackRefsForParam(
       checker,
       elementType,
@@ -817,20 +800,19 @@ function tupleRestParams(
 }
 
 function fixedTupleTypeExpr(
-  checker: ts.TypeChecker,
-  type: ts.Type,
+  checker: Checker,
+  type: Type,
   position: "param" | "result",
 ): TypeExpr | undefined {
-  if (!(type.flags & ts.TypeFlags.Object)) return undefined;
-  const ref = type as ts.TypeReference;
-  const target = ref.target as (ts.TupleType & ts.ObjectType) | undefined;
-  if (!target || !(target.objectFlags & ts.ObjectFlags.Tuple)) return undefined;
-  const elements = checker.getTypeArguments(ref);
+  if (!type.isTypeReference()) return undefined;
+  const target = type.getTarget() as TupleType | undefined;
+  if (!target || !(target.objectFlags & ObjectFlags.Tuple)) return undefined;
+  const elements = checker.getTypeArguments(type);
   const flags = target.elementFlags ?? [];
   if (
     elements.some((_, index) =>
       flags[index] &
-      (ts.ElementFlags.Optional | ts.ElementFlags.Rest | ts.ElementFlags.Variadic)
+      (ElementFlags.Optional | ElementFlags.Rest | ElementFlags.Variadic)
     )
   ) {
     return undefined;
@@ -843,15 +825,17 @@ function fixedTupleTypeExpr(
   };
 }
 
-function restElementType(checker: ts.TypeChecker, type: ts.Type): ts.Type | undefined {
-  const ref = type as ts.TypeReference;
-  if (ref.typeArguments?.length === 1) return ref.typeArguments[0];
-  return checker.getIndexTypeOfType(type, ts.IndexKind.Number);
+function restElementType(checker: Checker, type: Type): Type | undefined {
+  if (type.isTypeReference()) {
+    const args = checker.getTypeArguments(type);
+    if (args.length === 1) return args[0];
+  }
+  return checker.getIndexTypeOfType(type, IndexKind.Number);
 }
 
 function arrayElementType(
-  checker: ts.TypeChecker,
-  type: ts.Type,
+  checker: Checker,
+  type: Type,
   position: "param" | "result",
 ): TypeExpr | undefined {
   if (checker.isArrayType(type)) {
@@ -867,28 +851,29 @@ function arrayElementType(
   }
   return typeExprFromArrayElement(
     checker,
-    checker.getIndexTypeOfType(type, ts.IndexKind.Number),
+    checker.getIndexTypeOfType(type, IndexKind.Number),
     "param",
   );
 }
 
 function promiseElementType(
-  checker: ts.TypeChecker,
-  type: ts.Type,
+  checker: Checker,
+  type: Type,
   position: "param" | "result",
 ): TypeExpr | undefined {
-  const promised =
-    (checker as { getPromisedTypeOfPromise?: (type: ts.Type) => ts.Type | undefined })
-      .getPromisedTypeOfPromise?.(type);
-  if (promised) return typeExprFromTsType(checker, promised, position);
+  if ((type.flags & (TypeFlags.Object | TypeFlags.Intersection)) && type.getProperty("then")) {
+    const awaited = checker.getAwaitedType(type);
+    if (awaited && awaited.id !== type.id) return typeExprFromTsType(checker, awaited, position);
+  }
   const text = checker.typeToString(type);
   if (!/\bPromise(?:Like)?\b/.test(text)) return undefined;
-  const ref = type as ts.TypeReference;
-  const typeArg = ref.typeArguments?.[0] ?? checker.getTypeArguments(ref)[0];
+  const awaited = checker.getAwaitedType(type);
+  if (awaited && awaited.id !== type.id) return typeExprFromTsType(checker, awaited, position);
+  const typeArg = type.isTypeReference() ? checker.getTypeArguments(type)[0] : undefined;
   return typeArg ? typeExprFromTsType(checker, typeArg, position) : name("Js.Value");
 }
 
-function isNumericTypedArray(checker: ts.TypeChecker, type: ts.Type): boolean {
+function isNumericTypedArray(checker: Checker, type: Type): boolean {
   return isNumericTypedArrayName(checker.typeToString(type));
 }
 
@@ -898,39 +883,39 @@ function isNumericTypedArrayName(name: string): boolean {
 }
 
 function typeExprFromArrayElement(
-  checker: ts.TypeChecker,
-  type: ts.Type | undefined,
+  checker: Checker,
+  type: Type | undefined,
   position: "param" | "result",
 ): TypeExpr {
   if (!type) return name("Js.Value");
-  if (type.flags & ts.TypeFlags.TypeParameter) {
+  if (type.flags & TypeFlags.TypeParameter) {
     return name("Js.Value");
   }
   return typeExprFromTsType(checker, type, position) ?? name("Js.Value");
 }
 
-function isTsType(checker: ts.TypeChecker, type: ts.Type, expected: string): boolean {
+function isTsType(checker: Checker, type: Type, expected: string): boolean {
   return checker.typeToString(type) === expected;
 }
 
-function isAnyOrUnknown(type: ts.Type): boolean {
-  return !!(type.flags & ts.TypeFlags.Any) || !!(type.flags & ts.TypeFlags.Unknown);
+function isAnyOrUnknown(type: Type): boolean {
+  return !!(type.flags & TypeFlags.Any) || !!(type.flags & TypeFlags.Unknown);
 }
 
-function signatureHasRest(signature: ts.Signature): boolean {
-  return !!signature.getDeclaration()?.parameters.some((param) => !!param.dotDotDotToken);
+function signatureHasRest(signature: Signature): boolean {
+  return signature.hasRestParameter;
 }
 
-function isObjectLike(type: ts.Type): boolean {
-  return !!(type.flags & ts.TypeFlags.Object);
+function isObjectLike(type: Type): boolean {
+  return !!(type.flags & TypeFlags.Object);
 }
 
-function isExplicitDynamicObject(checker: ts.TypeChecker, type: ts.Type): boolean {
+function isExplicitDynamicObject(checker: Checker, type: Type): boolean {
   const text = checker.typeToString(type);
   return text === "object" || text === "Object" || text === "{}" ||
     /^(?:Record<string, (?:any|unknown)>|\{ \[.*: string\]: (?:any|unknown); \})$/.test(text);
 }
 
-function isStringLike(type: ts.Type): boolean {
-  return !!(type.flags & (ts.TypeFlags.String | ts.TypeFlags.StringLiteral));
+function isStringLike(type: Type): boolean {
+  return !!(type.flags & (TypeFlags.String | TypeFlags.StringLiteral));
 }

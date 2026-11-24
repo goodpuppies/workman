@@ -1,14 +1,50 @@
-import ts from "typescript-api";
+import {
+  type API,
+  type Checker,
+  ModuleKind,
+  type ModuleResolver,
+  ModuleResolutionKind,
+  type Program,
+  type RawCompilerOptions,
+  type ResolutionMode,
+  type Signature,
+  type Snapshot,
+  type StaticModuleResolution,
+  type Symbol as TsSymbol,
+  SymbolFlags,
+  type Type,
+} from "tsrs/sync";
+import { createFileSystemLayer } from "tsrs/fs";
+import type {
+  CallExpression,
+  Declaration,
+  Identifier,
+  Node,
+  SignatureDeclaration,
+  SourceFile,
+  VariableDeclaration,
+} from "tsrs/ast";
+import {
+  isBlock,
+  isCallExpression,
+  isComputedPropertyName,
+  isIdentifier,
+  isVariableDeclaration,
+} from "tsrs/ast/is";
+import { getNameOfDeclaration } from "tsrs/ast/utils";
 import { dirname, extname, isAbsolute, join, normalize } from "node:path";
 import { isBuiltin } from "node:module";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { isStandaloneBinary } from "../../child_runtime.ts";
 import { runtime } from "../../io.ts";
+import { createTsrsApi } from "./tsrs_sync_channel.ts";
 
-const compilerOptions: ts.CompilerOptions = {
-  target: ts.ScriptTarget.ES2022,
-  module: ts.ModuleKind.ESNext,
-  moduleResolution: ts.ModuleResolutionKind.Bundler,
+// ScriptTarget.ES2022 = 9
+const compilerOptions: RawCompilerOptions = {
+  target: 9,
+  module: ModuleKind.ESNext,
+  moduleResolution: ModuleResolutionKind.Bundler,
   lib: ["lib.es2022.d.ts", "lib.dom.d.ts"],
   strictNullChecks: true,
   skipLibCheck: true,
@@ -16,23 +52,21 @@ const compilerOptions: ts.CompilerOptions = {
 
 const denoTypesFile = "/__wm_deno_types.d.ts";
 const denoTypesReference = `/// <reference path="${denoTypesFile}" />\n`;
+const denoCacheVirtualPrefix = "/__wm_deno_cache";
 let denoTypesCache: string | undefined;
-const sourceFileCache = new Map<string, ts.SourceFile>();
+
+let reflectionApi: API | undefined;
+let defaultModuleResolver: ModuleResolver | undefined;
+const activeSnapshots: Snapshot[] = [];
 const denoModuleGraphs = new Map<string, DenoModuleGraph>();
-// Each reflection pass only builds graphs for its own roots, while the incremental
-// TypeScript program can retain modules loaded by earlier passes.
+// Each reflection pass only builds graphs for its own roots, while later passes
+// can reference modules discovered by earlier passes.
 const knownDenoModules = new Map<string, DenoInfoModule>();
+const denoVirtualToLocal = new Map<string, string>();
+const denoVirtualToSpecifier = new Map<string, string>();
+const denoSpecifierToVirtual = new Map<string, string>();
 const graphedImporters = new Set<string>();
-const fileExistsCache = new Map<string, boolean>();
-const readFileCache = new Map<string, string | undefined>();
-const directoryExistsCache = new Map<string, boolean>();
-const directoriesCache = new Map<string, string[]>();
-const realPathCache = new Map<string, string>();
-const moduleResolutionCaches = new Map<string, ts.ModuleResolutionCache>();
-// The last program for each set of root files. TypeScript reuses a program whole only when the
-// root names match and the changed root imports the same modules, so probes share a root name
-// whenever they share a directory and imports (see `uniqueReflectionFileName`).
-const previousPrograms = new Map<string, ts.Program>();
+
 let activeReflectionBasePath: string | undefined;
 const preparedReflections = new Map<string, PreparedReflection>();
 let reflectionProfileSink: ((event: JsReflectionProfileEvent) => void) | undefined;
@@ -52,9 +86,10 @@ export type JsReflectionRequest = {
 };
 
 type PreparedReflection = {
-  program: ts.Program;
-  checker: ts.TypeChecker;
-  root: ts.Node;
+  program: Program;
+  checker: Checker;
+  root: Node;
+  sourceFile: SourceFile;
 };
 
 export type JsReflectionProfileEvent =
@@ -89,6 +124,14 @@ export type JsReflectionProfileEvent =
     prepareMs: number;
     readMs: number;
   };
+
+function getReflectionApi(): API {
+  if (!reflectionApi) {
+    reflectionApi = createTsrsApi({ cwd: runtime.cwd() });
+    defaultModuleResolver = reflectionApi.createModuleResolver(compilerOptions);
+  }
+  return reflectionApi;
+}
 
 export function setJsReflectionProfileSink(
   sink: ((event: JsReflectionProfileEvent) => void) | undefined,
@@ -164,14 +207,14 @@ function jsMemberDefinition(
           ? checker.getTypeAtLocation(targetExpression).getProperty(memberName)
           : undefined;
         if (!symbol) return undefined;
-        if (symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
-        const declaration = symbol.valueDeclaration ?? symbol.declarations?.[0];
+        if (symbol.flags & SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
+        const declaration = resolveSymbolDeclaration(symbol);
         if (!declaration) return undefined;
         const sourceFile = declaration.getSourceFile();
         const path = localDefinitionPath(sourceFile.fileName);
         if (!path) return undefined;
-        const name = (declaration as ts.NamedDeclaration).name;
-        const selection = name && !ts.isComputedPropertyName(name) ? name : declaration;
+        const declName = getNameOfDeclaration(declaration);
+        const selection = declName && !isComputedPropertyName(declName) ? declName : declaration;
         return {
           path,
           start: selection.getStart(sourceFile),
@@ -189,9 +232,9 @@ export function reflectSource<T>(
   label: string,
   source: string,
   read: (
-    checker: ts.TypeChecker,
-    sourceRoot: ts.Node,
-    program: ts.Program,
+    checker: Checker,
+    sourceRoot: Node,
+    program: Program,
   ) => T,
 ): T {
   const key = reflectionRequestKey(label, source);
@@ -222,124 +265,162 @@ export function prepareReflectionSources(requests: JsReflectionRequest[]): void 
   const totalStarted = reflectionProfileSink ? performance.now() : 0;
   const roots = reflectionBatchRoots(missing);
   const sources = [...roots.values()].map((root) => root.source);
-  const extraFiles = sources.some((source) => source.includes(denoTypesFile))
-    ? new Map([[denoTypesFile, denoTypesSource()]])
-    : new Map<string, string>();
+
   const graphStarted = reflectionProfileSink ? performance.now() : 0;
   const denoGraphs = sources.flatMap(denoReflectionGraphs);
   const graphMs = reflectionProfileSink ? performance.now() - graphStarted : 0;
-  const host = ts.createCompilerHost(compilerOptions);
-  cacheHostFileSystem(host);
-  const originalGetSourceFile = host.getSourceFile;
-  host.getSourceFile = (name, languageVersion, onError, shouldCreateNewSourceFile) => {
-    const virtualSource = roots.get(normalize(name)) ?? roots.get(name);
-    if (virtualSource !== undefined) {
-      return cachedSourceFile(name, virtualSource.source, languageVersion);
+
+  const layerEntries: [string, string][] = [];
+  for (const [fileName, root] of roots) {
+    layerEntries.push([toPosixPath(fileName), root.source]);
+  }
+  if (sources.some((source) => source.includes(denoTypesFile))) {
+    layerEntries.push([denoTypesFile, denoTypesSource()]);
+  }
+  if (
+    isStandaloneBinary &&
+    nodeTypesPath &&
+    sources.some((source) => source.includes(nodeTypesPath!))
+  ) {
+    for (const entry of embeddedNodeTypesLayerEntries()) {
+      layerEntries.push(entry);
     }
-    const extraSource = extraFiles.get(name);
-    if (extraSource !== undefined) return cachedSourceFile(name, extraSource, languageVersion);
-    const denoSource = denoSourceForFileName(denoGraphs, name);
-    if (denoSource !== undefined) return cachedSourceFile(name, denoSource, languageVersion);
-    const cacheKey = sourceFileCacheKey(name, languageVersion);
-    if (!shouldCreateNewSourceFile) {
-      const cached = sourceFileCache.get(cacheKey);
-      if (cached) return cached;
+  }
+  // Mount any Deno remote/URL modules from the graphs into the virtual filesystem layer
+  // at rooted virtual paths with preserved extensions so tsrs can parse and resolve them.
+  const addedVirtualPaths = new Set<string>();
+  for (const graph of denoGraphs) {
+    for (const module of graph.modules.values()) {
+      addDenoModuleToLayer(module, layerEntries, addedVirtualPaths);
     }
-    const loaded = originalGetSourceFile.call(
-      host,
-      name,
-      languageVersion,
-      onError,
-      shouldCreateNewSourceFile,
-    );
-    if (loaded && !shouldCreateNewSourceFile) sourceFileCache.set(cacheKey, loaded);
-    return loaded;
-  };
+  }
+  for (const module of knownDenoModules.values()) {
+    addDenoModuleToLayer(module, layerEntries, addedVirtualPaths);
+  }
+
+  const api = getReflectionApi();
+  const baseResolver = defaultModuleResolver!;
   const unresolvedSourceImports = new Set<string>();
-  host.resolveModuleNames = (moduleNames, containingFile) =>
-    moduleNames.map((moduleName) => {
-      const resolveModule = () => {
-        // Package declarations normally use TypeScript/Node resolution. Keep
-        // already-known Deno mappings authoritative, but don't discover a Deno
-        // graph for each declaration file when TypeScript can resolve it.
-        const deferDiscovery = isPackageDeclarationFile(containingFile);
-        const typescript = () =>
-          ts.resolveModuleName(
+  const rootDirs = new Set([...roots.keys()].map((file) => toPosixPath(dirname(file))));
+
+  const customResolver = api.createModuleResolver(compilerOptions, {
+    resolveModuleName: (moduleName, containingDirectory, resolutionMode, { snapshot }) => {
+      const resolveModule = (): StaticModuleResolution | undefined => {
+        const deferDiscovery = isPackageDeclarationDirectory(containingDirectory);
+        const typescript = (): StaticModuleResolution | undefined =>
+          baseResolver.resolveModuleName(
             moduleName,
-            containingFile,
-            compilerOptions,
-            host,
-            moduleResolutionCache(),
+            containingDirectory,
+            resolutionMode,
+            { snapshot },
           ).resolvedModule;
-        // An installed package resolves as TypeScript resolves it, so a project's package.json
-        // does not redirect reflection into Deno's npm cache. An explicit import-map entry to
-        // something other than npm: remains authoritative.
+
         if (isBarePackageSpecifier(moduleName)) {
           const mapped = resolveDenoSpecifier(
             denoGraphs,
             moduleName,
-            containingFile,
+            containingDirectory,
             !deferDiscovery,
           );
           if (!mapped || mapped.startsWith("npm:")) {
             const installed = typescript();
-            if (installed?.isExternalLibraryImport) return installed;
+            if (installed?.resolvedFileName) return installed;
           }
         }
-        return denoResolvedModule(denoGraphs, moduleName, containingFile, !deferDiscovery) ??
+        return denoResolvedModule(
+          denoGraphs,
+          moduleName,
+          containingDirectory,
+          !deferDiscovery,
+          baseResolver,
+          resolutionMode,
+          snapshot,
+        ) ??
           typescript() ??
-          // Node builtins are ambient declarations; no Deno graph can add to them.
           (deferDiscovery && !moduleName.startsWith("node:")
-            ? denoResolvedModule(denoGraphs, moduleName, containingFile)
+            ? denoResolvedModule(
+              denoGraphs,
+              moduleName,
+              containingDirectory,
+              true,
+              baseResolver,
+              resolutionMode,
+              snapshot,
+            )
             : undefined);
       };
+
       const resolved = resolveModule();
       if (!resolved && isNpmGraphImport(denoGraphs, moduleName)) {
         throw new Error(
           `cannot resolve npm package "${moduleName}" for JS import from Deno's cache`,
         );
       }
-      if (!resolved && !isDeclarationFile(containingFile)) unresolvedSourceImports.add(moduleName);
+      if (!resolved && !isPackageDeclarationDirectory(containingDirectory) && !isBuiltin(moduleName)) {
+        unresolvedSourceImports.add(moduleName);
+      }
       return resolved;
-    });
+    },
+  });
+
   const programStarted = reflectionProfileSink ? performance.now() : 0;
-  const rootNames = [...roots.keys()];
-  const lineage = rootNames.join("\0");
-  const program = ts.createProgram(rootNames, compilerOptions, host, previousPrograms.get(lineage));
+  const rootNames = [...roots.keys()].map(toPosixPath);
+  let snapshot: Snapshot;
+  try {
+    snapshot = api.createSnapshot({
+      fileSystem: createFileSystemLayer(layerEntries),
+      createPrograms: [{
+        rootFiles: rootNames,
+        compilerOptions,
+        options: { moduleResolver: customResolver },
+      }],
+    });
+  } finally {
+    customResolver.dispose();
+  }
+  const program = snapshot.operation.createdPrograms?.[0];
+  if (!program) {
+    snapshot.dispose();
+    throw new Error("tsrs snapshot did not create a program");
+  }
+  const project = snapshot.getProject(program.id);
+  if (!project) {
+    snapshot.dispose();
+    throw new Error("tsrs snapshot did not contain created project");
+  }
   const programMs = reflectionProfileSink ? performance.now() - programStarted : 0;
+
   const diagnosticsStarted = reflectionProfileSink ? performance.now() : 0;
-  // TS2307 needs an import the resolver above couldn't place, in a file that is checked at all:
-  // `skipLibCheck` leaves out declaration files. An ambient module such as @types/node's `node:fs`
-  // covers its name. Type-checking every file to look for what's left is by far the larger cost.
-  const unresolvedImport = hasUncoveredImport(program, unresolvedSourceImports)
+  const unresolvedImport = unresolvedSourceImports.size > 0
     ? program.getSemanticDiagnostics().find((diagnostic) => diagnostic.code === 2307)
     : undefined;
   const diagnosticsMs = reflectionProfileSink ? performance.now() - diagnosticsStarted : 0;
   if (unresolvedImport) {
+    snapshot.dispose();
     throw new Error(
-      `cannot resolve JS import for reflection: ${
-        ts.flattenDiagnosticMessageText(unresolvedImport.messageText, "\n")
-      }`,
+      `cannot resolve JS import for reflection: ${unresolvedImport.text}`,
     );
   }
-  previousPrograms.set(lineage, program);
+
+  activeSnapshots.push(snapshot);
   const checkerStarted = reflectionProfileSink ? performance.now() : 0;
-  const checker = program.getTypeChecker();
+  const checker = project.checker;
   const checkerMs = reflectionProfileSink ? performance.now() - checkerStarted : 0;
-  const programSources = reflectionProfileSink ? program.getSourceFiles() : [];
+  const programFileNames = reflectionProfileSink ? program.getSourceFileNames() : [];
+
   const indexStarted = reflectionProfileSink ? performance.now() : 0;
   for (const [fileName, root] of roots) {
-    const sourceFile = program.getSourceFile(fileName);
+    const sourceFile = program.getSourceFile(toPosixPath(fileName));
     if (!sourceFile) throw new Error(`cannot reflect JS target ${root.requests[0].label}`);
-    const blocks = sourceFile.statements.filter(ts.isBlock);
+    const blocks = sourceFile.statements.filter(isBlock);
     for (const [index, request] of root.requests.entries()) {
       const key = reflectionRequestKey(request.label, request.source);
-      const queryRoot =
+      const queryRoot: Node | undefined =
         request.sharedSource === undefined || request.sharedSource === request.source
           ? sourceFile
           : blocks[index];
       if (!queryRoot) throw new Error(`cannot locate reflected JS target ${request.label}`);
-      preparedReflections.set(key, { checker, root: queryRoot, program });
+      preparedReflections.set(key, { checker, root: queryRoot, program, sourceFile });
     }
   }
   reflectionProfileSink?.({
@@ -353,12 +434,9 @@ export function prepareReflectionSources(requests: JsReflectionRequest[]): void 
     requests: missing.length,
     roots: roots.size,
     sourceBytes: sources.reduce((total, source) => total + source.length, 0),
-    programFiles: programSources.length,
-    programSourceBytes: programSources.reduce((total, source) => total + source.text.length, 0),
-    largestProgramFiles: programSources
-      .map((source) => ({ fileName: source.fileName, sourceBytes: source.text.length }))
-      .sort((left, right) => right.sourceBytes - left.sourceBytes)
-      .slice(0, 20),
+    programFiles: programFileNames.length,
+    programSourceBytes: 0,
+    largestProgramFiles: [],
     graphMs,
     programMs,
     diagnosticsMs,
@@ -366,6 +444,68 @@ export function prepareReflectionSources(requests: JsReflectionRequest[]): void 
     indexMs: performance.now() - indexStarted,
     totalMs: performance.now() - totalStarted,
   });
+}
+
+function addDenoModuleToLayer(
+  module: DenoInfoModule,
+  layerEntries: [string, string][],
+  added: Set<string>,
+): void {
+  if (!module.local || !isUrl(module.specifier) || module.specifier.startsWith("file://")) return;
+  const virtualPath = virtualPathForDenoModule(module);
+  if (added.has(virtualPath)) return;
+  added.add(virtualPath);
+  denoVirtualToLocal.set(virtualPath, module.local);
+  denoVirtualToSpecifier.set(virtualPath, module.specifier);
+  denoSpecifierToVirtual.set(module.specifier, virtualPath);
+  try {
+    const content = runtime.readTextFileSync(module.local);
+    layerEntries.push([virtualPath, content]);
+  } catch {
+    // Unreadable cache entry; skip.
+  }
+}
+
+function virtualPathForDenoModule(module: DenoInfoModule): string {
+  const existing = denoSpecifierToVirtual.get(module.specifier);
+  if (existing) return existing;
+  const url = new URL(module.specifier);
+  let pathname = url.pathname.replace(/^\/+/, "");
+  if (!extname(pathname)) {
+    pathname += extensionForMediaType(module.mediaType);
+  }
+  const virtualPath = `${denoCacheVirtualPrefix}/${url.protocol.replace(":", "")}/${url.host}/${pathname}`;
+  denoSpecifierToVirtual.set(module.specifier, virtualPath);
+  denoVirtualToSpecifier.set(virtualPath, module.specifier);
+  if (module.local) denoVirtualToLocal.set(virtualPath, module.local);
+  return virtualPath;
+}
+
+function extensionForMediaType(mediaType: string | undefined): string {
+  switch (mediaType) {
+    case "TSX":
+      return ".tsx";
+    case "JSX":
+      return ".jsx";
+    case "JavaScript":
+      return ".js";
+    case "Mjs":
+      return ".mjs";
+    case "Cjs":
+      return ".cjs";
+    case "Dts":
+      return ".d.ts";
+    case "Dmts":
+      return ".d.mts";
+    case "Dcts":
+      return ".d.cts";
+    case "Mts":
+      return ".mts";
+    case "Cts":
+      return ".cts";
+    default:
+      return ".ts";
+  }
 }
 
 type ReflectionBatchRoot = {
@@ -430,13 +570,16 @@ function uniqueReflectionFileName(
   return fileName;
 }
 
-/** Names what a source pulls in. Two sources with the same answer can reuse one program. */
+/** Names what a source pulls in. Two sources with the same answer can share a root naming pattern. */
 function importsFingerprint(source: string): string {
-  const { importedFiles, referencedFiles, typeReferenceDirectives, libReferenceDirectives } = ts
-    .preProcessFile(source, true, false);
-  const text = [importedFiles, referencedFiles, typeReferenceDirectives, libReferenceDirectives]
-    .map((references) => references.map((reference) => reference.fileName).join(","))
-    .join(";");
+  const refs: string[] = [];
+  for (const match of source.matchAll(/^\s*\/\/\/\s*<reference\s+(?:path|types|lib)=["']([^"']+)["']/gm)) {
+    refs.push(match[1]);
+  }
+  for (const match of extractImportSpecifiers(source)) {
+    refs.push(match);
+  }
+  const text = refs.join(";");
   let hash = 0x811c9dc5;
   for (let index = 0; index < text.length; index++) {
     hash = Math.imul(hash ^ text.charCodeAt(index), 0x01000193);
@@ -444,52 +587,13 @@ function importsFingerprint(source: string): string {
   return (hash >>> 0).toString(36);
 }
 
-function cacheHostFileSystem(host: ts.CompilerHost): void {
-  const fileExists = host.fileExists.bind(host);
-  host.fileExists = (path) => memo(fileExistsCache, normalize(path), () => fileExists(path));
-
-  const readFile = host.readFile.bind(host);
-  host.readFile = (path) => memo(readFileCache, normalize(path), () => readFile(path));
-
-  if (host.directoryExists) {
-    const directoryExists = host.directoryExists.bind(host);
-    host.directoryExists = (path) =>
-      memo(directoryExistsCache, normalize(path), () => directoryExists(path));
+function extractImportSpecifiers(source: string): string[] {
+  const specifiers: string[] = [];
+  const re = /(?:^|\n)\s*import\s+(?:[\s\S]*?\s+from\s+)?(["'])([^"'\r\n]+)\1/g;
+  for (const match of source.matchAll(re)) {
+    specifiers.push(match[2]);
   }
-
-  if (host.getDirectories) {
-    const getDirectories = host.getDirectories.bind(host);
-    host.getDirectories = (path) =>
-      memo(directoriesCache, normalize(path), () => getDirectories(path));
-  }
-
-  if (host.realpath) {
-    const realpath = host.realpath.bind(host);
-    host.realpath = (path) => memo(realPathCache, normalize(path), () => realpath(path));
-  }
-}
-
-function memo<K, V>(cache: Map<K, V>, key: K, load: () => V): V {
-  if (cache.has(key)) return cache.get(key)!;
-  const value = load();
-  cache.set(key, value);
-  return value;
-}
-
-function moduleResolutionCache(): ts.ModuleResolutionCache {
-  const currentDirectory = runtime.cwd();
-  let cache = moduleResolutionCaches.get(currentDirectory);
-  if (!cache) {
-    cache = ts.createModuleResolutionCache(
-      currentDirectory,
-      ts.sys.useCaseSensitiveFileNames
-        ? (fileName) => fileName
-        : (fileName) => fileName.toLowerCase(),
-      compilerOptions,
-    );
-    moduleResolutionCaches.set(currentDirectory, cache);
-  }
-  return cache;
+  return specifiers;
 }
 
 type DenoInfoDependency = {
@@ -527,12 +631,7 @@ type DenoModuleGraph = {
 };
 
 function denoReflectionGraphs(source: string): DenoModuleGraph[] {
-  const parsed = ts.createSourceFile("__wm_imports.ts", source, ts.ScriptTarget.ESNext, false);
-  const specifiers = parsed.statements.flatMap((statement) =>
-    ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)
-      ? [statement.moduleSpecifier.text]
-      : []
-  ).filter((specifier) =>
+  const specifiers = extractImportSpecifiers(source).filter((specifier) =>
     needsDenoModuleResolution(specifier) || isRelativeSpecifier(specifier) || isAbsolute(specifier)
   );
   const unique = [...new Set(specifiers)];
@@ -549,13 +648,18 @@ function denoReflectionGraphs(source: string): DenoModuleGraph[] {
 }
 
 function denoModuleGraph(specifier: string, cwd: string): DenoModuleGraph | undefined {
-  // Reflection receives local files as absolute paths, which isBareDenoSpecifier does not recognize
-  // on Windows (C:\...).
-  if (!isAbsolute(specifier) && needsDenoModuleResolution(specifier) && withoutDenoCli()) {
-    throw new Error(
-      `package imports such as ${specifier} are not supported by this wm build yet; ` +
-        "use the Deno/JSR installation of wm for programs that import packages",
-    );
+  // In a standalone binary without Deno CLI:
+  // - Scheme-based Deno imports (`npm:`, `jsr:`, `https://`) genuinely require Deno CLI.
+  // - Bare package specifiers (`"zod"`, `"@scope/pkg"`) and relative/absolute files are
+  //   resolved directly from `node_modules` / disk by tsrs without needing Deno CLI.
+  if (withoutDenoCli()) {
+    if (mustResolveWithDeno(specifier) || specifier.startsWith("npm:")) {
+      throw new Error(
+        `package imports such as ${specifier} are not supported by this wm build yet; ` +
+          "use the Deno/JSR installation of wm for programs that import packages",
+      );
+    }
+    return undefined;
   }
   const cacheKey = `${cwd}\0${specifier}`;
   const cached = denoModuleGraphs.get(cacheKey);
@@ -616,6 +720,43 @@ function isNpmGraphImport(graphs: DenoModuleGraph[], moduleName: string): boolea
 }
 
 let nodeTypesPath: string | undefined;
+let embeddedNodeTypesCache: [string, string][] | undefined;
+
+function embeddedNodeTypesLayerEntries(): [string, string][] {
+  if (embeddedNodeTypesCache) return embeddedNodeTypesCache;
+  const entries: [string, string][] = [];
+  const modules = fileURLToPath(new URL("../../../node_modules/", import.meta.url));
+  const denoDir = join(modules, ".deno");
+  const walk = (dir: string) => {
+    let items: string[];
+    try {
+      items = readdirSync(dir);
+    } catch {
+      return;
+    }
+    for (const item of items) {
+      const full = join(dir, item);
+      let stat;
+      try {
+        stat = statSync(full);
+      } catch {
+        continue;
+      }
+      if (stat.isDirectory()) {
+        walk(full);
+      } else if (item.endsWith(".d.ts") || item === "package.json") {
+        try {
+          entries.push([toPosixPath(full), readFileSync(full, "utf8")]);
+        } catch {
+          // skip unreadable
+        }
+      }
+    }
+  };
+  walk(denoDir);
+  embeddedNodeTypesCache = entries;
+  return entries;
+}
 
 /**
  * Node's declarations from node_modules beside the compiler: a source checkout's, or the copy a
@@ -643,9 +784,6 @@ function nodeTypesReferencePath(): string {
   if (nodeTypesPath) return nodeTypesPath;
   const bundled = bundledNodeTypesPath();
   if (bundled) return nodeTypesPath = bundled;
-  // With nodeModulesDir=none Deno resolves npm imports to npm: URLs, not
-  // file: URLs. Ask the selected Deno for its package-cache location instead
-  // of requiring a writable node_modules tree beside the compiler.
   const specifier = import.meta.resolve("@types/node");
   if (specifier.startsWith("file:")) {
     const path = fileURLToPath(specifier);
@@ -677,46 +815,42 @@ function isBarePackageSpecifier(specifier: string): boolean {
   return !/^(?:\.|\/|[A-Za-z][\w+.-]*:)/.test(specifier);
 }
 
-function denoSourceForFileName(graphs: DenoModuleGraph[], fileName: string): string | undefined {
-  const module = denoModuleForFileName(graphs, fileName);
-  if (!module?.local) return undefined;
-  try {
-    return runtime.readTextFileSync(module.local);
-  } catch {
-    return undefined;
-  }
-}
-
 function denoResolvedModule(
   graphs: DenoModuleGraph[],
   moduleName: string,
-  containingFile: string,
-  discoverImporter = true,
-): ts.ResolvedModuleFull | undefined {
-  const specifier = resolveDenoSpecifier(graphs, moduleName, containingFile, discoverImporter);
+  containingDirectory: string,
+  discoverImporter: boolean,
+  baseResolver: ModuleResolver,
+  resolutionMode: ResolutionMode | undefined,
+  snapshot: Snapshot | number | undefined,
+): StaticModuleResolution | undefined {
+  const specifier = resolveDenoSpecifier(graphs, moduleName, containingDirectory, discoverImporter);
   if (!specifier) return undefined;
   const module = denoModuleForFileName(graphs, specifier);
-  // `deno info` represents npm packages as a graph node without a local source
-  // file. Resolve those from Deno's package cache so direct `npm:` imports do
-  // not degrade to an untyped namespace when no node_modules tree is present.
-  if (!module?.local) return npmResolvedModule(graphs, specifier, containingFile);
-  return {
-    resolvedFileName: module.specifier.startsWith("file://")
-      ? module.local ?? module.specifier
-      : module.specifier,
-    extension: tsExtensionForModule(module),
-    isExternalLibraryImport: true,
-  };
+  if (!module?.local) {
+    return npmResolvedModule(
+      graphs,
+      specifier,
+      containingDirectory,
+      baseResolver,
+      resolutionMode,
+      snapshot,
+    );
+  }
+  if (module.specifier.startsWith("file://")) {
+    return { resolvedFileName: toPosixPath(module.local) };
+  }
+  return { resolvedFileName: virtualPathForDenoModule(module) };
 }
 
-// Resolves `npm:name@version/subpath` like Deno does for types: the subpath
-// goes through the package's `exports`, and a package without declarations
-// takes them from `@types/name` when the graph has it.
 function npmResolvedModule(
   graphs: DenoModuleGraph[],
   specifier: string,
-  containingFile: string,
-): ts.ResolvedModuleFull | undefined {
+  containingDirectory: string,
+  baseResolver: ModuleResolver,
+  resolutionMode: ResolutionMode | undefined,
+  snapshot: Snapshot | number | undefined,
+): StaticModuleResolution | undefined {
   const parsed = npmPackageSpecifier(specifier);
   if (!parsed) return undefined;
   const resolveIn = (packageName: string, packageGraphs = graphs) => {
@@ -726,43 +860,41 @@ function npmResolvedModule(
       ? npmPackageEntry(packagePath, parsed.subpath) ?? join(packagePath, parsed.subpath)
       : packagePath;
     const resolve = (path: string) =>
-      ts.resolveModuleName(
-        path.replaceAll("\\", "/"),
-        containingFile,
-        compilerOptions,
-        ts.sys,
-        moduleResolutionCache(),
+      baseResolver.resolveModuleName(
+        toPosixPath(path),
+        containingDirectory,
+        resolutionMode,
+        { snapshot: snapshot as Snapshot | undefined },
       ).resolvedModule;
     let resolved = resolve(target);
-    // Absolute cache paths bypass package exports, so a package root whose
-    // declarations are exported only there resolves through its "." entry.
-    if (!parsed.subpath && !(resolved?.extension && isDeclarationExtension(resolved.extension))) {
+    if (
+      !parsed.subpath &&
+      !(resolved?.resolvedFileName && typeof resolved.resolvedFileName === "string" &&
+        isDeclarationFile(resolved.resolvedFileName))
+    ) {
       const entry = npmPackageEntry(packagePath, "");
       const exported = entry ? resolve(entry) : undefined;
-      if (exported) resolved = { ...exported, isExternalLibraryImport: true };
+      if (exported) resolved = exported;
     }
-    // The importer names the package, not the `.d.ts` path resolved here, so
-    // TypeScript must not treat it as an import written with a TS extension.
-    return resolved && { ...resolved, resolvedUsingTsExtension: false };
+    return resolved;
   };
   const own = resolveIn(parsed.name);
-  if (own?.extension && isDeclarationExtension(own.extension)) return own;
+  if (
+    own?.resolvedFileName && typeof own.resolvedFileName === "string" &&
+    isDeclarationFile(own.resolvedFileName)
+  ) {
+    return own;
+  }
   const typesName = parsed.name.startsWith("@")
     ? `@types/${parsed.name.slice(1).replace("/", "__")}`
     : `@types/${parsed.name}`;
-  // `deno info` of the package alone omits `@types`; the importer's import map
-  // or package.json supplies it, as Deno's own type checking would use.
-  const importer = isUrl(containingFile) ? pathFromFileUrl(containingFile) : containingFile;
-  const cwd = importer ? dirname(importer) : runtime.cwd();
+  const cwd = containingDirectory.startsWith(denoCacheVirtualPrefix)
+    ? runtime.cwd()
+    : containingDirectory;
   const typesGraph = npmPackagePath(graphs, typesName)
     ? undefined
     : denoModuleGraph(typesName, cwd);
   return resolveIn(typesName, typesGraph ? [typesGraph] : graphs) ?? own;
-}
-
-function isDeclarationExtension(extension: string): boolean {
-  return extension === ts.Extension.Dts || extension === ts.Extension.Dmts ||
-    extension === ts.Extension.Dcts;
 }
 
 function npmPackagePath(graphs: DenoModuleGraph[], packageName: string): string | undefined {
@@ -773,7 +905,6 @@ function npmPackagePath(graphs: DenoModuleGraph[], packageName: string): string 
   return undefined;
 }
 
-// The file a package subpath such as `/webgpu` names through `exports`.
 function npmPackageEntry(packagePath: string, subpath: string): string | undefined {
   let manifest: { exports?: unknown };
   try {
@@ -782,7 +913,6 @@ function npmPackageEntry(packagePath: string, subpath: string): string | undefin
     return undefined;
   }
   const entries = manifest.exports;
-  // A root export may be a bare target or conditions without a "." key.
   if (
     subpath === "" &&
     (typeof entries === "string" ||
@@ -825,7 +955,6 @@ function exportTarget(value: unknown): string | undefined {
     return undefined;
   }
   if (typeof value !== "object" || value === null) return undefined;
-  // Like Node: the first key, in object order, that is an active condition.
   for (const [condition, target] of Object.entries(value)) {
     if (!exportConditions.has(condition)) continue;
     const resolved = exportTarget(target);
@@ -836,7 +965,6 @@ function exportTarget(value: unknown): string | undefined {
 
 function npmPackageSpecifier(specifier: string): { name: string; subpath: string } | undefined {
   if (!specifier.startsWith("npm:")) return undefined;
-  // `@scope/name@version/subpath`, `name@version/subpath`, or without a version.
   const value = specifier.slice("npm:".length).replace(/^\/+/, "");
   const scopeSlash = value.startsWith("@") ? value.indexOf("/") : -1;
   if (value.startsWith("@") && scopeSlash < 0) return undefined;
@@ -851,60 +979,78 @@ function npmPackageSpecifier(specifier: string): { name: string; subpath: string
 function resolveDenoSpecifier(
   graphs: DenoModuleGraph[],
   moduleName: string,
-  containingFile: string,
+  containingDirectory: string,
   discoverImporter: boolean,
 ): string | undefined {
-  const raw = isRelativeSpecifier(moduleName) && isUrl(containingFile)
-    ? new URL(moduleName, containingFile).href
-    : moduleName;
+  const normalizedDir = toPosixPath(containingDirectory);
   for (const graph of graphs) {
-    const candidate = raw === graph.originalSpecifier
-      ? graph.entrySpecifier ?? graph.redirects.get(raw) ?? raw
-      : graph.redirects.get(raw) ?? raw;
+    const candidate = moduleName === graph.originalSpecifier
+      ? graph.entrySpecifier ?? graph.redirects.get(moduleName) ?? moduleName
+      : graph.redirects.get(moduleName) ?? moduleName;
     const redirected = graph.redirects.get(candidate) ?? candidate;
     if (graph.modules.has(redirected)) return redirected;
   }
-  const importer = denoModuleForFileName(graphs, containingFile);
-  const fromImporter = dependencyTarget(importer, moduleName);
-  const direct = graphModuleFor(graphs, fromImporter);
-  if (direct !== undefined) return direct;
 
-  if (fromImporter !== undefined && knownDenoModules.has(fromImporter)) return fromImporter;
+  // Check dependencies of any known Deno module residing in `containingDirectory`.
+  const searchModules = (modules: Iterable<DenoInfoModule>): string | undefined => {
+    for (const mod of modules) {
+      const modDir = denoModuleDirectory(mod);
+      if (modDir !== normalizedDir) continue;
+      const target = dependencyTarget(mod, moduleName);
+      if (target !== undefined) {
+        const direct = graphModuleFor(graphs, target);
+        if (direct !== undefined) return direct;
+        if (knownDenoModules.has(target)) return target;
+      }
+    }
+    return undefined;
+  };
+  for (const graph of graphs) {
+    const found = searchModules(graph.modules.values());
+    if (found !== undefined) return found;
+  }
+  const knownFound = searchModules(knownDenoModules.values());
+  if (knownFound !== undefined) return knownFound;
 
-  if (!discoverImporter) return undefined;
-
-  const importerPath = isUrl(containingFile) ? pathFromFileUrl(containingFile) : containingFile;
-  if (importerPath !== undefined && !graphedImporters.has(importerPath)) {
-    graphedImporters.add(importerPath);
-    if (existsSync(importerPath)) {
-      denoModuleGraph(importerPath, dirname(importerPath));
-      const learned = dependencyTarget(
-        denoModuleForFileName([], containingFile),
-        moduleName,
-      );
-      if (learned !== undefined && knownDenoModules.has(learned)) return learned;
+  if (!discoverImporter || withoutDenoCli()) return undefined;
+  if (
+    !normalizedDir.startsWith(denoCacheVirtualPrefix) &&
+    !graphedImporters.has(`${normalizedDir}\0${moduleName}`)
+  ) {
+    graphedImporters.add(`${normalizedDir}\0${moduleName}`);
+    if (existsSync(containingDirectory)) {
+      const graph = denoModuleGraph(moduleName, containingDirectory);
+      if (graph) {
+        const candidate = graph.entrySpecifier ?? graph.redirects.get(moduleName) ?? moduleName;
+        const redirected = graph.redirects.get(candidate) ?? candidate;
+        if (graph.modules.has(redirected)) return redirected;
+      }
     }
   }
   return undefined;
 }
 
-function hasUncoveredImport(program: ts.Program, unresolved: ReadonlySet<string>): boolean {
-  if (unresolved.size === 0) return false;
-  const ambient = new Set(
-    program.getTypeChecker().getAmbientModules().map((module) => module.name.slice(1, -1)),
-  );
-  return [...unresolved].some((name) => !ambient.has(name));
+function denoModuleDirectory(module: DenoInfoModule): string | undefined {
+  if (module.specifier.startsWith("file://")) {
+    const local = module.local ?? pathFromFileUrl(module.specifier);
+    return local ? toPosixPath(dirname(local)) : undefined;
+  }
+  if (isUrl(module.specifier)) {
+    const virtual = denoSpecifierToVirtual.get(module.specifier);
+    return virtual ? toPosixPath(dirname(virtual)) : undefined;
+  }
+  return undefined;
 }
 
 function isDeclarationFile(fileName: string): boolean {
   return /\.d\.[cm]?ts$/i.test(fileName);
 }
 
-/** A declaration file of an installed package: in `node_modules`, or in Deno's npm cache. */
-function isPackageDeclarationFile(fileName: string): boolean {
-  const path = fileName.replaceAll("\\", "/");
-  return isDeclarationFile(path) &&
-    (/(?:^|\/)node_modules\//.test(path) || /\/npm\/[^/]+\/(?:@[^/]+\/)?[^/]+\/\d/.test(path));
+/** A directory inside `node_modules`, or in Deno's npm cache. */
+function isPackageDeclarationDirectory(dirName: string): boolean {
+  const path = toPosixPath(dirName);
+  return /(?:^|\/)node_modules(?:\/|$)/.test(path) ||
+    /\/npm\/[^/]+\/(?:@[^/]+\/)?[^/]+\/\d/.test(path);
 }
 
 function pathFromFileUrl(value: string): string | undefined {
@@ -917,6 +1063,8 @@ function pathFromFileUrl(value: string): string | undefined {
 }
 
 function localDefinitionPath(fileName: string): string | undefined {
+  const mappedLocal = denoVirtualToLocal.get(fileName);
+  if (mappedLocal) return mappedLocal;
   if (fileName.startsWith("file://")) return pathFromFileUrl(fileName);
   if (!isUrl(fileName)) return fileName;
   return denoModuleForFileName([], fileName)?.local;
@@ -971,24 +1119,14 @@ function pathAsFileUrl(value: string): string | undefined {
   }
 }
 
-function tsExtensionForModule(module: DenoInfoModule): ts.Extension {
-  const extension = extname(new URL(module.specifier).pathname);
-  if (extension === ".tsx") return ts.Extension.Tsx;
-  if (extension === ".jsx") return ts.Extension.Jsx;
-  if (extension === ".js" || module.mediaType === "JavaScript") return ts.Extension.Js;
-  if (extension === ".mjs" || module.mediaType === "Mjs") return ts.Extension.Mjs;
-  if (extension === ".cjs" || module.mediaType === "Cjs") return ts.Extension.Cjs;
-  if (extension === ".d.ts" || module.mediaType === "Dts") return ts.Extension.Dts;
-  return ts.Extension.Ts;
-}
-
 function needsDenoModuleResolution(specifier: string): boolean {
   return mustResolveWithDeno(specifier) || specifier.startsWith("npm:") ||
     isBareDenoSpecifier(specifier);
 }
 
 function mustResolveWithDeno(specifier: string): boolean {
-  return specifier.startsWith("jsr:") || specifier.startsWith("https://jsr.io/");
+  return specifier.startsWith("jsr:") || specifier.startsWith("https://") ||
+    specifier.startsWith("http://");
 }
 
 function isBareDenoSpecifier(specifier: string): boolean {
@@ -1008,11 +1146,10 @@ function isUrl(value: string): boolean {
   return /^[a-z][a-z0-9+.-]*:\/\//i.test(value);
 }
 
-/**
- * Deno's declarations. A source checkout and the compiled npm binary, which has no Deno CLI, have
- * them as generated by `deno types` with the assets; the JSR package leaves that file out for size
- * and asks the Deno running it. They reference `esnext` and Deno's web and WebGPU libraries.
- */
+function toPosixPath(value: string): string {
+  return value.replaceAll("\\", "/");
+}
+
 function denoTypesSource(): string {
   if (denoTypesCache !== undefined) return denoTypesCache;
   denoTypesCache = `${generatedDenoTypes() ?? denoCliTypes()}
@@ -1052,19 +1189,6 @@ function denoCliPath(): string {
   return runtime.env("WORKMAN_DENO_PATH")?.trim() || "deno";
 }
 
-function cachedSourceFile(
-  name: string,
-  source: string,
-  languageVersion: ts.ScriptTarget | ts.CreateSourceFileOptions,
-): ts.SourceFile {
-  const cacheKey = `${sourceFileCacheKey(name, languageVersion)}:${source}`;
-  const cached = sourceFileCache.get(cacheKey);
-  if (cached) return cached;
-  const created = ts.createSourceFile(name, source, languageVersion, true);
-  sourceFileCache.set(cacheKey, created);
-  return created;
-}
-
 function reflectionFileName(source: string): string | undefined {
   const firstLine = source.split(/\r?\n/, 1)[0];
   const match = /^\/\/ @wm-reflect-file (.+)$/.exec(firstLine);
@@ -1077,59 +1201,69 @@ function reflectionFileName(source: string): string | undefined {
   }
 }
 
-function sourceFileCacheKey(
-  name: string,
-  languageVersion: ts.ScriptTarget | ts.CreateSourceFileOptions,
-): string {
-  const version = typeof languageVersion === "number"
-    ? languageVersion
-    : languageVersion.languageVersion;
-  return `${name}:${version}`;
-}
-
 export function findVariable(
-  root: ts.Node,
+  root: Node,
   name: string,
-): ts.VariableDeclaration | undefined {
-  let found: ts.VariableDeclaration | undefined;
-  const visit = (node: ts.Node) => {
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === name) {
+): VariableDeclaration | undefined {
+  let found: VariableDeclaration | undefined;
+  const visit = (node: Node) => {
+    if (isVariableDeclaration(node) && isIdentifier(node.name) && node.name.text === name) {
       found = node;
       return;
     }
-    ts.forEachChild(node, visit);
+    node.forEachChild(visit);
   };
   visit(root);
   return found;
 }
 
 export function findDeclaredValue(
-  root: ts.Node,
+  root: Node,
   name: string,
-): ts.Identifier | undefined {
-  let found: ts.Identifier | undefined;
-  const visit = (node: ts.Node) => {
-    if (ts.isIdentifier(node) && node.text === name) {
+): Identifier | undefined {
+  let found: Identifier | undefined;
+  const visit = (node: Node) => {
+    if (isIdentifier(node) && node.text === name) {
       found = node;
       return;
     }
-    ts.forEachChild(node, visit);
+    node.forEachChild(visit);
   };
   visit(root);
   return found;
 }
 
 export function findCallInitializer(
-  root: ts.Node,
+  root: Node,
   name: string,
-): ts.CallExpression | undefined {
+): CallExpression | undefined {
   const initializer = findVariable(root, name)?.initializer;
-  return initializer && ts.isCallExpression(initializer) ? initializer : undefined;
+  return initializer && isCallExpression(initializer) ? initializer : undefined;
 }
 
-export function typeOfSymbol(checker: ts.TypeChecker, symbol: ts.Symbol): ts.Type | undefined {
-  const declaration = symbol.valueDeclaration ?? symbol.declarations?.[0];
-  return declaration ? checker.getTypeOfSymbolAtLocation(symbol, declaration) : undefined;
+export function resolveSymbolDeclaration(symbol: TsSymbol): Declaration | undefined {
+  const handle = symbol.valueDeclaration ?? symbol.declarations[0];
+  return handle?.resolve();
+}
+
+export function resolveSymbolDeclarations(symbol: TsSymbol): Declaration[] {
+  const result: Declaration[] = [];
+  for (const handle of symbol.declarations) {
+    const resolved = handle.resolve();
+    if (resolved) result.push(resolved);
+  }
+  return result;
+}
+
+export function resolveSignatureDeclaration(
+  signature: Signature,
+): SignatureDeclaration | undefined {
+  const resolved = signature.declaration?.resolve();
+  return resolved && "parameters" in resolved ? (resolved as SignatureDeclaration) : undefined;
+}
+
+export function typeOfSymbol(checker: Checker, symbol: TsSymbol): Type | undefined {
+  return checker.getTypeOfSymbol(symbol);
 }
 
 function sanitize(value: string): string {

@@ -1,4 +1,13 @@
-import ts from "typescript-api";
+import {
+  type Checker,
+  IndexKind,
+  SymbolFlags,
+  type Type,
+  TypeFlags,
+  TypeFormatFlags,
+} from "tsrs/sync";
+import type { CallExpression, Expression, Identifier, ImportDeclaration } from "tsrs/ast";
+import { isIdentifier, isImportDeclaration, isPropertyAccessExpression } from "tsrs/ast/is";
 import type { Decl, Expr, TypeExpr } from "../../ast.ts";
 import { diagnosticError } from "../../diagnostic_model.ts";
 import {
@@ -149,7 +158,7 @@ export function jsGlobalMembers(path: string): JsMemberType[] {
       const members: JsMemberType[] = [];
       for (const symbol of checker.getTypeAtLocation(targetExpression).getProperties()) {
         const type = typeOfSymbol(checker, symbol);
-        const memberName = symbol.getName();
+        const memberName = symbol.name;
         const access = propertyPath("__wm_target", [memberName]);
         const mapped = type
           ? jsMemberTypeFromTsType(
@@ -163,7 +172,7 @@ export function jsGlobalMembers(path: string): JsMemberType[] {
               ),
           )
           : undefined;
-        if (mapped?.type.kind === "TFn") members.push({ name: symbol.getName(), ...mapped });
+        if (mapped?.type.kind === "TFn") members.push({ name: symbol.name, ...mapped });
       }
       return members;
     },
@@ -182,14 +191,14 @@ export function jsGlobalTargetInfo(
     (checker, sourceFile) => {
       const expression = findVariable(sourceFile, "__wm_target")?.initializer;
       if (!expression) return { exists: false };
-      const symbol = ts.isPropertyAccessExpression(expression)
+      const symbol = isPropertyAccessExpression(expression)
         ? checker.getSymbolAtLocation(expression.name)
         : checker.getSymbolAtLocation(expression);
       if (symbol) return { exists: true };
       const root = leftmostIdentifier(expression);
       if (!root) return { exists: false };
-      const suggestion = checker.getSymbolsInScope(root, ts.SymbolFlags.Value)
-        .map((candidate) => candidate.getName())
+      const suggestion = checker.getSymbolsInScope(root, SymbolFlags.Value)
+        .map((candidate) => candidate.name)
         .find((name) => name !== root.text && name.toLowerCase() === root.text.toLowerCase());
       return suggestion ? { exists: false, suggestion } : { exists: false };
     },
@@ -214,7 +223,7 @@ export function jsModuleMembers(specifier: string): JsMemberType[] {
       const members: JsMemberType[] = [];
       for (const symbol of checker.getTypeAtLocation(targetExpression).getProperties()) {
         const type = typeOfSymbol(checker, symbol);
-        const memberName = symbol.getName();
+        const memberName = symbol.name;
         const access = propertyPath("__wm_target", [memberName]);
         const mapped = type
           ? jsMemberTypeFromTsType(
@@ -228,7 +237,7 @@ export function jsModuleMembers(specifier: string): JsMemberType[] {
               ),
           )
           : undefined;
-        if (mapped?.type.kind === "TFn") members.push({ name: symbol.getName(), ...mapped });
+        if (mapped?.type.kind === "TFn") members.push({ name: symbol.name, ...mapped });
       }
       return members;
     },
@@ -315,10 +324,10 @@ function jsTargetMemberValueRef(target: JsReflectionSource, name: string): JsTyp
   };
 }
 
-function leftmostIdentifier(expression: ts.Expression): ts.Identifier | undefined {
+function leftmostIdentifier(expression: Expression): Identifier | undefined {
   let current = expression;
-  while (ts.isPropertyAccessExpression(current)) current = current.expression;
-  return ts.isIdentifier(current) ? current : undefined;
+  while (isPropertyAccessExpression(current)) current = current.expression;
+  return isIdentifier(current) ? current : undefined;
 }
 
 export function jsGlobalValueMember(name: string): JsMemberType | undefined {
@@ -365,7 +374,7 @@ export function jsPrimitiveValueRef(name: "String" | "Real64.Real" | "Bool"): Js
 export function jsGlobalTypeRef(name: string): JsTypeRef {
   if (name === "JsNever") return typeRefFromSource("ts:never", "", "never");
   const generic = reflectSource(`global-generic-type:${name}`, "export {};", (checker, sf) => {
-    const symbol = checker.resolveName(name, sf, ts.SymbolFlags.Type, false);
+    const symbol = checker.resolveName(name, SymbolFlags.Type, sf, false);
     return symbol && nominalGenericConstructor(checker, checker.getDeclaredTypeOfSymbol(symbol));
   });
   if (generic) {
@@ -410,7 +419,6 @@ export function instantiateJsTypeRef(
       sources.push(hygienicArgSource(instance.source, index));
       return `typeof ${hygienicArgExpr(instance.expr, index)}`;
     }
-    // Only built-in shapes have names which are meaningful without a TS ref.
     if (
       ["String", "Real64.Real", "Bool", "Void", "Js.Value", "Js.Object", "JsNever"].includes(arg.name)
     ) {
@@ -440,22 +448,20 @@ export function jsGlobalMemberTypeRef(path: string, name: string): JsTypeRef {
 
 export function jsModuleTypeRef(specifier: string, name: string): JsTypeRef {
   const target = jsModuleSource(specifier);
-  // The label is part of the prepared-program key, so one per name would build a TypeScript program
-  // for every member of a namespace import from the same source.
   const generic = reflectSource(
     target.key,
     target.source,
     (checker, sf) => {
-      let imported: ts.ImportDeclaration | undefined;
+      let imported: ImportDeclaration | undefined;
       sf.forEachChild((node) => {
-        if (ts.isImportDeclaration(node)) imported = node;
+        if (isImportDeclaration(node)) imported = node;
       });
       const symbol = imported ? checker.getSymbolAtLocation(imported.moduleSpecifier) : undefined;
       const exported = symbol
         ? checker.getExportsOfModule(symbol).find((item) => item.name === name)
         : undefined;
       if (!exported) return undefined;
-      const declared = exported.flags & ts.SymbolFlags.Alias
+      const declared = exported.flags & SymbolFlags.Alias
         ? checker.getAliasedSymbol(exported)
         : exported;
       return nominalGenericConstructor(checker, checker.getDeclaredTypeOfSymbol(declared));
@@ -531,13 +537,12 @@ export function jsRefMember(ref: JsTypeRef, path: string[]): JsMemberType | unde
   const reflected = reflectSource(
     key,
     `${ref.source}\nconst __wm_member = ${access};`,
-    (checker, sourceFile, program) => {
-      const member = findVariable(sourceFile, "__wm_member")?.initializer;
+    (checker, sourceRoot, program) => {
+      const member = findVariable(sourceRoot, "__wm_member")?.initializer;
       if (!member) return undefined;
       if (
-        program.getSemanticDiagnostics(sourceFile as ts.SourceFile).some((diagnostic) =>
-          diagnostic.start !== undefined && diagnostic.start >= member.getStart() &&
-          diagnostic.start < member.end
+        program.getSemanticDiagnostics(sourceRoot.getSourceFile().fileName).some((diagnostic) =>
+          diagnostic.pos >= member.getStart() && diagnostic.pos < member.end
         )
       ) return undefined;
       const propertyType = checker.getTypeAtLocation(member);
@@ -555,13 +560,9 @@ export function jsRefMember(ref: JsTypeRef, path: string[]): JsMemberType | unde
           ),
       );
       if (mapped) return { name: path.at(-1)!, ...mapped };
-      // A callable whose signatures cannot be represented is not a value getter.
-      // Otherwise a zero-argument method call can silently return the function itself.
       if (propertyType.getCallSignatures().length > 0) return undefined;
       const type = typeExprFromTsType(checker, propertyType);
       if (!type) return undefined;
-      // Like a call result, a property value keeps its reflected identity, so members of a
-      // nominal value reached through a property (or nested in its type) resolve in turn.
       const resultRef = returnTypeRef(`${key}:property`, ref.source, `typeof ${access}`);
       const generic = type.kind === "TName" && type.name === nominalObjectTypeName(checker, propertyType)
         ? nominalGenericConstructor(checker, propertyType)
@@ -629,7 +630,7 @@ export function jsRefMemberTypeText(ref: JsTypeRef, path: string[]): string | un
         if (!next) return undefined;
         type = next;
       }
-      return checker.typeToString(type, undefined, ts.TypeFormatFlags.NoTruncation);
+      return checker.typeToString(type, undefined, TypeFormatFlags.NoTruncation);
     },
   );
   refMemberTypeTextCache.set(key, reflected);
@@ -777,14 +778,13 @@ function jsRefCallTarget(
   const reflected = reflectSource(
     key,
     `${ref.source}\n${argSources}\n${argDecls}\nconst __wm_call_result = ${callExpr};`,
-    (checker, sourceFile, program) => {
-      const call = findCallInitializer(sourceFile, "__wm_call_result");
+    (checker, sourceRoot, program) => {
+      const call = findCallInitializer(sourceRoot, "__wm_call_result");
       if (!call) return undefined;
       if (
         ref.key.startsWith("callable:") &&
-        program.getSemanticDiagnostics(call.getSourceFile()).some((diagnostic) =>
-          diagnostic.start !== undefined && diagnostic.start >= call.getStart() &&
-          diagnostic.start < call.end
+        program.getSemanticDiagnostics(call.getSourceFile().fileName).some((diagnostic) =>
+          diagnostic.pos >= call.getStart() && diagnostic.pos < call.end
         )
       ) return undefined;
       const signature = checker.getResolvedSignature(call);
@@ -834,8 +834,8 @@ function hygienicArgIdentifier(identifier: string, index: number): string {
 }
 
 function callResultTypeRef(
-  checker: ts.TypeChecker,
-  call: ts.CallExpression,
+  checker: Checker,
+  call: CallExpression,
   callType: TypeExpr,
   key: string,
   source: string,
@@ -867,7 +867,7 @@ function callResultTypeRef(
     return ref;
   }
   const actualResult = checker.getTypeAtLocation(call);
-  const actualElement = checker.getIndexTypeOfType(actualResult, ts.IndexKind.Number);
+  const actualElement = checker.getIndexTypeOfType(actualResult, IndexKind.Number);
   if (!actualElement || nominalObjectTypeName(checker, actualElement) !== element.name) return ref;
   const elementKey = `${key}:element`;
   const elementRef = typeRefFromSource(
@@ -881,8 +881,8 @@ function callResultTypeRef(
 }
 
 function deepTypeExprFromTsType(
-  checker: ts.TypeChecker,
-  type: ts.Type,
+  checker: Checker,
+  type: Type,
   key: string,
   path: string[],
   records: Extract<Decl, { kind: "RecordDecl" }>[],
@@ -902,11 +902,11 @@ function deepTypeExprFromTsType(
         checker,
         fieldType,
         key,
-        [...path, symbol.getName()],
+        [...path, symbol.name],
         records,
         depth + 1,
       );
-      return field ? { name: symbol.getName(), type: field } : undefined;
+      return field ? { name: symbol.name, type: field } : undefined;
     })
     .filter((field): field is { name: string; type: TypeExpr } => !!field);
   if (fields.length === 0) return shallow;
@@ -931,8 +931,8 @@ function widestCallableType(member: Omit<JsMemberType, "name"> | undefined): Typ
     .sort((left, right) => right.params.length - left.params.length)[0];
 }
 
-function isFiniteObjectForDeepReflection(checker: ts.TypeChecker, type: ts.Type): boolean {
-  if (!(type.flags & ts.TypeFlags.Object)) return false;
+function isFiniteObjectForDeepReflection(checker: Checker, type: Type): boolean {
+  if (!(type.flags & TypeFlags.Object)) return false;
   const props = type.getProperties();
   if (props.length === 0 || props.length > 32) return false;
   const text = checker.typeToString(type);
@@ -1022,8 +1022,8 @@ function returnTypeRef(key: string, source: string, typeExpr: string): JsTypeRef
 
 function typeRefFromTsType(
   key: string,
-  checker: ts.TypeChecker,
-  type: ts.Type,
+  checker: Checker,
+  type: Type,
   source = "",
 ): JsTypeRef {
   const nominal = nominalObjectTypeName(checker, type);
@@ -1033,16 +1033,16 @@ function typeRefFromTsType(
       const ref = typeRefFromSource(
         key,
         source,
-        checker.typeToString(type, undefined, ts.TypeFormatFlags.UseFullyQualifiedType),
+        checker.typeToString(type, undefined, TypeFormatFlags.UseFullyQualifiedType),
       );
       return { ...ref, generic, type: typeExprFromTsType(checker, type, "param") };
     }
     const expression = checker.typeToString(
       type,
       undefined,
-      ts.TypeFormatFlags.UseFullyQualifiedType,
+      TypeFormatFlags.UseFullyQualifiedType,
     );
-    const symbol = type.aliasSymbol ?? type.getSymbol();
+    const symbol = type.getAliasSymbol() ?? type.getSymbol();
     const qualified = symbol && checker.getFullyQualifiedName(symbol).replace(/^global\./, "");
     const nominalKey = qualified && !qualified.startsWith('"')
       ? `global-type:${qualified}`

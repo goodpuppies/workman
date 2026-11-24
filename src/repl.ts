@@ -7,11 +7,13 @@ import { maskSourceRange, topLevelPhraseEnd, topLevelPhraseRanges } from "./top_
 import {
   denoConfigArgs,
   handleTerminationSignals,
+  isStandaloneBinary,
   linkProjectPackages,
   relayTerminationSignals,
   scriptCommand,
   terminationExitCode,
 } from "./child_runtime.ts";
+import { bundleJavaScriptEntry } from "./bundle.ts";
 import { createTemporaryDirectory } from "./temporary_directory.ts";
 import { readReplHistory, recordReplHistory, replHistoryFile } from "./repl_history.ts";
 import {
@@ -84,7 +86,13 @@ async function executeReplArtifacts(
     for (const artifact of artifacts) {
       await Deno.writeTextFile(`${dir}/${artifact.path}`, artifact.code);
     }
-    const program = scriptCommand(`${dir}/${entry.path}`, [], [
+    let entryScript = `${dir}/${entry.path}`;
+    if (isStandaloneBinary) {
+      const bundled = `${dir}/__wm_bundled_entry.mjs`;
+      await bundleJavaScriptEntry(entryScript, bundled, { projectDirectory: dirname(inputPath) });
+      entryScript = bundled;
+    }
+    const program = scriptCommand(entryScript, [], [
       "-A",
       ...denoConfigArgs(dirname(inputPath)),
       ...runtimeFlagsForJavaScript(entry.code),
@@ -271,12 +279,18 @@ class PhraseSession {
     }
     const entry = artifacts.find((artifact) => artifact.kind === "entry") ?? artifacts[0];
     if (!entry) throw new Error("compiler produced no REPL artifact");
+    let entryScript = `${output}/${entry.path}`;
+    if (isStandaloneBinary) {
+      const bundled = `${output}/__wm_bundled_entry.mjs`;
+      await bundleJavaScriptEntry(entryScript, bundled, { projectDirectory: this.#sourceDirectory });
+      entryScript = bundled;
+    }
     this.#host ??= await ReplHost.start(
       this.#outputDirectory,
       this.#sourceDirectory,
       this.#formatOutput,
     );
-    const result = await this.#host.run(pathToFileURL(`${output}/${entry.path}`).href);
+    const result = await this.#host.run(pathToFileURL(entryScript).href);
     if (result.kind === "exited") {
       this.#host = undefined;
       if (result.code === REPL_QUIT_EXIT_CODE) return "quit";
